@@ -1,0 +1,16 @@
+type: google.api.Service
+config_version: 3
+
+http:
+  rules:
+    - selector: hashmailrpc.HashMail.NewCipherBox
+      post: "/v1/terminal-connect/hashmail"
+      body: "*"
+    - selector: hashmailrpc.HashMail.DelCipherBox
+      delete: "/v1/terminal-connect/hashmail"
+    - selector: hashmailrpc.HashMail.SendStream
+      post: "/v1/terminal-connect/hashmail/send"
+      body: "*"
+    - selector: hashmailrpc.HashMail.RecvStream
+      post: "/v1/terminal-connect/hashmail/receive"
+      body: "*"

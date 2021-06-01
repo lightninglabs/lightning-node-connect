@@ -1,0 +1,284 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "hashmail.proto",
+    "version": "version not set"
+  },
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/terminal-connect/hashmail": {
+      "delete": {
+        "summary": "DelCipherBox attempts to tear down an existing cipher box pipe. The same\nauthentication mechanism used to initially create the stream MUST be\nspecified.",
+        "operationId": "DelCipherBox",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/hashmailrpcDelCipherBoxResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "desc.stream_id",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "byte"
+          }
+        ],
+        "tags": [
+          "HashMail"
+        ]
+      },
+      "post": {
+        "summary": "NewCipherBox creates a new cipher box pipe/stream given a valid\nauthentication mechanism. If the authentication mechanism has been revoked,\nor needs to be changed, then a CipherChallenge message is returned.\nOtherwise the method will either be accepted or rejected.",
+        "operationId": "NewCipherBox",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/hashmailrpcCipherInitResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/hashmailrpcCipherBoxAuth"
+            }
+          }
+        ],
+        "tags": [
+          "HashMail"
+        ]
+      }
+    },
+    "/v1/terminal-connect/hashmail/receive": {
+      "post": {
+        "summary": "RecvStream opens up the read side of the passed CipherBox pipe. This method\nwill block until a full message has been read as this is a message based\npipe/stream abstraction.",
+        "operationId": "RecvStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/hashmailrpcCipherBox"
+                },
+                "error": {
+                  "$ref": "#/definitions/runtimeStreamError"
+                }
+              },
+              "title": "Stream result of hashmailrpcCipherBox"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/hashmailrpcCipherBoxDesc"
+            }
+          }
+        ],
+        "tags": [
+          "HashMail"
+        ]
+      }
+    },
+    "/v1/terminal-connect/hashmail/send": {
+      "post": {
+        "summary": "SendStream opens up the write side of the passed CipherBox pipe. Writes\nwill be non-blocking up to the buffer size of the pipe. Beyond that writes\nwill block until completed.",
+        "operationId": "SendStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/hashmailrpcCipherBoxDesc"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/runtimeError"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": " (streaming inputs)",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/hashmailrpcCipherBox"
+            }
+          }
+        ],
+        "tags": [
+          "HashMail"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "hashmailrpcCipherBox": {
+      "type": "object",
+      "properties": {
+        "desc": {
+          "$ref": "#/definitions/hashmailrpcCipherBoxDesc"
+        },
+        "msg": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "hashmailrpcCipherBoxAuth": {
+      "type": "object",
+      "properties": {
+        "desc": {
+          "$ref": "#/definitions/hashmailrpcCipherBoxDesc",
+          "description": "A description of the stream one is attempting to initialize."
+        },
+        "lnd_auth": {
+          "$ref": "#/definitions/hashmailrpcLndAuth"
+        }
+      }
+    },
+    "hashmailrpcCipherBoxDesc": {
+      "type": "object",
+      "properties": {
+        "stream_id": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "hashmailrpcCipherChallenge": {
+      "type": "object"
+    },
+    "hashmailrpcCipherError": {
+      "type": "object"
+    },
+    "hashmailrpcCipherInitResp": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "$ref": "#/definitions/hashmailrpcCipherSuccess",
+          "description": "CipherSuccess is returned if the initialization of the cipher box was\nsuccessful."
+        },
+        "challenge": {
+          "$ref": "#/definitions/hashmailrpcCipherChallenge",
+          "description": "CipherChallenge is returned if the authentication mechanism was revoked\nor needs to be refreshed."
+        },
+        "error": {
+          "$ref": "#/definitions/hashmailrpcCipherError",
+          "description": "CipherError is returned if the authentication mechanism failed to\nvalidate."
+        }
+      }
+    },
+    "hashmailrpcCipherSuccess": {
+      "type": "object",
+      "properties": {
+        "desc": {
+          "$ref": "#/definitions/hashmailrpcCipherBoxDesc"
+        }
+      }
+    },
+    "hashmailrpcDelCipherBoxResp": {
+      "type": "object"
+    },
+    "hashmailrpcLndAuth": {
+      "type": "object"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "type_url": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "runtimeError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "runtimeStreamError": {
+      "type": "object",
+      "properties": {
+        "grpc_code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "http_code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "http_status": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}
