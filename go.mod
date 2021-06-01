@@ -5,6 +5,7 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/golang/protobuf v1.5.2
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
+	github.com/jessevdk/go-flags v1.4.0
 	github.com/kkdai/bstream v0.0.0-20181106074824-b3251f7901ec
 	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210727141148-c3962528e29f
 	github.com/stretchr/testify v1.7.0
