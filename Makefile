@@ -93,3 +93,6 @@ rpc-check: rpc
 
 rpc-stubs:
 	cd cmd/wasm-client; ./gen_stubs.sh
+
+example-server:
+	go run example-server.go example/ 8080
