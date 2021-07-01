@@ -14,6 +14,12 @@ import (
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
+	
+	// Needed as a build time dependency only so we can pull in the proto
+	// files to generate the stubs.
+	_ "github.com/lightninglabs/loop/looprpc"
+	_ "github.com/lightninglabs/pool/auctioneerrpc"
+	_ "github.com/lightninglabs/pool/poolrpc"
 )
 
 var (
@@ -38,6 +44,8 @@ func main() {
 	RegisterLightningJSONCallbacks(registry)
 	RegisterStateJSONCallbacks(registry)
 	RegisterVersionerJSONCallbacks(registry)
+	RegisterSwapClientJSONCallbacks(registry)
+	RegisterTraderJSONCallbacks(registry)
 
 	cfg := config{}
 

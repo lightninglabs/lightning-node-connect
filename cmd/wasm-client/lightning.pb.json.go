@@ -17,7 +17,8 @@ func RegisterLightningJSONCallbacks(registry map[string]func(ctx context.Context
 	conn *grpc.ClientConn, reqJSON string, callback func(string, error))) {
 
 	marshaler := &gateway.JSONPb{
-		OrigName: true,
+		OrigName:     true,
+		EmitDefaults: true,
 	}
 
 	registry["lnrpc.Lightning.WalletBalance"] = func(ctx context.Context,

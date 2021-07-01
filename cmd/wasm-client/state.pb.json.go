@@ -17,7 +17,8 @@ func RegisterStateJSONCallbacks(registry map[string]func(ctx context.Context,
 	conn *grpc.ClientConn, reqJSON string, callback func(string, error))) {
 
 	marshaler := &gateway.JSONPb{
-		OrigName: true,
+		OrigName:     true,
+		EmitDefaults: true,
 	}
 
 	registry["lnrpc.State.SubscribeState"] = func(ctx context.Context,

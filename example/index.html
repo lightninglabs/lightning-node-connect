@@ -67,6 +67,14 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         wasmClientInvokeRPC('lnrpc.Lightning.'+rpcName, req, setResult);
     }
 
+    async function callWASMLoop(rpcName, req) {
+        wasmClientInvokeRPC('looprpc.SwapClient.'+rpcName, req, setResult);
+    }
+
+    async function callWASMPool(rpcName, req) {
+        wasmClientInvokeRPC('poolrpc.Trader.'+rpcName, req, setResult);
+    }
+
     function setResult(result) {
         $('#output').text(result);
     }
@@ -85,6 +93,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     <pre id="output">
     </pre>
 
+    <h2>LND</h2>
     <button onClick="callWASM('GetInfo', '{}');">GetInfo</button>
     <button onClick="callWASM('ListChannels', '{}');">ListChannels</button>
     <button onClick="callWASM('ListPeers', '{}');">ListPeers</button>
@@ -92,6 +101,12 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;WITNESS_PUBKEY_HASH&quot;}');">New P2WKH address</button>
     <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;NESTED_PUBKEY_HASH&quot;}');">New NP2WKH address</button>
     <button onClick="callWASM('SubscribeTransactions', '{}');">SubscribeTransactions</button>
+    
+    <h2>Loop</h2>
+    <button onClick="callWASMLoop('LoopOutTerms', '{}');">LoopOutTerms</button>
+    
+    <h2>Pool</h2>
+    <button onClick="callWASMPool('GetInfo', '{}');">GetInfo</button>
 </div>
 </body>
 

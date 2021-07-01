@@ -44,3 +44,28 @@ protoc -I/usr/local/include -I. -I"$lnd_src/lnrpc" \
        --custom_opt="$opts" \
        --proto_path="$1" \
        verrpc/verrpc.proto
+
+# TODO(guggero): Fix import problem with auctioneerrpc package.
+# When uncommenting the following lines, there will be errors in the generated
+# code. You'll need to manually add the auctioneerrpc package import and change
+# the batch snapshot messages from poolrpc to auctioneerrpc.
+# This will be fixed by generating the stubs directly in the repo where the
+# proto lives.
+#
+#target_pkg="github.com/lightninglabs/pool/poolrpc"
+#opts="package_name=$pkg,target_package=$target_pkg,api_prefix=1,js_stubs=1,build_tags=// +build js"
+#protoc -Iproto \
+#       --plugin=protoc-gen-custom=$falafel\
+#       --custom_out=. \
+#       --custom_opt="$opts" \
+#       --proto_path="$1" \
+#       trader.proto
+
+target_pkg="github.com/lightninglabs/loop/looprpc"
+opts="package_name=$pkg,target_package=$target_pkg,api_prefix=1,js_stubs=1,build_tags=// +build js"
+protoc -Iproto \
+       --plugin=protoc-gen-custom=$falafel\
+       --custom_out=. \
+       --custom_opt="$opts" \
+       --proto_path="$1" \
+       loop.proto
