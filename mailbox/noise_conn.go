@@ -3,13 +3,11 @@ package mailbox
 import (
 	"context"
 	"fmt"
-	"net"
-	"strings"
-	"time"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc/credentials"
+	"net"
+	"strings"
 )
 
 var _ credentials.TransportCredentials = (*NoiseConn)(nil)
@@ -126,9 +124,6 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	}
 	log.Debugf("Sent client hello with client_key=%x",
 		c.localKey.PubKey().SerializeCompressed())
-
-	// Wait until server creates the send socket.
-	time.Sleep(500 * time.Millisecond)
 
 	serverHello := NewMsgServerHello(ProtocolVersion, nil, nil)
 	if err := c.Conn.ReceiveControlMsg(serverHello); err != nil {
@@ -262,6 +257,10 @@ func (c *NoiseConn) GetRequestMetadata(_ context.Context,
 	lines := strings.Split(string(c.authData), "\r\n")
 	for _, line := range lines {
 		parts := strings.Split(line, ": ")
+		if len(parts) != 2 {
+			continue
+		}
+
 		md[parts[0]] = parts[1]
 	}
 	return md, nil
