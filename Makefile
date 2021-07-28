@@ -16,6 +16,8 @@ GOTEST := go test -v
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 
+LDFLAGS := -s -w -buildid=
+
 RM := rm -f
 CP := cp
 MAKE := make
@@ -42,6 +44,12 @@ $(LINT_BIN):
 build:
 	@$(call print, "Building terminal-connect.")
 	$(GOBUILD) $(PKG)/...
+
+wasm:
+	# The appengine build tag is needed because of the jessevdk/go-flags library
+	# that has some OS specific terminal code that doesn't compile to WASM.
+	GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="appengine" -v -o wasm-client.wasm $(PKG)/cmd/wasm-client
+	$(CP) wasm-client.wasm example/wasm-client.wasm
 
 # =======
 # TESTING
@@ -83,3 +91,8 @@ rpc-check: rpc
 	@$(call print, "Verifying protos.")
 	if test -n "$$(git describe --dirty | grep dirty)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
 
+rpc-stubs:
+	cd cmd/wasm-client; ./gen_stubs.sh
+
+example-server:
+	go run example-server.go example/ 8080
