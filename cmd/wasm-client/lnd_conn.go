@@ -6,11 +6,13 @@ import (
 	"context"
 	"crypto/sha512"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/terminal-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
@@ -37,6 +39,11 @@ func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
 		grpc.WithContextDialer(transportConn.Dial),
 		grpc.WithTransportCredentials(noiseConn),
 		grpc.WithPerRPCCredentials(noiseConn),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                time.Second * 10,
+			Timeout:             time.Second * 5,
+			PermitWithoutStream: true,
+		}),
 	}
 
 	return grpc.DialContext(ctx, cfg.MailboxServer, dialOpts...)
