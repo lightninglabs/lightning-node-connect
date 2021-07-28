@@ -34,5 +34,5 @@ function format() {
 pushd hashmailrpc
 format
 generate
-generate_gateway hashmail.proto hashmail.yaml
+generate_gateway hashmail-lnd.proto hashmail-lnd.yaml
 popd
