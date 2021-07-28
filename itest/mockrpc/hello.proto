@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package mockrpc;
+
+option go_package = "github.com/lightninglabs/terminal-connect/itest/mockrpc";
+
+service Hello { rpc SayHello(SayHelloReq) returns (SayHelloResp); }
+
+message SayHelloReq {}
+
+message SayHelloResp { string hello = 1; }
