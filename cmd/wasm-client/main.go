@@ -11,23 +11,47 @@ import (
 	"syscall/js"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/autopilotrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/watchtowerrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
-	
-	// Needed as a build time dependency only so we can pull in the proto
-	// files to generate the stubs.
-	_ "github.com/lightninglabs/loop/looprpc"
-	_ "github.com/lightninglabs/pool/auctioneerrpc"
-	_ "github.com/lightninglabs/pool/poolrpc"
 )
+
+type stubPackageRegistration func(map[string]func(context.Context,
+	*grpc.ClientConn, string, func(string, error)))
 
 var (
 	lndConn *grpc.ClientConn
 
-	registry = make(map[string]func(ctx context.Context,
-		conn *grpc.ClientConn, reqJSON string,
-		callback func(string, error)))
+	registry = make(map[string]func(context.Context, *grpc.ClientConn,
+		string, func(string, error)))
+
+	registrations = []stubPackageRegistration{
+		lnrpc.RegisterLightningJSONCallbacks,
+		lnrpc.RegisterStateJSONCallbacks,
+		autopilotrpc.RegisterAutopilotJSONCallbacks,
+		chainrpc.RegisterChainNotifierJSONCallbacks,
+		invoicesrpc.RegisterInvoicesJSONCallbacks,
+		routerrpc.RegisterRouterJSONCallbacks,
+		signrpc.RegisterSignerJSONCallbacks,
+		verrpc.RegisterVersionerJSONCallbacks,
+		walletrpc.RegisterWalletKitJSONCallbacks,
+		watchtowerrpc.RegisterWatchtowerJSONCallbacks,
+		wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
+		looprpc.RegisterSwapClientJSONCallbacks,
+		poolrpc.RegisterTraderJSONCallbacks,
+	}
 )
 
 func main() {
@@ -41,11 +65,9 @@ func main() {
 	// Setup JS callbacks.
 	js.Global().Set("wasmClientIsReady", js.FuncOf(wasmClientIsReady))
 	js.Global().Set("wasmClientInvokeRPC", js.FuncOf(wasmClientInvokeRPC))
-	RegisterLightningJSONCallbacks(registry)
-	RegisterStateJSONCallbacks(registry)
-	RegisterVersionerJSONCallbacks(registry)
-	RegisterSwapClientJSONCallbacks(registry)
-	RegisterTraderJSONCallbacks(registry)
+	for _, registration := range registrations {
+		registration(registry)
+	}
 
 	cfg := config{}
 

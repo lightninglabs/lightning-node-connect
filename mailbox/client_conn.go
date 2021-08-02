@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/terminal-connect/gbn"
 	"github.com/lightninglabs/terminal-connect/hashmailrpc"
+	"google.golang.org/protobuf/encoding/protojson"
 	"nhooyr.io/websocket"
 )
 
@@ -21,7 +22,12 @@ var (
 
 	resultPattern    = regexp.MustCompile("{\"result\":(.*)}")
 	errorPattern     = regexp.MustCompile("{\"error\":(.*)}")
-	defaultMarshaler = &runtime.JSONPb{OrigName: true, EmitDefaults: false}
+	defaultMarshaler = &runtime.JSONPb{
+		MarshalOptions: protojson.MarshalOptions{
+			UseProtoNames:   true,
+			EmitUnpopulated: true,
+		},
+	}
 
 	retryWait        = 2000 * time.Millisecond
 	gbnTimeout       = 1000 * time.Millisecond
