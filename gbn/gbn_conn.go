@@ -11,6 +11,8 @@ import (
 
 var (
 	errTransportClosing = errors.New("gbn transport is closing")
+
+	handshakeTimeout = 2 * time.Second
 )
 
 type GoBackNConn struct {
@@ -73,11 +75,14 @@ type GoBackNConn struct {
 	// for the FIN sequence.
 	quit chan struct{}
 
+	// handshakeComplete is used to signal if the handshake is complete
+	// or not. If the channel is closed then the handshake is complete.
 	handshakeComplete chan struct{}
 
 	ctx    context.Context
 	cancel func()
 
+	// remoteClosed is true if the remote party initiated the FIN sequence.
 	remoteClosed bool
 
 	wg sync.WaitGroup
@@ -121,7 +126,7 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 	return nil, io.EOF
 }
 
-// start starts the various go routines needed by GoBackNConn.
+// start kicks off the various goroutines needed by GoBackNConn.
 // start should only be called once the handshake has been completed.
 func (g *GoBackNConn) start() {
 	log.Debugf("Starting (isServer=%v)", g.isServer)
@@ -157,7 +162,6 @@ func (g *GoBackNConn) start() {
 
 // Close attempts to cleanly close the connection by sending a FIN message.
 func (g *GoBackNConn) Close() error {
-
 	log.Debugf("Closing GoBackNConn, isServer=%v", g.isServer)
 
 	// We close the quit channel to stop the usual operations of the
@@ -178,7 +182,6 @@ func (g *GoBackNConn) Close() error {
 	default:
 	}
 
-	log.Debugf("canceling context")
 	// Canceling the context will ensure that we are not hanging on the
 	// receive or send functions passed to the server on initialisation.
 	g.cancel()
@@ -189,8 +192,8 @@ func (g *GoBackNConn) Close() error {
 	return nil
 }
 
-// receivePacketsForever  uses the provided recvFromStream to get new data from the
-// underlying receive stream. It then checks to see if what was received is
+// receivePacketsForever uses the provided recvFromStream to get new data
+// from the underlying transport. It then checks to see if what was received is
 // data or an ACK signal and then processes the packet accordingly.
 //
 // This function must be called in a go routine
@@ -267,33 +270,38 @@ func (g *GoBackNConn) receivePacketsForever() error {
 		case *PacketACK:
 			if m.Seq != g.sendSeqBase {
 				// We received an unexpected sequence number.
-				log.Debugf("got wrong ack %d expected "+
-					"%d (isServer=%v)", m.Seq, g.sendSeqBase,
-					g.isServer)
+				log.Debugf(
+					"got wrong ack %d expected "+
+						"%d (isServer=%v)", m.Seq,
+					g.sendSeqBase, g.isServer,
+				)
 
 				// Determine if this is an ack for something in
-				// the current window (between base and base + queue size)
-				// If it is then update base and send ack for updated base.
-				// Also decrement queue size by appropriate amount.
-				log.Debugf("check if in queue? (isServer=%v)", g.isServer)
+				// the current window (between base and
+				// base + queue size) If it is then update base
+				// and send ack for updated base.
 				if !g.isInQueue(m.Seq) {
 					log.Debugf("not in queue (isServer=%v)", g.isServer)
 					break
 				}
 				log.Debugf("is in queue (isServer=%v)", g.isServer)
 
+				// m.Seq is in the queue. So bump the
+				// sendSeqBase appropriately.
 				g.sendSeqMu.Lock()
 				difference := subAndMod(m.Seq, g.sendSeqBase, g.s)
-				log.Debugf("diff %d (isServer=%v)", difference, g.isServer)
 				g.sendSeqBase = (g.sendSeqBase + difference) % g.s
 				g.sendSeqMu.Unlock()
 				break
 			}
 
-			log.Debugf("got correct ack %d (isServer=%v)", g.sendSeqBase, g.isServer)
+			log.Debugf(
+				"got correct ack %d (isServer=%v)",
+				g.sendSeqBase, g.isServer,
+			)
 
 			// We received the expected sequence number.
-			// Decrement queue size and increment the base
+			// Increment the base.
 			g.sendSeqBase = (g.sendSeqBase + 1) % g.s
 
 		case *PacketFIN:
@@ -309,7 +317,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 }
 
 // isInQueue is used to determine if a number, c, is between two other numbers,
-// a and b, where all of the numbers lie in a finite field (modulo space).
+// a and b, where all of the numbers lie in a finite field (modulo space) n.
 func (g *GoBackNConn) isInQueue(seq uint8) bool {
 	g.sendSeqMu.Lock()
 	defer g.sendSeqMu.Unlock()
@@ -317,8 +325,10 @@ func (g *GoBackNConn) isInQueue(seq uint8) bool {
 	a := g.sendSeqBase % g.n
 	b := g.sendSeqTop % g.n
 	c := seq % g.n
+
 	log.Debugf("base %d, top %d, seq %d", a, b, c)
 
+	// if a and b are equal then the queue is empty.
 	if a == b {
 		return false
 	}
@@ -339,6 +349,7 @@ func (g *GoBackNConn) isInQueue(seq uint8) bool {
 	return false
 }
 
+// queueSize is used to calculate the current sender queueSize.
 func (g *GoBackNConn) queueSize() uint8 {
 	g.sendSeqMu.Lock()
 	defer g.sendSeqMu.Unlock()
@@ -384,14 +395,21 @@ func (g *GoBackNConn) sendPacketsForever() error {
 
 	resendQueue := func() error {
 		queueSize := g.queueSize()
-		log.Debugf("queue size %d,  (isServer=%v)", queueSize, g.isServer)
+		log.Debugf(
+			"queue size %d,  (isServer=%v)", queueSize, g.isServer,
+		)
 		if queueSize == 0 {
 			return nil
 		}
 
 		for i := queueSize; i > 0; i-- {
 			packet := queue[subAndMod(g.sendQueueTop, i, n)]
-			log.Debugf("resending %d, (isServer=%v)", packet.Seq, g.isServer)
+
+			log.Debugf(
+				"resending seq %d, (isServer=%v)",
+				packet.Seq, g.isServer,
+			)
+
 			if err := g.sendPacket(g.ctx, packet); err != nil {
 				return err
 			}
@@ -401,7 +419,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 
 	for {
 		// If the queue is empty, then wait on sendDataChan for more
-		// data to send. Otherwise, maybe resend queue after a timeout.
+		// data to send. Otherwise, resend queue after a timeout.
 		if g.queueSize() == 0 {
 			log.Debugf("empty queue isServer=%v", g.isServer)
 			select {
@@ -421,6 +439,8 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			case data = <-g.sendDataChan:
 			}
 		}
+
+		// We have received new data to add to the queue and send.
 
 		g.sendSeqMu.Lock()
 

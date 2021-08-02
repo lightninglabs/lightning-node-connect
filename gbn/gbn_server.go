@@ -45,9 +45,16 @@ func NewServerConn(ctx context.Context,
 }
 
 // serverHandshake initiates the server side GBN handshake.
+// The server handshake sequence is as follows:
+// 1. The server waits for a SYN message from the client.
+// 2. The server then responds with a SYN message.
+// 3. The server waits for a SYNACK message from the client.
+// 4a. If the server receives the SYNACK message before a timeout, the hand
+//     is considered complete.
+// 4b. If SYNACK is not received before a certain timeout
 func (g *GoBackNConn) serverHandshake() error {
 	recvChan := make(chan []byte)
-	recvNext := make(chan int)
+	recvNext := make(chan int, 1)
 	errChan := make(chan error, 1)
 	go func() {
 		for {
@@ -66,32 +73,32 @@ func (g *GoBackNConn) serverHandshake() error {
 		}
 	}()
 
-	log.Debugf("Waiting for client SYN")
-	recvNext <- 1
-	b := <-recvChan
-
-	msg, err := Deserialize(b)
-	if err != nil {
-		return err
-	}
-
-	switch msg.(type) {
-	case *PacketSYN:
-	default:
-		return io.EOF
-	}
-
-	log.Debugf("Received client SYN.")
-
 	var n uint8
 
 	for {
+		log.Debugf("Waiting for client SYN")
+		recvNext <- 1
+		b := <-recvChan
+
+		msg, err := Deserialize(b)
+		if err != nil {
+			return err
+		}
+
+		switch msg.(type) {
+		case *PacketSYN:
+		default:
+			continue
+		}
+
+	recvClientSYN:
+
+		log.Debugf("Received client SYN. Sending back.")
 		n = msg.(*PacketSYN).N
 
 		// Send SYN back
-		log.Debugf("Sending SYN.")
 		syn := &PacketSYN{N: n}
-		b, err := syn.Serialize()
+		b, err = syn.Serialize()
 		if err != nil {
 			return err
 		}
@@ -108,8 +115,9 @@ func (g *GoBackNConn) serverHandshake() error {
 		}
 
 		select {
-		case <-time.Tick(2 * time.Second):
-			log.Debugf("SYNCACK timeout. Resending SYN.")
+		case <-time.Tick(handshakeTimeout):
+			log.Debugf("SYNCACK timeout. Abort and wait for" +
+				"client to re-initiate")
 			continue
 		case err := <-errChan:
 			return err
@@ -123,17 +131,20 @@ func (g *GoBackNConn) serverHandshake() error {
 
 		switch msg.(type) {
 		case *PacketSYNACK:
-			log.Debugf("Received SYNACK")
 			break
 		case *PacketSYN:
 			log.Debugf("Received SYN. Resend SYN.")
-			continue
+			goto recvClientSYN
 		default:
 			return io.EOF
 		}
 		break
 	}
 
+	log.Debugf("Received SYNACK")
+
+	// Set all variables that are dependent on the value of N that we get
+	// from the client
 	g.n = n
 	g.s = n + 1
 	g.recvDataChan = make(chan *PacketData, n)

@@ -28,22 +28,37 @@ func NewPassword() ([NumPasswordWords]string, [NumPasswordBytes]byte, error) {
 	var (
 		passwordEntropy [NumPasswordBytes]byte
 		password        [NumPasswordWords]string
+		err             error
 	)
-	if _, err := rand.Read(passwordEntropy[:]); err != nil {
+	if _, err = rand.Read(passwordEntropy[:]); err != nil {
 		return password, passwordEntropy, err
 	}
 
-	cipherBits := bstream.NewBStreamReader(passwordEntropy[:])
+	password, err = PasswordEntropyToMnemonic(passwordEntropy)
+	if err != nil {
+		return password, passwordEntropy, err
+	}
+
+	return password, passwordEntropy, nil
+}
+
+func PasswordEntropyToMnemonic(
+	entropy [NumPasswordBytes]byte) ([NumPasswordWords]string, error) {
+
+	var (
+		password   [NumPasswordWords]string
+		cipherBits = bstream.NewBStreamReader(entropy[:])
+	)
 	for i := 0; i < NumPasswordWords; i++ {
 		index, err := cipherBits.ReadBits(aezeed.BitsPerWord)
 		if err != nil {
-			return password, passwordEntropy, err
+			return password, err
 		}
 
 		password[i] = aezeed.DefaultWordList[index]
 	}
 
-	return password, passwordEntropy, nil
+	return password, nil
 }
 
 // PasswordMnemonicToEntropy reverses the mnemonic word encoding and returns the

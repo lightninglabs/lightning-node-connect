@@ -59,6 +59,9 @@ type ClientConn struct {
 func NewClientConn(ctx context.Context, receiveSID,
 	sendSID [64]byte) *ClientConn {
 
+	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
+		receiveSID[:], sendSID[:])
+
 	c := &ClientConn{
 		quit: make(chan struct{}),
 	}
@@ -231,7 +234,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context) {
 		delay = retryWait
 
 		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
-		sendSocket, _, err := websocket.Dial(c.ctx, sendAddr, nil)
+		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
 		if err != nil {
 			log.Debugf("Client: error creating send socket %w", err)
 			continue
@@ -257,6 +260,7 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 		return nil, err
 	}
 	c.gbnConn = gbnConn
+	c.quit = make(chan struct{})
 
 	return c, nil
 }
