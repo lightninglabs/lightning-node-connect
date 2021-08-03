@@ -6,9 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
-
-	"google.golang.org/grpc/keepalive"
 
 	"github.com/lightninglabs/terminal-connect/gbn"
 
@@ -62,13 +59,7 @@ func main() {
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
 
-	grpcServer := grpc.NewServer(
-		grpc.Creds(noiseConn),
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    time.Second * 10,
-			Timeout: time.Millisecond * 200,
-		}),
-	)
+	grpcServer := grpc.NewServer(grpc.Creds(noiseConn))
 	mockrpc.RegisterHelloServer(grpcServer, &mockrpc.Server{})
 
 	wg := sync.WaitGroup{}

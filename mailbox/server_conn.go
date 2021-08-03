@@ -61,7 +61,8 @@ func NewServerConn(ctx context.Context, serverHost string,
 
 	log.Debugf("ServerConn: creating gbn, waiting for sync")
 	gbnConn, err := gbn.NewServerConn(
-		ctxc, c.sendToStream, c.recvFromStream, gbnTimeout,
+		ctxc, gbnMaxPayloadSize, c.sendToStream, c.recvFromStream,
+		gbnTimeout,
 	)
 	if err != nil {
 		return nil, err
@@ -90,7 +91,8 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 
 	log.Debugf("ServerConn: creating gbn")
 	gbnConn, err := gbn.NewServerConn(
-		sc.ctx, sc.sendToStream, sc.recvFromStream, gbnTimeout,
+		sc.ctx, gbnMaxPayloadSize, sc.sendToStream, sc.recvFromStream,
+		gbnTimeout,
 	)
 	if err != nil {
 		return nil, err

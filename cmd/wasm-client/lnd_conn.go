@@ -37,6 +37,14 @@ func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
 		grpc.WithContextDialer(transportConn.Dial),
 		grpc.WithTransportCredentials(noiseConn),
 		grpc.WithPerRPCCredentials(noiseConn),
+
+		// TODO(elle): Investigate why the server is sending a
+		// buffer larger than the default 32KB in the first place.
+		grpc.WithReadBufferSize(33 * 1024),
+
+		// TODO(elle): Increase if aperture's throttle limit is
+		// increased.
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024 * 1024 * 5)),
 	}
 
 	return grpc.DialContext(ctx, cfg.MailboxServer, dialOpts...)

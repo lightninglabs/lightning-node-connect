@@ -6,14 +6,13 @@ import (
 	"time"
 )
 
-var count int
-
 // NewServerConn creates a new bidirectional Go-Back-N server.
 // The sendStream function must write to the underlying transport stream.
 // The receiveStream function must read from an underlying transport stream.
 // The timeout parameter defines the duration to wait before resending data
 // if the corresponding ACK for the data is not received.
 func NewServerConn(ctx context.Context,
+	maxPayloadSize int,
 	sendToStream func(ctx context.Context, b []byte) error,
 	recvFromStream func(ctx context.Context) ([]byte, error),
 	timeout time.Duration) (*GoBackNConn, error) {
@@ -21,11 +20,12 @@ func NewServerConn(ctx context.Context,
 	ctxc, cancel := context.WithCancel(ctx)
 
 	conn := &GoBackNConn{
+		maxChunkSize:      maxPayloadSize,
 		timeout:           timeout,
 		recvFromStream:    recvFromStream,
 		sendToStream:      sendToStream,
 		errChan:           make(chan error, 3),
-		sendDataChan:      make(chan []byte),
+		sendDataChan:      make(chan *PacketData),
 		quit:              make(chan struct{}),
 		handshakeComplete: make(chan struct{}),
 		isServer:          true,

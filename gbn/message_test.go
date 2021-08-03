@@ -20,14 +20,15 @@ func TestMsgSerializeDeserialize(t *testing.T) {
 		},
 		{
 			msg: &PacketData{
-				10,
-				[]byte{1, 2, 4, 5, 6, 7, 100},
+				Seq:     10,
+				Payload: []byte{1, 2, 4, 5, 6, 7, 100},
 			},
 		},
 		{
 			msg: &PacketData{
-				0,
-				[]byte{},
+				Seq:        0,
+				FinalChunk: true,
+				Payload:    []byte{},
 			},
 		},
 		{

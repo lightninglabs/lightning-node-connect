@@ -31,6 +31,11 @@ type GoBackNConn struct {
 	// no way to tell.
 	s uint8
 
+	// maxChunkSize is the maximum payload size in bytes allowed per
+	// message. If the payload to be sent is larger than maxChunkSize then
+	// the payload will be split between multiple packets.
+	maxChunkSize int
+
 	// sendSeqBase keeps track of the base of the send window and so
 	// represents the next ack that we expect from the receiver. The
 	// maximum value of sendSeqBase is s.
@@ -64,7 +69,7 @@ type GoBackNConn struct {
 	sendToStream   func(ctx context.Context, b []byte) error
 
 	recvDataChan chan *PacketData
-	sendDataChan chan []byte
+	sendDataChan chan *PacketData
 
 	isServer bool
 
@@ -97,14 +102,35 @@ func (g *GoBackNConn) Send(data []byte) error {
 	case <-g.handshakeComplete:
 	}
 
-	select {
-	case g.sendDataChan <- data:
-		return nil
-	case err := <-g.errChan:
-		return fmt.Errorf("cannot send, gbn exited: %v", err)
-	case <-g.quit:
+	// TODO(elle): use offsets rather than copying a possibly large slice
+	// of bytes
+	d := make([]byte, len(data))
+	copy(d, data)
+	for len(d) > 0 {
+		packet := &PacketData{}
+
+		if len(d) < g.maxChunkSize {
+			packet.Payload = d
+		} else {
+			packet.Payload = d[:g.maxChunkSize]
+		}
+
+		d = d[len(packet.Payload):]
+		if len(d) == 0 {
+			packet.FinalChunk = true
+		}
+
+		select {
+		case g.sendDataChan <- packet:
+			continue
+		case err := <-g.errChan:
+			return fmt.Errorf("cannot send, gbn exited: %v", err)
+		case <-g.quit:
+		}
+		return io.EOF
 	}
-	return io.EOF
+
+	return nil
 }
 
 // Recv blocks until it gets a recv with the correct sequence it was expecting.
@@ -116,14 +142,28 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 	case <-g.handshakeComplete:
 	}
 
-	select {
-	case msg := <-g.recvDataChan:
-		return msg.Payload, nil
-	case err := <-g.errChan:
-		return nil, fmt.Errorf("cannot receive, gbn exited: %v", err)
-	case <-g.quit:
+	var (
+		b   []byte
+		msg *PacketData
+	)
+
+	for {
+		select {
+		case err := <-g.errChan:
+			return nil, fmt.Errorf("cannot receive, gbn exited: %v", err)
+		case <-g.quit:
+			return nil, io.EOF
+		case msg = <-g.recvDataChan:
+		}
+
+		b = append(b, msg.Payload...)
+
+		if msg.FinalChunk {
+			break
+		}
 	}
-	return nil, io.EOF
+
+	return b, nil
 }
 
 // start kicks off the various goroutines needed by GoBackNConn.
@@ -390,7 +430,7 @@ func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
 func (g *GoBackNConn) sendPacketsForever() error {
 	n := g.n
 
-	var data []byte
+	var packet *PacketData
 	queue := make([]*PacketData, n)
 
 	resendQueue := func() error {
@@ -425,7 +465,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			select {
 			case <-g.quit:
 				return nil
-			case data = <-g.sendDataChan:
+			case packet = <-g.sendDataChan:
 			}
 		} else {
 			select {
@@ -436,7 +476,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 					return err
 				}
 				continue
-			case data = <-g.sendDataChan:
+			case packet = <-g.sendDataChan:
 			}
 		}
 
@@ -444,10 +484,8 @@ func (g *GoBackNConn) sendPacketsForever() error {
 
 		g.sendSeqMu.Lock()
 
-		packet := &PacketData{
-			Seq:     g.sendSeqTop,
-			Payload: data,
-		}
+		// Set the packet sequence number
+		packet.Seq = g.sendSeqTop
 
 		queue[g.sendQueueTop] = packet
 

@@ -11,6 +11,9 @@ const (
 	ACK    = 0x03
 	FIN    = 0x04
 	SYNACK = 0x05
+
+	notFinalChunk = 0x00
+	finalChunk    = 0x01
 )
 
 type Message interface {
@@ -18,8 +21,9 @@ type Message interface {
 }
 
 type PacketData struct {
-	Seq     uint8
-	Payload []byte
+	Seq        uint8
+	FinalChunk bool
+	Payload    []byte
 }
 
 var _ Message = (*PacketData)(nil)
@@ -32,6 +36,16 @@ func (m *PacketData) Serialize() ([]byte, error) {
 
 	if err := buf.WriteByte(m.Seq); err != nil {
 		return nil, err
+	}
+
+	if m.FinalChunk {
+		if err := buf.WriteByte(finalChunk); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := buf.WriteByte(notFinalChunk); err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err := buf.Write(m.Payload); err != nil {
@@ -114,12 +128,13 @@ func Deserialize(b []byte) (Message, error) {
 
 	switch b[0] {
 	case DATA:
-		if len(b) < 2 {
+		if len(b) < 3 {
 			return nil, io.EOF
 		}
 		return &PacketData{
-			Seq:     b[1],
-			Payload: b[2:],
+			Seq:        b[1],
+			FinalChunk: b[2] == finalChunk,
+			Payload:    b[3:],
 		}, nil
 	case ACK:
 		if len(b) < 2 {

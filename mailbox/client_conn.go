@@ -29,9 +29,10 @@ var (
 		},
 	}
 
-	retryWait        = 2000 * time.Millisecond
-	gbnTimeout       = 1000 * time.Millisecond
-	gbnN       uint8 = 100
+	retryWait               = 2000 * time.Millisecond
+	gbnTimeout              = 1000 * time.Millisecond
+	gbnMaxPayloadSize       = 20 * 1024 // 20KB
+	gbnN              uint8 = 100
 )
 
 // ClientConn is a type that establishes a base transport connection to a
@@ -254,7 +255,8 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 	c.connKit.serverAddr = serverHost
 
 	gbnConn, err := gbn.NewClientConn(
-		gbnN, c.sendToStream, c.recvFromStream, gbnTimeout,
+		gbnN, gbnMaxPayloadSize, c.sendToStream, c.recvFromStream,
+		gbnTimeout,
 	)
 	if err != nil {
 		return nil, err
