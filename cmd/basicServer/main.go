@@ -63,12 +63,8 @@ func main() {
 	s := &mockrpc.Server{}
 	largeResp := make([]byte, 1024*1024*4)
 	rand.Read(largeResp)
-	s.SetResponse(largeResp)
 
-	grpcServer := grpc.NewServer(
-		grpc.Creds(noiseConn),
-		grpc.WriteBufferSize(1024*1024*40),
-	)
+	grpcServer := grpc.NewServer(grpc.Creds(noiseConn))
 	mockrpc.RegisterMockServiceServer(grpcServer, s)
 
 	wg := sync.WaitGroup{}

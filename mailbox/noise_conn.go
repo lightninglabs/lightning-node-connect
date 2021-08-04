@@ -8,10 +8,15 @@ import (
 	"google.golang.org/grpc/credentials"
 	"net"
 	"strings"
+	"sync"
 )
 
 var _ credentials.TransportCredentials = (*NoiseConn)(nil)
 var _ credentials.PerRPCCredentials = (*NoiseConn)(nil)
+
+const (
+	defaultGrpcWriteBufSize = 32 * 1024
+)
 
 // NoiseConn is a type that implements the credentials.TransportCredentials
 // interface and can therefore be used as a replacement of the default TLS
@@ -24,6 +29,9 @@ type NoiseConn struct {
 
 	localKey  keychain.SingleKeyECDH
 	remoteKey *btcec.PublicKey
+
+	nextMsg    []byte
+	nextMsgMtx sync.Mutex
 }
 
 // NewNoiseConn creates a new noise connection using given local ECDH key. The
@@ -43,6 +51,18 @@ func NewNoiseConn(localKey keychain.SingleKeyECDH,
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseConn) Read(b []byte) (n int, err error) {
+	c.nextMsgMtx.Lock()
+	defer c.nextMsgMtx.Unlock()
+
+	// The last read was incomplete, return the few bytes that didn't fit.
+	if len(c.nextMsg) > 0 {
+		msgLen := len(c.nextMsg)
+		copy(b, c.nextMsg)
+
+		c.nextMsg = nil
+		return msgLen, nil
+	}
+
 	msg := NewMsgData(ProtocolVersion, nil)
 	if err := c.Conn.ReceiveControlMsg(msg); err != nil {
 		return 0, fmt.Errorf("error receiving data msg: %v", err)
@@ -51,6 +71,19 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 	requestBytes, err := Decrypt(msg.Payload, c.secret[:])
 	if err != nil {
 		return 0, fmt.Errorf("error decrypting payload: %v", err)
+	}
+
+	// Do we need to read this message in two parts? We cannot give the
+	// gRPC layer above us more than the default read buffer size of 32k
+	// bytes at a time.
+	if len(requestBytes) > defaultGrpcWriteBufSize {
+		nextMsgLen := len(requestBytes) - defaultGrpcWriteBufSize
+		c.nextMsg = make([]byte, nextMsgLen)
+
+		copy(c.nextMsg[0:nextMsgLen], requestBytes[defaultGrpcWriteBufSize:])
+
+		copy(b, requestBytes[0:defaultGrpcWriteBufSize])
+		return defaultGrpcWriteBufSize, nil
 	}
 
 	copy(b, requestBytes)
@@ -62,7 +95,6 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseConn) Write(b []byte) (int, error) {
-	log.Debugf("len bytes pre noise %d", len(b))
 	payload, err := Encrypt(b, c.secret[:])
 	if err != nil {
 		return 0, fmt.Errorf("error encrypting response: %v", err)

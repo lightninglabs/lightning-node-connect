@@ -5,16 +5,13 @@ import (
 )
 
 type Server struct {
-	response []byte
 }
 
-func (s *Server) SetResponse(resp []byte) {
-	s.response = resp
-}
+func (s *Server) MockServiceMethod(_ context.Context, req *Request) (*Response,
+	error) {
 
-func (s *Server) MockServiceMethod(_ context.Context, _ *Request) (*Response, error) {
 	return &Response{
-		Resp: s.response,
+		Resp: req.Req,
 	}, nil
 }
 

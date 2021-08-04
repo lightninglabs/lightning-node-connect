@@ -4,7 +4,6 @@ require (
 	github.com/btcsuite/btcd v0.21.0-beta.0.20210513141527-ee5896bad5be
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/go-errors/errors v1.0.1
-	github.com/golang/protobuf v1.5.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/kkdai/bstream v0.0.0-20181106074824-b3251f7901ec
 	github.com/lightninglabs/aperture v0.1.6-beta
@@ -21,6 +20,6 @@ replace git.schwanenlied.me/yawning/bsaes.git => github.com/Yawning/bsaes v0.0.0
 
 replace github.com/lightninglabs/terminal-connect/hashmailrpc => ./hashmailrpc
 
-replace github.com/lightninglabs/aperture => github.com/lightninglabs/aperture-mailbox v0.0.0-20210802144248-77bd17f2f80b
+replace github.com/lightninglabs/aperture => github.com/lightninglabs/aperture-mailbox v0.0.0-20210804114510-9d65506d6d2d
 
 go 1.16

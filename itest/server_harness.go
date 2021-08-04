@@ -13,8 +13,6 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-const defaultServerResponse = "defaultServerResponse"
-
 type serverHarness struct {
 	serverHost string
 	mockServer *grpc.Server
@@ -65,9 +63,10 @@ func (s *serverHarness) start() error {
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
 
-	s.mockServer = grpc.NewServer(grpc.Creds(noiseConn))
+	s.mockServer = grpc.NewServer(
+		grpc.Creds(noiseConn), grpc.MaxRecvMsgSize(1024 * 1024 * 200),
+	)
 	s.server = &mockrpc.Server{}
-	s.server.SetResponse([]byte(defaultServerResponse))
 
 	mockrpc.RegisterMockServiceServer(s.mockServer, s.server)
 

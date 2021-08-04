@@ -111,7 +111,7 @@ func (s *Server) Close() error {
 
 	if s.mailboxConn != nil {
 		if err := s.mailboxConn.Stop(); err != nil {
-			log.Errorf("error closing mailboxConn %w", err)
+			log.Errorf("error closing mailboxConn %v", err)
 		}
 	}
 	s.cancel()
