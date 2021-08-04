@@ -12,15 +12,13 @@ import (
 // The timeout parameter defines the duration to wait before resending data
 // if the corresponding ACK for the data is not received.
 func NewServerConn(ctx context.Context,
-	maxPayloadSize int,
 	sendToStream func(ctx context.Context, b []byte) error,
 	recvFromStream func(ctx context.Context) ([]byte, error),
-	timeout time.Duration) (*GoBackNConn, error) {
+	timeout time.Duration, opts ...Option) (*GoBackNConn, error) {
 
 	ctxc, cancel := context.WithCancel(ctx)
 
 	conn := &GoBackNConn{
-		maxChunkSize:      maxPayloadSize,
 		timeout:           timeout,
 		recvFromStream:    recvFromStream,
 		sendToStream:      sendToStream,
@@ -31,6 +29,11 @@ func NewServerConn(ctx context.Context,
 		isServer:          true,
 		ctx:               ctxc,
 		cancel:            cancel,
+	}
+
+	// Apply functional options
+	for _, o := range opts {
+		o(conn)
 	}
 
 	go func() {

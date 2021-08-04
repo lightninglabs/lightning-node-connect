@@ -14,10 +14,9 @@ import (
 // The timeout parameter defines the duration to wait before resending data
 // if the corresponding ACK for the data is not received.
 func NewClientConn(n uint8,
-	maxPayloadSize int,
 	sendToStream func(ctx context.Context, b []byte) error,
 	receiveFromStream func(ctx context.Context) ([]byte, error),
-	timeout time.Duration) (*GoBackNConn, error) {
+	timeout time.Duration, opts ...Option) (*GoBackNConn, error) {
 
 	if n == math.MaxUint8 {
 		return nil, fmt.Errorf("n must be smaller than %d",
@@ -29,7 +28,6 @@ func NewClientConn(n uint8,
 	conn := &GoBackNConn{
 		n:                 n,
 		s:                 n + 1,
-		maxChunkSize:      maxPayloadSize,
 		timeout:           timeout,
 		recvFromStream:    receiveFromStream,
 		sendToStream:      sendToStream,
@@ -41,6 +39,11 @@ func NewClientConn(n uint8,
 		isServer:          false,
 		ctx:               ctx,
 		cancel:            cancel,
+	}
+
+	// Apply functional options
+	for _, o := range opts {
+		o(conn)
 	}
 
 	go func() {

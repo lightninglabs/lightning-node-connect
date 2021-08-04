@@ -34,6 +34,8 @@ type GoBackNConn struct {
 	// maxChunkSize is the maximum payload size in bytes allowed per
 	// message. If the payload to be sent is larger than maxChunkSize then
 	// the payload will be split between multiple packets.
+	// If maxChunkSize is zero then it is disabled and data won't be split
+	// between packets.
 	maxChunkSize int
 
 	// sendSeqBase keeps track of the base of the send window and so
@@ -102,6 +104,25 @@ func (g *GoBackNConn) Send(data []byte) error {
 	case <-g.handshakeComplete:
 	}
 
+	if g.maxChunkSize == 0 {
+		// Splitting is disabled
+
+		packet := &PacketData{
+			Payload:    data,
+			FinalChunk: true,
+		}
+		select {
+		case g.sendDataChan <- packet:
+			return nil
+		case err := <-g.errChan:
+			return fmt.Errorf("cannot send, gbn exited: %v", err)
+		case <-g.quit:
+			return io.EOF
+		}
+	}
+
+	// Splitting is enabled. Split into packets no larger than g.maxChunkSize
+	//
 	// TODO(elle): use offsets rather than copying a possibly large slice
 	// of bytes
 	d := make([]byte, len(data))

@@ -29,10 +29,11 @@ var (
 		},
 	}
 
-	retryWait               = 2000 * time.Millisecond
-	gbnTimeout              = 1000 * time.Millisecond
-	gbnMaxPayloadSize       = 20 * 1024 // 20KB
-	gbnN              uint8 = 100
+	retryWait        = 2000 * time.Millisecond
+	gbnTimeout       = 1000 * time.Millisecond
+	gbnN       uint8 = 100
+
+	webSocketRecvLimit int64 = 100 * 1024 // 100KB
 )
 
 // ClientConn is a type that establishes a base transport connection to a
@@ -195,7 +196,7 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context) {
 			log.Debugf("Client: error creating receive socket %w", err)
 			continue
 		}
-
+		receiveSocket.SetReadLimit(webSocketRecvLimit)
 		c.receiveSocket = receiveSocket
 
 		receiveInit := &hashmailrpc.CipherBoxDesc{
@@ -255,8 +256,7 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 	c.connKit.serverAddr = serverHost
 
 	gbnConn, err := gbn.NewClientConn(
-		gbnN, gbnMaxPayloadSize, c.sendToStream, c.recvFromStream,
-		gbnTimeout,
+		gbnN, c.sendToStream, c.recvFromStream, gbnTimeout,
 	)
 	if err != nil {
 		return nil, err
