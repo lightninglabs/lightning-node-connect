@@ -62,6 +62,7 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseConn) Write(b []byte) (int, error) {
+	log.Debugf("len bytes pre noise %d", len(b))
 	payload, err := Encrypt(b, c.secret[:])
 	if err != nil {
 		return 0, fmt.Errorf("error encrypting response: %v", err)

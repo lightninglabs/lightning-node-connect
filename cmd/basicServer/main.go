@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"sync"
 
@@ -59,8 +60,16 @@ func main() {
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
 
-	grpcServer := grpc.NewServer(grpc.Creds(noiseConn))
-	mockrpc.RegisterHelloServer(grpcServer, &mockrpc.Server{})
+	s := &mockrpc.Server{}
+	largeResp := make([]byte, 1024*1024*4)
+	rand.Read(largeResp)
+	s.SetResponse(largeResp)
+
+	grpcServer := grpc.NewServer(
+		grpc.Creds(noiseConn),
+		grpc.WriteBufferSize(1024*1024*40),
+	)
+	mockrpc.RegisterMockServiceServer(grpcServer, s)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)

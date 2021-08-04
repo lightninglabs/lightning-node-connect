@@ -13,9 +13,12 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+const defaultServerResponse = "defaultServerResponse"
+
 type serverHarness struct {
 	serverHost string
 	mockServer *grpc.Server
+	server     *mockrpc.Server
 	password   [8]string
 
 	errChan chan error
@@ -63,8 +66,10 @@ func (s *serverHarness) start() error {
 	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
 
 	s.mockServer = grpc.NewServer(grpc.Creds(noiseConn))
+	s.server = &mockrpc.Server{}
+	s.server.SetResponse([]byte(defaultServerResponse))
 
-	mockrpc.RegisterHelloServer(s.mockServer, &mockrpc.Server{})
+	mockrpc.RegisterMockServiceServer(s.mockServer, s.server)
 
 	s.wg.Add(1)
 	go func() {

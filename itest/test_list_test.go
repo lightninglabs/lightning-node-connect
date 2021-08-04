@@ -13,4 +13,8 @@ var testCases = []*testCase{
 		name: "test client reconnect",
 		test: testClientReconnect,
 	},
+	{
+		name: "test large response",
+		test: testLargeResponse,
+	},
 }

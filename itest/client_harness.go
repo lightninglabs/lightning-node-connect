@@ -18,7 +18,7 @@ type clientHarness struct {
 	serverAddr string
 
 	grpcConn   *grpc.ClientConn
-	clientConn mockrpc.HelloClient
+	clientConn mockrpc.MockServiceClient
 }
 
 func newClientHarness(serverAddress string) *clientHarness {
@@ -50,6 +50,8 @@ func (c *clientHarness) setConn(words []string) error {
 		grpc.WithContextDialer(transportConn.Dial),
 		grpc.WithTransportCredentials(noiseConn),
 		grpc.WithPerRPCCredentials(noiseConn),
+		grpc.WithReadBufferSize(33 * 1024),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024 * 1024 * 200)),
 	}
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
@@ -62,7 +64,7 @@ func (c *clientHarness) setConn(words []string) error {
 	}
 
 	c.grpcConn = client
-	c.clientConn = mockrpc.NewHelloClient(client)
+	c.clientConn = mockrpc.NewMockServiceClient(client)
 
 	return nil
 }

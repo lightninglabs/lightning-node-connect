@@ -48,23 +48,24 @@ func main() {
 		client.Close()
 	}()
 
-	c := mockrpc.NewHelloClient(client)
+	c := mockrpc.NewMockServiceClient(client)
 
 	if err := chatWithLND(c); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func chatWithLND(c mockrpc.HelloClient) error {
-	for i := 0; i < 3; i++ {
-		t := time.Now()
-		resp, err := c.SayHello(context.Background(), &mockrpc.SayHelloReq{})
+func chatWithLND(c mockrpc.MockServiceClient) error {
+	for i := 0; i < 1; i++ {
+		//t := time.Now()
+		_, err := c.MockServiceMethod(context.Background(), &mockrpc.Request{})
 		if err != nil {
 			return err
 		}
 
-		fmt.Println(resp.Hello, time.Since(t))
-		time.Sleep(5 * time.Second)
+		fmt.Println("got the thing")
+		//fmt.Println(resp.Hello, time.Since(t))
+		//time.Sleep(5 * time.Second)
 	}
 
 	return nil

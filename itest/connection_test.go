@@ -2,6 +2,7 @@ package itest
 
 import (
 	"context"
+	"crypto/rand"
 	"time"
 
 	"github.com/lightninglabs/terminal-connect/itest/mockrpc"
@@ -12,13 +13,12 @@ import (
 // as expected in the case where no connections are dropped.
 func testHappyPath(t *harnessTest) {
 	ctx := context.Background()
-
 	for i := 0; i < 3; i++ {
-		resp, err := t.client.clientConn.SayHello(
-			ctx, &mockrpc.SayHelloReq{},
+		resp, err := t.client.clientConn.MockServiceMethod(
+			ctx, &mockrpc.Request{},
 		)
 		require.NoError(t.t, err)
-		require.Equal(t.t, "Wassup", resp.Hello)
+		require.Equal(t.t, defaultServerResponse, string(resp.Resp))
 		t.t.Logf("Done with one call")
 	}
 }
@@ -28,11 +28,11 @@ func testHappyPath(t *harnessTest) {
 func testHashmailServerReconnect(t *harnessTest) {
 	ctx := context.Background()
 
-	resp, err := t.client.clientConn.SayHello(
-		ctx, &mockrpc.SayHelloReq{},
+	resp, err := t.client.clientConn.MockServiceMethod(
+		ctx, &mockrpc.Request{},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, "Wassup", resp.Hello)
+	require.Equal(t.t, defaultServerResponse, string(resp.Resp))
 	t.t.Logf("Done with initial call")
 
 	// Shut down hashmail server
@@ -47,22 +47,22 @@ func testHashmailServerReconnect(t *harnessTest) {
 
 	time.Sleep(5000 * time.Millisecond)
 
-	resp, err = t.client.clientConn.SayHello(
-		ctx, &mockrpc.SayHelloReq{},
+	resp, err = t.client.clientConn.MockServiceMethod(
+		ctx, &mockrpc.Request{},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, "Wassup", resp.Hello)
+	require.Equal(t.t, defaultServerResponse, string(resp.Resp))
 	t.t.Logf("Done with second call")
 }
 
 func testClientReconnect(t *harnessTest) {
 	ctx := context.Background()
 
-	resp, err := t.client.clientConn.SayHello(
-		ctx, &mockrpc.SayHelloReq{},
+	resp, err := t.client.clientConn.MockServiceMethod(
+		ctx, &mockrpc.Request{},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, "Wassup", resp.Hello)
+	require.Equal(t.t, defaultServerResponse, string(resp.Resp))
 	t.t.Logf("Done with initial call")
 
 	require.NoError(t.t, t.client.cleanup())
@@ -75,10 +75,24 @@ func testClientReconnect(t *harnessTest) {
 
 	time.Sleep(5000 * time.Millisecond)
 
-	resp, err = t.client.clientConn.SayHello(
-		ctx, &mockrpc.SayHelloReq{},
+	resp, err = t.client.clientConn.MockServiceMethod(
+		ctx, &mockrpc.Request{},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, "Wassup", resp.Hello)
+	require.Equal(t.t, defaultServerResponse, string(resp.Resp))
 	t.t.Logf("Done with second call")
+}
+
+func testLargeResponse(t *harnessTest) {
+	ctx := context.Background()
+
+	largeResp := make([]byte, 1024*1024*100)
+	rand.Read(largeResp)
+	t.server.server.SetResponse(largeResp)
+
+	resp, err := t.client.clientConn.MockServiceMethod(
+		ctx, &mockrpc.Request{},
+	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, largeResp, resp.Resp)
 }
