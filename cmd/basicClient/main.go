@@ -10,6 +10,8 @@ import (
 	"os"
 	"time"
 
+	"google.golang.org/grpc/keepalive"
+
 	"github.com/lightninglabs/terminal-connect/gbn"
 
 	"github.com/lightningnetwork/lnd"
@@ -56,16 +58,15 @@ func main() {
 }
 
 func chatWithLND(c mockrpc.MockServiceClient) error {
-	for i := 0; i < 1; i++ {
-		//t := time.Now()
+	for i := 0; i < 3; i++ {
+		t := time.Now()
 		_, err := c.MockServiceMethod(context.Background(), &mockrpc.Request{})
 		if err != nil {
 			return err
 		}
 
-		fmt.Println("got the thing")
-		//fmt.Println(resp.Hello, time.Since(t))
-		//time.Sleep(5 * time.Second)
+		fmt.Println("got the thing", time.Since(t))
+		time.Sleep(5 * time.Second)
 	}
 
 	return nil
@@ -97,6 +98,11 @@ func lndConn(words []string) (*grpc.ClientConn, error) {
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
 		),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                15 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	}
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{

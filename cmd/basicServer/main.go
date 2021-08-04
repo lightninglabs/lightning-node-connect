@@ -7,6 +7,9 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
+
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/lightninglabs/terminal-connect/gbn"
 
@@ -64,7 +67,17 @@ func main() {
 	largeResp := make([]byte, 1024*1024*4)
 	rand.Read(largeResp)
 
-	grpcServer := grpc.NewServer(grpc.Creds(noiseConn))
+	grpcServer := grpc.NewServer(
+		grpc.Creds(noiseConn),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    time.Second * 10,
+			Timeout: time.Second * 5,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	)
 	mockrpc.RegisterMockServiceServer(grpcServer, s)
 
 	wg := sync.WaitGroup{}

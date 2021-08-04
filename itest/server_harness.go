@@ -3,6 +3,9 @@ package itest
 import (
 	"crypto/tls"
 	"sync"
+	"time"
+
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/lightninglabs/terminal-connect/itest/mockrpc"
 
@@ -64,7 +67,16 @@ func (s *serverHarness) start() error {
 	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
 
 	s.mockServer = grpc.NewServer(
-		grpc.Creds(noiseConn), grpc.MaxRecvMsgSize(1024 * 1024 * 200),
+		grpc.Creds(noiseConn),
+		grpc.MaxRecvMsgSize(1024*1024*200),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    time.Second * 10,
+			Timeout: time.Second * 5,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	)
 	s.server = &mockrpc.Server{}
 

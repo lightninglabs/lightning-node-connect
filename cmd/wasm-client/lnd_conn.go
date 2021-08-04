@@ -6,11 +6,13 @@ import (
 	"context"
 	"crypto/sha512"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/terminal-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
@@ -37,14 +39,14 @@ func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
 		grpc.WithContextDialer(transportConn.Dial),
 		grpc.WithTransportCredentials(noiseConn),
 		grpc.WithPerRPCCredentials(noiseConn),
-
-		// TODO(elle): Investigate why the server is sending a
-		// buffer larger than the default 32KB in the first place.
-		grpc.WithReadBufferSize(33 * 1024),
-
-		// TODO(elle): Increase if aperture's throttle limit is
-		// increased.
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024 * 1024 * 5)),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
+		),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                15 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	}
 
 	return grpc.DialContext(ctx, cfg.MailboxServer, dialOpts...)
