@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +47,7 @@ func main() {
 
 	// mailboxServer implements net.Listener
 	mailboxServer, err := mailbox.NewServer(
-		"127.0.0.1:11110",
+		"localhost:11110",
 		passwordEntropy[:],
 		grpc.WithTransportCredentials(
 			credentials.NewTLS(&tls.Config{
@@ -64,8 +63,6 @@ func main() {
 	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
 
 	s := &mockrpc.Server{}
-	largeResp := make([]byte, 1024*1024*4)
-	rand.Read(largeResp)
 
 	grpcServer := grpc.NewServer(
 		grpc.Creds(noiseConn),
@@ -77,6 +74,7 @@ func main() {
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
+		grpc.MaxRecvMsgSize(1024*1024*200),
 	)
 	mockrpc.RegisterMockServiceServer(grpcServer, s)
 

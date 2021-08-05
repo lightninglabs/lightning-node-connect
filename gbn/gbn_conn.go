@@ -9,10 +9,12 @@ import (
 	"time"
 )
 
-var (
-	errTransportClosing = errors.New("gbn transport is closing")
+var errTransportClosing = errors.New("gbn transport is closing")
 
-	handshakeTimeout = 2 * time.Second
+const (
+	defaultHandshakeTimeout = 100 * time.Millisecond
+	defaultResendTimeout    = 100 * time.Millisecond
+	finSendTimeout          = 1000 * time.Millisecond
 )
 
 type GoBackNConn struct {
@@ -65,7 +67,9 @@ type GoBackNConn struct {
 	// initRecv is true if we have received our first PacketData
 	initRecv bool
 
-	timeout time.Duration
+	// resendTimeout is the duration that will be waited before resending
+	// the packets in the current queue.
+	resendTimeout time.Duration
 
 	recvFromStream func(ctx context.Context) ([]byte, error)
 	sendToStream   func(ctx context.Context, b []byte) error
@@ -75,12 +79,10 @@ type GoBackNConn struct {
 
 	isServer bool
 
-	errChan chan error
-
-	// quit is used to stop the normal operations of the connection.
-	// Once closed, the send and receive streams will still be available
-	// for the FIN sequence.
-	quit chan struct{}
+	// handshakeTimeout is the time after which the server or client
+	// will abort and restart the handshake if the expected response is
+	// not received from the peer.
+	handshakeTimeout time.Duration
 
 	// handshakeComplete is used to signal if the handshake is complete
 	// or not. If the channel is closed then the handshake is complete.
@@ -92,7 +94,14 @@ type GoBackNConn struct {
 	// remoteClosed is true if the remote party initiated the FIN sequence.
 	remoteClosed bool
 
+	// quit is used to stop the normal operations of the connection.
+	// Once closed, the send and receive streams will still be available
+	// for the FIN sequence.
+	quit chan struct{}
+
 	wg sync.WaitGroup
+
+	errChan chan error
 }
 
 // Send blocks until an ack is received for the packet sent N packets before.
@@ -235,7 +244,7 @@ func (g *GoBackNConn) Close() error {
 	case <-g.handshakeComplete:
 		if !g.remoteClosed {
 			log.Debugf("Try sending FIN, isServer=%v", g.isServer)
-			ctxc, _ := context.WithTimeout(g.ctx, 1000*time.Millisecond)
+			ctxc, _ := context.WithTimeout(g.ctx, finSendTimeout)
 			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
 				log.Errorf("Error sending FIN: %v", err)
 			}
@@ -492,7 +501,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			select {
 			case <-g.quit:
 				return nil
-			case <-time.After(g.timeout):
+			case <-time.After(g.resendTimeout):
 				if err := resendQueue(); err != nil {
 					return err
 				}
@@ -528,11 +537,12 @@ func (g *GoBackNConn) sendPacketsForever() error {
 		for {
 			log.Debugf("queue is full. wait for acks (isServer=%v)", g.isServer)
 
-			// Need to wait for acks. Wait for timeout and then check again.
+			// Need to wait for acks. Wait for timeout and then
+			// check again.
 			// TODO(elle): should select on a signal that alerts us
 			// of the queue size decreasing or base seq incrementing.
 			select {
-			case <-time.After(g.timeout):
+			case <-time.After(g.resendTimeout):
 			case <-g.quit:
 				return nil
 			}
@@ -541,8 +551,8 @@ func (g *GoBackNConn) sendPacketsForever() error {
 				break
 			}
 
-			// Since we have now waited for the timeout and still have not
-			// received necessary acks, we resend the queue
+			// Since we have now waited for the timeout and still
+			// have not received necessary acks, we resend the queue.
 			if err := resendQueue(); err != nil {
 				return err
 			}

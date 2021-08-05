@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/lightninglabs/terminal-connect/gbn"
 
@@ -61,7 +62,9 @@ func NewServerConn(ctx context.Context, serverHost string,
 
 	log.Debugf("ServerConn: creating gbn, waiting for sync")
 	gbnConn, err := gbn.NewServerConn(
-		ctxc, c.sendToStream, c.recvFromStream, gbnTimeout,
+		ctxc, c.sendToStream, c.recvFromStream,
+		gbn.WithTimeout(gbnTimeout),
+		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
 	)
 	if err != nil {
 		return nil, err
@@ -90,7 +93,9 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 
 	log.Debugf("ServerConn: creating gbn")
 	gbnConn, err := gbn.NewServerConn(
-		sc.ctx, sc.sendToStream, sc.recvFromStream, gbnTimeout,
+		sc.ctx, sc.sendToStream, sc.recvFromStream,
+		gbn.WithTimeout(gbnTimeout),
+		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
 	)
 	if err != nil {
 		return nil, err
@@ -102,14 +107,14 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 	return sc, nil
 }
 
+// recvFromStream is used to receive a payload from the receive stream.
 func (c *ServerConn) recvFromStream(ctx context.Context) ([]byte, error) {
 	c.receiveStreamMu.Lock()
 	if c.receiveStream == nil {
-		c.createReceiveMailBox(ctx)
+		c.createReceiveMailBox(ctx, 0)
 	}
 	c.receiveStreamMu.Unlock()
 
-	waiter := gbn.NewBackoffWaiter(0, gbnTimeout, retryWait)
 	for {
 		select {
 		case <-c.quit:
@@ -125,8 +130,7 @@ func (c *ServerConn) recvFromStream(ctx context.Context) ([]byte, error) {
 			log.Debugf("Server: got failure on receive socket, "+
 				"re-trying: %v", err)
 
-			waiter.Wait()
-			c.createReceiveMailBox(ctx)
+			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
 
 			continue
@@ -136,14 +140,14 @@ func (c *ServerConn) recvFromStream(ctx context.Context) ([]byte, error) {
 	}
 }
 
+// sendToStream is used to send a payload on the send stream.
 func (c *ServerConn) sendToStream(ctx context.Context, payload []byte) error {
 	c.sendStreamMu.Lock()
 	if c.sendStream == nil {
-		c.createSendMailBox(ctx)
+		c.createSendMailBox(ctx, 0)
 	}
 	c.sendStreamMu.Unlock()
 
-	waiter := gbn.NewBackoffWaiter(0, gbnTimeout, retryWait)
 	for {
 		select {
 		case <-c.quit:
@@ -164,8 +168,7 @@ func (c *ServerConn) sendToStream(ctx context.Context, payload []byte) error {
 			log.Debugf("Server: got failure on send socket, "+
 				"re-trying: %v", err)
 
-			waiter.Wait()
-			c.createSendMailBox(ctx)
+			c.createSendMailBox(ctx, retryWait)
 			c.sendStreamMu.Unlock()
 
 			continue
@@ -206,8 +209,13 @@ func (c *ServerConn) SendControlMsg(controlMsg ControlMsg) error {
 	return c.gbnConn.Send(payload)
 }
 
-func (c *ServerConn) createReceiveMailBox(ctx context.Context) {
-	waiter := gbn.NewBackoffWaiter(0, gbnTimeout, retryWait)
+// createReceiveMailBox attempts to create a cipher box on the hashmail server
+// and then to fetch the read stream of that cipher box. It retries until it
+// succeeds or the ServerConn quits or the passed in context is canceled.
+func (c *ServerConn) createReceiveMailBox(ctx context.Context,
+	initialBackoff time.Duration) {
+
+	waiter := gbn.NewBackoffWaiter(initialBackoff, gbnTimeout, retryWait)
 	for {
 		select {
 		case <-c.quit:
@@ -250,8 +258,13 @@ func (c *ServerConn) createReceiveMailBox(ctx context.Context) {
 	}
 }
 
-func (c *ServerConn) createSendMailBox(ctx context.Context) {
-	waiter := gbn.NewBackoffWaiter(0, gbnTimeout, retryWait)
+// createSendMailBox creates a cipher box on the hashmail server and fetches
+// the send stream of the cipher box. It retries until it succeeds or until the
+// ServerConn is closing or the passed context is canceled.
+func (c *ServerConn) createSendMailBox(ctx context.Context,
+	initialBackoff time.Duration) {
+
+	waiter := gbn.NewBackoffWaiter(initialBackoff, gbnTimeout, retryWait)
 	for {
 		select {
 		case <-c.quit:

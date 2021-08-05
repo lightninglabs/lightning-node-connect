@@ -11,12 +11,12 @@ import (
 // NewClientConn creates a new bidirectional Go-Back-N client.
 // The sendStream function must write to the underlying transport stream.
 // The receiveStream function must read from an underlying transport stream.
-// The timeout parameter defines the duration to wait before resending data
+// The resendTimeout parameter defines the duration to wait before resending data
 // if the corresponding ACK for the data is not received.
 func NewClientConn(n uint8,
 	sendToStream func(ctx context.Context, b []byte) error,
 	receiveFromStream func(ctx context.Context) ([]byte, error),
-	timeout time.Duration, opts ...Option) (*GoBackNConn, error) {
+	opts ...Option) (*GoBackNConn, error) {
 
 	if n == math.MaxUint8 {
 		return nil, fmt.Errorf("n must be smaller than %d",
@@ -28,7 +28,8 @@ func NewClientConn(n uint8,
 	conn := &GoBackNConn{
 		n:                 n,
 		s:                 n + 1,
-		timeout:           timeout,
+		resendTimeout:     defaultResendTimeout,
+		handshakeTimeout:  defaultHandshakeTimeout,
 		recvFromStream:    receiveFromStream,
 		sendToStream:      sendToStream,
 		recvDataChan:      make(chan *PacketData, n),
@@ -59,13 +60,13 @@ func NewClientConn(n uint8,
 
 // clientHandshake initiates the client side GBN handshake.
 // The handshake sequence from the client side is as follows:
-// 1. The client sends SYN to the server along with the N value that the
-//    client wishes to use for the connection.
-// 2. The client then waits for the server to respond with SYN.
+// 1.  The client sends SYN to the server along with the N value that the
+//     client wishes to use for the connection.
+// 2.  The client then waits for the server to respond with SYN.
 // 3a. If the client receives SYN from the server then the client sends back
-//    SYNACK.
+//     SYNACK.
 // 3b. If the client does not receive SYN from the server within a given
-//     timeout, then the client restarts the handshake from step1.
+//     timeout, then the client restarts the handshake from step 1.
 func (g *GoBackNConn) clientHandshake() error {
 	// Spin off the recv function in a goroutine so that we can use
 	// a select to choose to timeout waiting for data from the receive
@@ -122,8 +123,8 @@ handshake:
 
 			var b []byte
 			select {
-			case <-time.Tick(handshakeTimeout):
-				log.Debugf("SYN timeout. Resending SYN.")
+			case <-time.Tick(g.handshakeTimeout):
+				log.Debugf("SYN resendTimeout. Resending SYN.")
 				continue handshake
 			case err := <-errChan:
 				return err

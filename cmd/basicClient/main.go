@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"time"
@@ -58,9 +59,14 @@ func main() {
 }
 
 func chatWithLND(c mockrpc.MockServiceClient) error {
+
+	largeResp := make([]byte, 1024*1024*4)
+	rand.Read(largeResp)
+	req := &mockrpc.Request{Req: largeResp}
+
 	for i := 0; i < 3; i++ {
 		t := time.Now()
-		_, err := c.MockServiceMethod(context.Background(), &mockrpc.Request{})
+		_, err := c.MockServiceMethod(context.Background(), req)
 		if err != nil {
 			return err
 		}

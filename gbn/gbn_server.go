@@ -9,22 +9,23 @@ import (
 // NewServerConn creates a new bidirectional Go-Back-N server.
 // The sendStream function must write to the underlying transport stream.
 // The receiveStream function must read from an underlying transport stream.
-// The timeout parameter defines the duration to wait before resending data
+// The resendTimeout parameter defines the duration to wait before resending data
 // if the corresponding ACK for the data is not received.
 func NewServerConn(ctx context.Context,
 	sendToStream func(ctx context.Context, b []byte) error,
 	recvFromStream func(ctx context.Context) ([]byte, error),
-	timeout time.Duration, opts ...Option) (*GoBackNConn, error) {
+	opts ...Option) (*GoBackNConn, error) {
 
 	ctxc, cancel := context.WithCancel(ctx)
 
 	conn := &GoBackNConn{
-		timeout:           timeout,
+		resendTimeout:     defaultHandshakeTimeout,
 		recvFromStream:    recvFromStream,
 		sendToStream:      sendToStream,
 		errChan:           make(chan error, 3),
 		sendDataChan:      make(chan *PacketData),
 		quit:              make(chan struct{}),
+		handshakeTimeout:  defaultHandshakeTimeout,
 		handshakeComplete: make(chan struct{}),
 		isServer:          true,
 		ctx:               ctxc,
@@ -49,12 +50,12 @@ func NewServerConn(ctx context.Context,
 
 // serverHandshake initiates the server side GBN handshake.
 // The server handshake sequence is as follows:
-// 1. The server waits for a SYN message from the client.
-// 2. The server then responds with a SYN message.
-// 3. The server waits for a SYNACK message from the client.
-// 4a. If the server receives the SYNACK message before a timeout, the hand
+// 1.  The server waits for a SYN message from the client.
+// 2.  The server then responds with a SYN message.
+// 3.  The server waits for a SYNACK message from the client.
+// 4a. If the server receives the SYNACK message before a resendTimeout, the hand
 //     is considered complete.
-// 4b. If SYNACK is not received before a certain timeout
+// 4b. If SYNACK is not received before a certain resendTimeout
 func (g *GoBackNConn) serverHandshake() error {
 	recvChan := make(chan []byte)
 	recvNext := make(chan int, 1)
@@ -118,8 +119,8 @@ func (g *GoBackNConn) serverHandshake() error {
 		}
 
 		select {
-		case <-time.Tick(handshakeTimeout):
-			log.Debugf("SYNCACK timeout. Abort and wait for" +
+		case <-time.Tick(g.handshakeTimeout):
+			log.Debugf("SYNCACK resendTimeout. Abort and wait for" +
 				"client to re-initiate")
 			continue
 		case err := <-errChan:

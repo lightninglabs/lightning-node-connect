@@ -1031,18 +1031,14 @@ func setUpClientServerConns(t *testing.T, n uint8,
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		server, err = NewServerConn(
-			ctx, sWrite, sRead, 500*time.Millisecond, opts...,
-		)
+		server, err = NewServerConn(ctx, sWrite, sRead, opts...)
 		require.NoError(t, err)
 	}()
 
 	// Give the server time to be ready for the handshake
 	time.Sleep(time.Millisecond * 200)
 
-	client, err := NewClientConn(
-		n, cWrite, cRead, 500*time.Millisecond, opts...,
-	)
+	client, err := NewClientConn(n, cWrite, cRead, opts...)
 	require.NoError(t, err)
 
 	wg.Wait()

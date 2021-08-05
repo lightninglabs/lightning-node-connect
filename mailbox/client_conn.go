@@ -28,12 +28,37 @@ var (
 			EmitUnpopulated: true,
 		},
 	}
+)
 
-	retryWait        = 2000 * time.Millisecond
-	gbnTimeout       = 1000 * time.Millisecond
-	gbnN       uint8 = 100
+const (
+	// retryWait is the duration that we will wait before retrying to
+	// connect to the hashmail server if a connection error occurred.
+	retryWait = 2000 * time.Millisecond
 
+	// gbnTimeout is the timeout that we want the gbn connection to wait
+	// to receive ACKS from the peer before resending the queue.
+	gbnTimeout = 1000 * time.Millisecond
+
+	// gbnN is the queue size, N, that the gbn server will use. The gbn
+	// server will send up to N packets before requiring an ACK for the
+	// first packet in the queue.
+	gbnN uint8 = 100
+
+	// gbnHandshakeTimeout is the time after which the gbn connection
+	// will abort and restart the handshake after not receiving a response
+	// from the peer. This timeout needs to be long enough for the server to
+	// set up the clients send stream cipher box.
+	gbnHandshakeTimeout = 2000 * time.Millisecond
+
+	// webSocketRecvLimit is used to set the websocket receive limit. The
+	// default value of 32KB is enough due to the fact that grpc has a
+	// default packet maximum of 32KB which we then further wrap in gbn and
+	// hashmail messages.
 	webSocketRecvLimit int64 = 100 * 1024 // 100KB
+
+	// sendSocketTimeout is the timeout used for context cancellation on the
+	// send socket.
+	sendSocketTimeout = 1000 * time.Millisecond
 )
 
 // ClientConn is a type that establishes a base transport connection to a
@@ -76,10 +101,14 @@ func NewClientConn(ctx context.Context, receiveSID,
 	return c
 }
 
+// recvFromStream is used to receive a payload from the receive socket.
+// The function is passed to and used by the gbn connection.
+// It therefore takes in and reacts on the cancellation of a context so that
+// the gbn connection is able to close independently of the ClientConn.
 func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 	c.receiveStreamMu.Lock()
 	if c.receiveSocket == nil {
-		c.createReceiveMailBox(ctx)
+		c.createReceiveMailBox(ctx, 0)
 	}
 	c.receiveStreamMu.Unlock()
 
@@ -98,10 +127,8 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 			log.Debugf("Client: got failure on receive socket, "+
 				"re-trying: %v", err)
 
-			time.Sleep(retryWait)
-			c.createReceiveMailBox(ctx)
+			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
-
 			continue
 		}
 		unwrapped, err := stripJSONWrapper(string(msg))
@@ -109,10 +136,8 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 			log.Debugf("Client: got error message from receive "+
 				"socket: %v", err)
 
-			time.Sleep(retryWait)
-			c.createReceiveMailBox(ctx)
+			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
-
 			continue
 		}
 		c.receiveStreamMu.Unlock()
@@ -127,13 +152,19 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 	}
 }
 
+// sendToStream is used to send a payload on the send socket. The function
+// is passed to and used by the gbn connection. It therefore takes in and
+// reacts on the cancellation of a context so that the gbn connection is able to
+// close independently of the ClientConn.
 func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
+	// Set up the send socket if it has not yet been initialized.
 	c.sendStreamMu.Lock()
 	if c.sendSocket == nil {
-		c.createSendMailBox(ctx)
+		c.createSendMailBox(ctx, 0)
 	}
 	c.sendStreamMu.Unlock()
 
+	// Retry sending the payload to the hashmail server until it succeeds.
 	for {
 		select {
 		case <-c.quit:
@@ -156,16 +187,14 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 		}
 
 		c.sendStreamMu.Lock()
-		ctxt, _ := context.WithTimeout(c.ctx, time.Second)
+		ctxt, _ := context.WithTimeout(c.ctx, sendSocketTimeout)
 		err = c.sendSocket.Write(ctxt, websocket.MessageText, sendInitBytes)
 		if err != nil {
 			log.Debugf("Client: got failure on send socket, "+
 				"re-trying: %v", err)
 
-			time.Sleep(retryWait)
-			c.createSendMailBox(ctx)
+			c.createSendMailBox(ctx, retryWait)
 			c.sendStreamMu.Unlock()
-
 			continue
 		}
 		c.sendStreamMu.Unlock()
@@ -174,8 +203,16 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 	}
 }
 
-func (c *ClientConn) createReceiveMailBox(ctx context.Context) {
-	var delay time.Duration
+// createReceiveMailBox attempts to connect to the hashmail server and
+// initialize a read stream for the given mailbox ID. It retries if any errors
+// occur.
+// TODO(elle): maybe have a max number of retries and close the connection if
+// that maximum is exceeded.
+func (c *ClientConn) createReceiveMailBox(ctx context.Context,
+	initialBackoff time.Duration) {
+
+	waiter := gbn.NewBackoffWaiter(initialBackoff, retryWait, retryWait)
+
 	for {
 		select {
 		case <-c.quit:
@@ -185,8 +222,7 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context) {
 		default:
 		}
 
-		time.Sleep(delay)
-		delay = retryWait
+		waiter.Wait()
 
 		receiveAddr := fmt.Sprintf(
 			addrFormat, c.serverAddr, receivePath,
@@ -216,13 +252,18 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context) {
 			continue
 		}
 
-		log.Debugf("Client: receive mailbox")
+		log.Debugf("Client: receive mailbox initialized")
 		return
 	}
 }
 
-func (c *ClientConn) createSendMailBox(ctx context.Context) {
-	var delay time.Duration
+// createSendMailBox attempts to open a websocket to the hashmail server that
+// will be used to send packets on.
+func (c *ClientConn) createSendMailBox(ctx context.Context,
+	initialBackoff time.Duration) {
+
+	waiter := gbn.NewBackoffWaiter(initialBackoff, retryWait, retryWait)
+
 	for {
 		select {
 		case <-c.quit:
@@ -232,8 +273,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context) {
 		default:
 		}
 
-		time.Sleep(delay)
-		delay = retryWait
+		waiter.Wait()
 
 		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
 		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
@@ -244,7 +284,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context) {
 
 		c.sendSocket = sendSocket
 
-		log.Debugf("Client: Send mailbox")
+		log.Debugf("Client: Send mailbox created")
 		return
 	}
 }
@@ -256,7 +296,9 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 	c.connKit.serverAddr = serverHost
 
 	gbnConn, err := gbn.NewClientConn(
-		gbnN, c.sendToStream, c.recvFromStream, gbnTimeout,
+		gbnN, c.sendToStream, c.recvFromStream,
+		gbn.WithTimeout(gbnTimeout),
+		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
 	)
 	if err != nil {
 		return nil, err
