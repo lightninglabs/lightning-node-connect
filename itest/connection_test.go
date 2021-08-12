@@ -22,7 +22,7 @@ func testHappyPath(t *harnessTest) {
 			ctx, &mockrpc.Request{Req: defaultMessage},
 		)
 		require.NoError(t.t, err)
-		require.Equal(t.t, defaultMessage, resp.Resp)
+		require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 		t.t.Logf("Done with one call")
 	}
 }
@@ -36,7 +36,7 @@ func testHashmailServerReconnect(t *harnessTest) {
 		ctx, &mockrpc.Request{Req: defaultMessage},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, defaultMessage, resp.Resp)
+	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 	t.t.Logf("Done with initial call")
 
 	// Shut down hashmail server
@@ -55,7 +55,7 @@ func testHashmailServerReconnect(t *harnessTest) {
 		ctx, &mockrpc.Request{Req: defaultMessage},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, defaultMessage, resp.Resp)
+	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 	t.t.Logf("Done with second call")
 }
 
@@ -66,7 +66,7 @@ func testClientReconnect(t *harnessTest) {
 		ctx, &mockrpc.Request{Req: defaultMessage},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, defaultMessage, resp.Resp)
+	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 	t.t.Logf("Done with initial call")
 
 	require.NoError(t.t, t.client.cleanup())
@@ -83,20 +83,20 @@ func testClientReconnect(t *harnessTest) {
 		ctx, &mockrpc.Request{Req: defaultMessage},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, defaultMessage, resp.Resp)
+	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 	t.t.Logf("Done with second call")
 }
 
 func testLargeResponse(t *harnessTest) {
 	ctx := context.Background()
 
-	largeReq := make([]byte, 1024*1024*50)
-	_, err := rand.Read(largeReq)
+	req := make([]byte, 0.5*1024*1024) // a 0.5MB req will return a 5MB resp
+	_, err := rand.Read(req)
 	require.NoError(t.t, err)
 
 	resp, err := t.client.clientConn.MockServiceMethod(
-		ctx, &mockrpc.Request{Req: largeReq},
+		ctx, &mockrpc.Request{Req: req},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, largeReq, resp.Resp)
+	require.Equal(t.t, len(req)*10, len(resp.Resp))
 }
