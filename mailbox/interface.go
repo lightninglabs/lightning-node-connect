@@ -191,6 +191,7 @@ type ControlMsg interface {
 // a connection attempt. This message is somewhat analogous to a TCP SYN message
 // and is needed to establish the low-level mailbox connection before the
 // higher-level noise handshake can begin.
+// TODO(elle): maybe remove? is handled on a lower level.
 type MsgConnect struct {
 	// version is the protocol version used for this message.
 	version uint8
