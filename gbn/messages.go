@@ -9,8 +9,9 @@ const (
 	SYN    = 0x01
 	DATA   = 0x02
 	ACK    = 0x03
-	FIN    = 0x04
-	SYNACK = 0x05
+	NACK   = 0x04
+	FIN    = 0x05
+	SYNACK = 0x06
 
 	notFinalChunk = 0x00
 	finalChunk    = 0x01
@@ -93,6 +94,25 @@ func (m *PacketSYN) Serialize() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type PacketNACK struct {
+	Seq uint8
+}
+
+var _ Message = (*PacketNACK)(nil)
+
+func (m *PacketNACK) Serialize() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := buf.WriteByte(NACK); err != nil {
+		return nil, err
+	}
+
+	if err := buf.WriteByte(m.Seq); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
 type PacketFIN struct {
 }
 
@@ -141,6 +161,13 @@ func Deserialize(b []byte) (Message, error) {
 			return nil, io.EOF
 		}
 		return &PacketACK{
+			Seq: b[1],
+		}, nil
+	case NACK:
+		if len(b) < 2 {
+			return nil, io.EOF
+		}
+		return &PacketNACK{
 			Seq: b[1],
 		}, nil
 	case SYN:

@@ -183,7 +183,6 @@ func (c *ServerConn) sendToStream(ctx context.Context, payload []byte) error {
 //
 // NOTE: This is part of the Conn interface.
 func (c *ServerConn) ReceiveControlMsg(receive ControlMsg) error {
-	log.Debugf("Server: waiting for %T", receive)
 	msg, err := c.gbnConn.Recv()
 	if err != nil {
 		return fmt.Errorf("error reading from go-back-n: %v", err)
@@ -205,7 +204,6 @@ func (c *ServerConn) SendControlMsg(controlMsg ControlMsg) error {
 	if err != nil {
 		return fmt.Errorf("error serializing message: %v", err)
 	}
-	log.Debugf("Server: sending %T", controlMsg)
 	return c.gbnConn.Send(payload)
 }
 

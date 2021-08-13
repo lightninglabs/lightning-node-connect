@@ -11,6 +11,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestQueueSize(t *testing.T) {
+	gbn := &GoBackNConn{
+		s:           4,
+		sendSeqBase: 0,
+		sendSeqTop:  0,
+	}
+
+	require.Equal(t, uint8(0), gbn.queueSize())
+
+	gbn.sendSeqBase = 2
+	gbn.sendSeqTop = 3
+	require.Equal(t, uint8(1), gbn.queueSize())
+
+	gbn.sendSeqBase = 3
+	gbn.sendSeqTop = 2
+	require.Equal(t, uint8(3), gbn.queueSize())
+}
+
 func TestNormal(t *testing.T) {
 	s1Chan := make(chan []byte, 10)
 	s2Chan := make(chan []byte, 10)

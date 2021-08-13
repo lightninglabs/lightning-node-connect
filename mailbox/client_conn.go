@@ -42,7 +42,7 @@ const (
 	// gbnN is the queue size, N, that the gbn server will use. The gbn
 	// server will send up to N packets before requiring an ACK for the
 	// first packet in the queue.
-	gbnN uint8 = 100
+	gbnN uint8 = 20
 
 	// gbnHandshakeTimeout is the time after which the gbn connection
 	// will abort and restart the handshake after not receiving a response
@@ -314,7 +314,6 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 //
 // NOTE: This is part of the Conn interface.
 func (c *ClientConn) ReceiveControlMsg(receive ControlMsg) error {
-	log.Debugf("Client: waiting for %T", receive)
 	msg, err := c.gbnConn.Recv()
 	if err != nil {
 		return fmt.Errorf("error receiving from go-back-n "+
@@ -333,7 +332,6 @@ func (c *ClientConn) SendControlMsg(controlMsg ControlMsg) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("Client: sending %T", controlMsg)
 	return c.gbnConn.Send(payloadBytes)
 }
 

@@ -19,6 +19,11 @@ func TestMsgSerializeDeserialize(t *testing.T) {
 			},
 		},
 		{
+			msg: &PacketNACK{
+				128,
+			},
+		},
+		{
 			msg: &PacketData{
 				Seq:     10,
 				Payload: []byte{1, 2, 4, 5, 6, 7, 100},

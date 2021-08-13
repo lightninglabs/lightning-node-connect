@@ -28,6 +28,8 @@ func NewServerConn(ctx context.Context,
 		handshakeTimeout:  defaultHandshakeTimeout,
 		handshakeComplete: make(chan struct{}),
 		isServer:          true,
+		receivedACKSignal: make(chan struct{}),
+		resendSignal:      make(chan struct{}, 1),
 		ctx:               ctxc,
 		cancel:            cancel,
 	}
