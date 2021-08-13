@@ -1,9 +1,14 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "hashmail.proto",
+    "title": "hashmail-lnd.proto",
     "version": "version not set"
   },
+  "tags": [
+    {
+      "name": "HashMail"
+    }
+  ],
   "consumes": [
     "application/json"
   ],
@@ -14,7 +19,7 @@
     "/v1/terminal-connect/hashmail": {
       "delete": {
         "summary": "DelCipherBox attempts to tear down an existing cipher box pipe. The same\nauthentication mechanism used to initially create the stream MUST be\nspecified.",
-        "operationId": "DelCipherBox",
+        "operationId": "HashMail_DelCipherBox",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -23,9 +28,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -44,7 +49,7 @@
       },
       "post": {
         "summary": "NewCipherBox creates a new cipher box pipe/stream given a valid\nauthentication mechanism. If the authentication mechanism has been revoked,\nor needs to be changed, then a CipherChallenge message is returned.\nOtherwise the method will either be accepted or rejected.",
-        "operationId": "NewCipherBox",
+        "operationId": "HashMail_NewCipherBox",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -53,9 +58,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -77,7 +82,7 @@
     "/v1/terminal-connect/hashmail/receive": {
       "post": {
         "summary": "RecvStream opens up the read side of the passed CipherBox pipe. This method\nwill block until a full message has been read as this is a message based\npipe/stream abstraction.",
-        "operationId": "RecvStream",
+        "operationId": "HashMail_RecvStream",
         "responses": {
           "200": {
             "description": "A successful response.(streaming responses)",
@@ -88,16 +93,16 @@
                   "$ref": "#/definitions/hashmailrpcCipherBox"
                 },
                 "error": {
-                  "$ref": "#/definitions/runtimeStreamError"
+                  "$ref": "#/definitions/rpcStatus"
                 }
               },
               "title": "Stream result of hashmailrpcCipherBox"
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -119,7 +124,7 @@
     "/v1/terminal-connect/hashmail/send": {
       "post": {
         "summary": "SendStream opens up the write side of the passed CipherBox pipe. Writes\nwill be non-blocking up to the buffer size of the pipe. Beyond that writes\nwill block until completed.",
-        "operationId": "SendStream",
+        "operationId": "HashMail_SendStream",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -128,9 +133,9 @@
             }
           },
           "default": {
-            "description": "An unexpected error response",
+            "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/runtimeError"
+              "$ref": "#/definitions/rpcStatus"
             }
           }
         },
@@ -234,42 +239,14 @@
         }
       }
     },
-    "runtimeError": {
+    "rpcStatus": {
       "type": "object",
       "properties": {
-        "error": {
-          "type": "string"
-        },
         "code": {
           "type": "integer",
           "format": "int32"
         },
         "message": {
-          "type": "string"
-        },
-        "details": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/protobufAny"
-          }
-        }
-      }
-    },
-    "runtimeStreamError": {
-      "type": "object",
-      "properties": {
-        "grpc_code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "http_code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "message": {
-          "type": "string"
-        },
-        "http_status": {
           "type": "string"
         },
         "details": {
