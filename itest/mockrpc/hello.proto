@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package mockrpc;
+
+option go_package = "github.com/lightninglabs/terminal-connect/itest/mockrpc";
+
+service MockService { rpc MockServiceMethod(Request) returns (Response); }
+
+message Request { bytes req = 1; }
+
+message Response { bytes resp = 1; }
