@@ -71,6 +71,7 @@ func main() {
 	js.Global().Set(
 		"wasmClientIsConnected", js.FuncOf(wasmClientIsConnected),
 	)
+	js.Global().Set("wasmClientDisconnect", js.FuncOf(wasmClientDisconnect))
 	js.Global().Set("wasmClientInvokeRPC", js.FuncOf(wasmClientInvokeRPC))
 	for _, registration := range registrations {
 		registration(registry)
@@ -107,9 +108,7 @@ func main() {
 	select {
 	case <-shutdownInterceptor.ShutdownChannel():
 		log.Debugf("Shutting down WASM client")
-		if err := lndConn.Close(); err != nil {
-			log.Errorf("Error closing RPC connection: %v", err)
-		}
+		_ = wasmClientDisconnect(js.ValueOf(nil), nil)
 		log.Debugf("Shutdown of WASM client complete")
 	}
 }
@@ -153,6 +152,16 @@ func wasmClientConnectServer(_ js.Value, args []js.Value) interface{} {
 
 func wasmClientIsConnected(_ js.Value, _ []js.Value) interface{} {
 	return js.ValueOf(lndConn != nil)
+}
+
+func wasmClientDisconnect(_ js.Value, _ []js.Value) interface{} {
+	if lndConn != nil {
+		if err := lndConn.Close(); err != nil {
+			log.Errorf("Error closing RPC connection: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func wasmClientInvokeRPC(_ js.Value, args []js.Value) interface{} {

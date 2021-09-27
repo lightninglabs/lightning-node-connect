@@ -65,6 +65,8 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             if (result === true) {
                 clearInterval(connectedTicker);
                 $('#ready').show();
+                document.getElementById('runButton').disabled = true;
+                window.onunload = wasmClientDisconnect;
             }
         }
         connectedTicker = setInterval(isConnected, 200);
