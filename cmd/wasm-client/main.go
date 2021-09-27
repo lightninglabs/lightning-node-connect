@@ -32,6 +32,7 @@ type stubPackageRegistration func(map[string]func(context.Context,
 	*grpc.ClientConn, string, func(string, error)))
 
 var (
+	cfg     = config{}
 	lndConn *grpc.ClientConn
 
 	registry = make(map[string]func(context.Context, *grpc.ClientConn,
@@ -64,12 +65,16 @@ func main() {
 
 	// Setup JS callbacks.
 	js.Global().Set("wasmClientIsReady", js.FuncOf(wasmClientIsReady))
+	js.Global().Set(
+		"wasmClientConnectServer", js.FuncOf(wasmClientConnectServer),
+	)
+	js.Global().Set(
+		"wasmClientIsConnected", js.FuncOf(wasmClientIsConnected),
+	)
 	js.Global().Set("wasmClientInvokeRPC", js.FuncOf(wasmClientInvokeRPC))
 	for _, registration := range registrations {
 		registration(registry)
 	}
-
-	cfg := config{}
 
 	// Parse command line flags.
 	parser := flags.NewParser(&cfg, flags.Default)
@@ -81,14 +86,6 @@ func main() {
 	}
 	if err != nil {
 		exit(err)
-	}
-
-	// Disable TLS verification for the REST connections if this is a dev
-	// server.
-	if cfg.MailboxDevServer {
-		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
-		}
 	}
 
 	// Hook interceptor for os signals.
@@ -105,19 +102,12 @@ func main() {
 		exit(err)
 	}
 
-	conn, err := mailboxRPCConnection(&cfg)
-	if err != nil {
-		exit(err)
-	}
-
-	lndConn = conn
-
-	log.Debugf("WASM client ready and connected to RPC")
+	log.Debugf("WASM client ready for connecting")
 
 	select {
 	case <-shutdownInterceptor.ShutdownChannel():
 		log.Debugf("Shutting down WASM client")
-		if err := conn.Close(); err != nil {
+		if err := lndConn.Close(); err != nil {
 			log.Errorf("Error closing RPC connection: %v", err)
 		}
 		log.Debugf("Shutdown of WASM client complete")
@@ -125,6 +115,43 @@ func main() {
 }
 
 func wasmClientIsReady(_ js.Value, _ []js.Value) interface{} {
+	// This will always return true. So as soon as this method is called
+	// successfully the JS part knows the WASM instance is fully started up
+	// and ready to connect.
+	return js.ValueOf(true)
+}
+
+func wasmClientConnectServer(_ js.Value, args []js.Value) interface{} {
+	if len(args) != 3 {
+		return js.ValueOf("invalid use of wasmClientConnectServer, " +
+			"need 3 parameters: server, isDevServer, pairingPhrase")
+	}
+
+	mailboxServer := args[0].String()
+	isDevServer := args[1].Bool()
+	pairingPhrase := args[2].String()
+
+	// Disable TLS verification for the REST connections if this is a dev
+	// server.
+	if isDevServer {
+		defaultHttpTransport := http.DefaultTransport.(*http.Transport)
+		defaultHttpTransport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+
+	var err error
+	lndConn, err = mailboxRPCConnection(mailboxServer, pairingPhrase)
+	if err != nil {
+		exit(err)
+	}
+
+	log.Debugf("WASM client connected to RPC")
+
+	return nil
+}
+
+func wasmClientIsConnected(_ js.Value, _ []js.Value) interface{} {
 	return js.ValueOf(lndConn != nil)
 }
 
