@@ -15,8 +15,10 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
-	words := strings.Split(cfg.MailboxPassword, " ")
+func mailboxRPCConnection(mailboxServer,
+	pairingPhrase string) (*grpc.ClientConn, error) {
+
+	words := strings.Split(pairingPhrase, " ")
 	var mnemonicWords [mailbox.NumPasswordWords]string
 	copy(mnemonicWords[:], words)
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
@@ -49,5 +51,5 @@ func mailboxRPCConnection(cfg *config) (*grpc.ClientConn, error) {
 		}),
 	}
 
-	return grpc.DialContext(ctx, cfg.MailboxServer, dialOpts...)
+	return grpc.DialContext(ctx, mailboxServer, dialOpts...)
 }

@@ -29,50 +29,60 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     }
 
     const go = new Go();
-    let mod, inst;
     WebAssembly.instantiateStreaming(fetch('wasm-client.wasm'), go.importObject).then((result) => {
-        mod = result.module;
-        inst = result.instance;
-        document.getElementById('runButton').disabled = false;
+        startInstance(result.module, result.instance);
     }).catch((err) => {
         console.error(err);
     });
 
-    async function run() {
+    async function startInstance(module, instance) {
         console.clear();
-        let server = $('#server').val();
-        let password = $('#password').val();
         go.argv = [
             'wasm-client',
             '--debuglevel=trace',
-            '--mailboxdevserver',
-            '--mailboxserver', server,
-            '--mailboxpassword', password,
         ];
         let readyTicker = null;
         let isReady = function () {
             let result = wasmClientIsReady();
-            console.log(result);
+            console.log('Is WASM client ready? Result: ' + result);
             if (result === true) {
                 clearInterval(readyTicker);
-                $('#ready').show();
+                document.getElementById('runButton').disabled = false;
             }
         }
-        readyTicker = setInterval(isReady, 500);
-        await go.run(inst);
-        inst = await WebAssembly.instantiate(mod, go.importObject); // reset instance
+        readyTicker = setInterval(isReady, 200);
+        await go.run(instance);
+        await WebAssembly.instantiate(module, go.importObject);
+    }
+
+    async function connectServer() {
+        let server = $('#server').val();
+        let password = $('#password').val();
+        let connectedTicker = null;
+        let isConnected = function () {
+            let result = wasmClientIsConnected();
+            console.log('Is WASM client connected? Result: ' + result);
+            if (result === true) {
+                clearInterval(connectedTicker);
+                $('#ready').show();
+                document.getElementById('runButton').disabled = true;
+                window.onunload = wasmClientDisconnect;
+            }
+        }
+        connectedTicker = setInterval(isConnected, 200);
+        wasmClientConnectServer(server, true, password);
     }
 
     async function callWASM(rpcName, req) {
-        wasmClientInvokeRPC('lnrpc.Lightning.'+rpcName, req, setResult);
+        wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
     }
 
     async function callWASMLoop(rpcName, req) {
-        wasmClientInvokeRPC('looprpc.SwapClient.'+rpcName, req, setResult);
+        wasmClientInvokeRPC('looprpc.SwapClient.' + rpcName, req, setResult);
     }
 
     async function callWASMPool(rpcName, req) {
-        wasmClientInvokeRPC('poolrpc.Trader.'+rpcName, req, setResult);
+        wasmClientInvokeRPC('poolrpc.Trader.' + rpcName, req, setResult);
     }
 
     function setResult(result) {
@@ -85,7 +95,8 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 <label for="server">Server: </label>
 <input id="server" type="text" size="50" maxlength="255"
        value="localhost:11110">
-<button onClick="run();" id="runButton" disabled>Run</button>
+<button onClick="connectServer();" id="runButton" disabled>Connect to server
+</button>
 
 <br /><br />
 
@@ -98,13 +109,19 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     <button onClick="callWASM('ListChannels', '{}');">ListChannels</button>
     <button onClick="callWASM('ListPeers', '{}');">ListPeers</button>
     <button onClick="callWASM('WalletBalance', '{}');">WalletBalance</button>
-    <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;WITNESS_PUBKEY_HASH&quot;}');">New P2WKH address</button>
-    <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;NESTED_PUBKEY_HASH&quot;}');">New NP2WKH address</button>
-    <button onClick="callWASM('SubscribeTransactions', '{}');">SubscribeTransactions</button>
-    
+    <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;WITNESS_PUBKEY_HASH&quot;}');">
+        New P2WKH address
+    </button>
+    <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;NESTED_PUBKEY_HASH&quot;}');">
+        New NP2WKH address
+    </button>
+    <button onClick="callWASM('SubscribeTransactions', '{}');">
+        SubscribeTransactions
+    </button>
+
     <h2>Loop</h2>
     <button onClick="callWASMLoop('LoopOutTerms', '{}');">LoopOutTerms</button>
-    
+
     <h2>Pool</h2>
     <button onClick="callWASMPool('GetInfo', '{}');">GetInfo</button>
 </div>
