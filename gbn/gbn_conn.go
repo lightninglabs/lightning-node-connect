@@ -20,6 +20,9 @@ const (
 	finSendTimeout          = 1000 * time.Millisecond
 )
 
+type sendBytesFunc func(ctx context.Context, b []byte) error
+type recvBytesFunc func(ctx context.Context) ([]byte, error)
+
 type GoBackNConn struct {
 	// n is the window size. The sender can send a maximum of n packets
 	// before requiring an ack from the receiver for the first packet in
@@ -70,8 +73,8 @@ type GoBackNConn struct {
 	resendTimeout time.Duration
 	resendTicker  *time.Ticker
 
-	recvFromStream func(ctx context.Context) ([]byte, error)
-	sendToStream   func(ctx context.Context, b []byte) error
+	recvFromStream recvBytesFunc
+	sendToStream   sendBytesFunc
 
 	recvDataChan chan *PacketData
 	sendDataChan chan *PacketData
@@ -119,6 +122,30 @@ type GoBackNConn struct {
 	wg sync.WaitGroup
 
 	errChan chan error
+}
+
+// newGoBackNConn creates a GoBackNConn instance with all the members which
+// are common between client and server initialised.
+func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
+	recvFunc recvBytesFunc, isServer bool) *GoBackNConn {
+
+	ctxc, cancel := context.WithCancel(ctx)
+
+	return &GoBackNConn{
+		resendTimeout:     defaultResendTimeout,
+		recvFromStream:    recvFunc,
+		sendToStream:      sendFunc,
+		sendDataChan:      make(chan *PacketData),
+		isServer:          isServer,
+		handshakeTimeout:  defaultHandshakeTimeout,
+		handshakeComplete: make(chan struct{}),
+		receivedACKSignal: make(chan struct{}),
+		resendSignal:      make(chan struct{}, 1),
+		ctx:               ctxc,
+		cancel:            cancel,
+		quit:              make(chan struct{}),
+		errChan:           make(chan error, 3),
+	}
 }
 
 // Send blocks until an ack is received for the packet sent N packets before.
