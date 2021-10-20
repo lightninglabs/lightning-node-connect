@@ -23,7 +23,8 @@ type ServerConn struct {
 
 	client hashmailrpc.HashMailClient
 
-	gbnConn *gbn.GoBackNConn
+	gbnConn    *gbn.GoBackNConn
+	gbnOptions []gbn.Option
 
 	receiveBoxCreated bool
 	receiveStream     hashmailrpc.HashMail_RecvStreamClient
@@ -51,6 +52,11 @@ func NewServerConn(ctx context.Context, serverHost string,
 		client: client,
 		cancel: cancel,
 		quit:   make(chan struct{}),
+		gbnOptions: []gbn.Option{
+			gbn.WithTimeout(gbnTimeout),
+			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+			gbn.WithKeepalivePing(gbnServerPingTimeout),
+		},
 	}
 	c.connKit = &connKit{
 		ctx:        ctxc,
@@ -62,9 +68,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 
 	log.Debugf("ServerConn: creating gbn, waiting for sync")
 	gbnConn, err := gbn.NewServerConn(
-		ctxc, c.sendToStream, c.recvFromStream,
-		gbn.WithTimeout(gbnTimeout),
-		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+		ctxc, c.sendToStream, c.recvFromStream, c.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err
@@ -87,15 +91,14 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 		receiveStreamMu:   s.receiveStreamMu,
 		sendBoxCreated:    s.sendBoxCreated,
 		sendStreamMu:      s.sendStreamMu,
+		gbnOptions:        s.gbnOptions,
 		cancel:            s.cancel,
 		quit:              make(chan struct{}),
 	}
 
 	log.Debugf("ServerConn: creating gbn")
 	gbnConn, err := gbn.NewServerConn(
-		sc.ctx, sc.sendToStream, sc.recvFromStream,
-		gbn.WithTimeout(gbnTimeout),
-		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+		sc.ctx, sc.sendToStream, sc.recvFromStream, sc.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err

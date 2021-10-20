@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var errTransportClosing = errors.New("gbn transport is closing")
+var (
+	errTransportClosing = errors.New("gbn transport is closing")
+	errKeepaliveTimeout = errors.New("no pong received")
+)
 
 const (
 	defaultHandshakeTimeout = 100 * time.Millisecond
@@ -65,6 +68,7 @@ type GoBackNConn struct {
 	// resendTimeout is the duration that will be waited before resending
 	// the packets in the current queue.
 	resendTimeout time.Duration
+	resendTicker  *time.Ticker
 
 	recvFromStream func(ctx context.Context) ([]byte, error)
 	sendToStream   func(ctx context.Context, b []byte) error
@@ -89,12 +93,17 @@ type GoBackNConn struct {
 	receivedACKSignal chan struct{}
 
 	// resendSignal is used to signal that normal operation sending should
-	// stop and and the current queue contents should first be resent.
+	// stop and the current queue contents should first be resent. Note
+	// that this channel should only be listened on in one place.
 	resendSignal chan struct{}
 
 	// lastResend is the time that the queue was last resent. This is
 	// used to limit the frequency at which we resend the queue.
 	lastResend time.Time
+
+	pingTime   time.Duration
+	pingTicker *time.Ticker
+	pongWait   chan struct{}
 
 	ctx    context.Context
 	cancel func()
@@ -209,6 +218,13 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 func (g *GoBackNConn) start() {
 	log.Debugf("Starting (isServer=%v)", g.isServer)
 
+	g.pingTicker = &time.Ticker{}
+	if g.pingTime != 0 {
+		g.pingTicker = time.NewTicker(g.pingTime)
+	}
+
+	g.resendTicker = time.NewTicker(g.resendTimeout)
+
 	g.wg.Add(1)
 	go func() {
 		defer g.wg.Done()
@@ -251,7 +267,7 @@ func (g *GoBackNConn) Close() error {
 	select {
 	case <-g.handshakeComplete:
 		if !g.remoteClosed {
-			log.Debugf("Try sending FIN, isServer=%v", g.isServer)
+			log.Tracef("Try sending FIN, isServer=%v", g.isServer)
 			ctxc, _ := context.WithTimeout(g.ctx, finSendTimeout)
 			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
 				log.Errorf("Error sending FIN: %v", err)
@@ -338,14 +354,15 @@ func (g *GoBackNConn) sendPacketsForever() error {
 
 	// resendQueue re-sends the current contents of the queue.
 	resendQueue := func() error {
-
 		if time.Since(g.lastResend) < g.handshakeTimeout {
 			log.Tracef("Resent the queue recently.")
 
 			return nil
 		}
 
-		log.Tracef("Resending the queue")
+		if g.queueSize() == 0 {
+			return nil
+		}
 
 		g.lastResend = time.Now()
 
@@ -356,6 +373,12 @@ func (g *GoBackNConn) sendPacketsForever() error {
 		g.sendSeqBaseMu.RLock()
 		base := g.sendSeqBase
 		g.sendSeqBaseMu.RUnlock()
+
+		if base == top {
+			return nil
+		}
+
+		log.Tracef("Resending the queue")
 
 		for base != top {
 			packet := queue[base]
@@ -372,42 +395,45 @@ func (g *GoBackNConn) sendPacketsForever() error {
 	}
 
 	for {
-		if g.queueSize() == 0 {
-			// If the queue is empty, then wait for new data to
-			// arrive on sendDataChan.
+		// The queue is not empty. If we receive a resend signal
+		// or if the resend timeout passes then we resend the
+		// current contents of the queue. Otherwise, wait for
+		// more data to arrive on sendDataChan.
+		select {
+		case <-g.quit:
+			return nil
+
+		case <-g.resendSignal:
+			if err := resendQueue(); err != nil {
+				return err
+			}
+			continue
+
+		case <-g.resendTicker.C:
+			if err := resendQueue(); err != nil {
+				return err
+			}
+			continue
+
+		case <-g.pingTicker.C:
 			select {
-			case <-g.quit:
-				return nil
-			case packet = <-g.sendDataChan:
+			case g.pongWait <- struct{}{}:
+			default:
+				// already waiting for pong. Timed
+				// out. close conn.
+				return errKeepaliveTimeout
 			}
 
-		} else {
-			// The queue is not empty. If we receive a resend signal
-			// or if the resend timeout passes then we resend the
-			// current contents of the queue. Otherwise, wait for
-			// more data to arrive on sendDataChan.
-			//
-			// TODO(elle): If the queue space is large and new
-			// data keeps coming on the sendDataChan then
-			// we dont actually timeout and resend the queue if we
-			// never get incorrect acks or nacks. There should be
-			// a ticker that is reset if the queue base is bumped
-			// and that ticks after a timeout.
-			select {
-			case <-g.quit:
-				return nil
-			case <-g.resendSignal:
-				if err := resendQueue(); err != nil {
-					return err
-				}
-				continue
-			case <-time.After(g.resendTimeout):
-				if err := resendQueue(); err != nil {
-					return err
-				}
-				continue
-			case packet = <-g.sendDataChan:
+			log.Tracef(
+				"Sending a PING packet (isServer=%v)",
+				g.isServer,
+			)
+
+			packet = &PacketData{
+				IsPing: true,
 			}
+
+		case packet = <-g.sendDataChan:
 		}
 
 		// New data has arrived that we need to add to the queue and
@@ -445,7 +471,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 				return nil
 			case <-g.receivedACKSignal:
 				break
-			case <-time.After(g.resendTimeout):
+			case <-g.resendTicker.C:
 				if err := resendQueue(); err != nil {
 					return err
 				}
@@ -483,6 +509,17 @@ func (g *GoBackNConn) receivePacketsForever() error {
 			return fmt.Errorf("deserialize error: %s", err)
 		}
 
+		// If keepalive is enabled, reset the ping timer if any packet
+		// is received and remove any contents from the pongWait
+		// channel.
+		if g.pingTime != 0 {
+			g.pingTicker.Reset(g.pingTime)
+			select {
+			case <-g.pongWait:
+			default:
+			}
+		}
+
 		switch m := msg.(type) {
 		case *PacketData:
 			switch m.Seq == g.recvSeq {
@@ -504,6 +541,12 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				}
 
 				g.recvSeq = (g.recvSeq + 1) % g.s
+
+				// If the packet was a ping, then there is no
+				// data to return to the above layer.
+				if m.IsPing {
+					continue
+				}
 
 				// Pass the returned packet to the layer above
 				// GBN.
@@ -568,6 +611,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				)
 
 				g.sendSeqBase = (g.sendSeqBase + 1) % g.s
+				g.resendTicker.Reset(g.resendTimeout)
 
 				select {
 				case g.receivedACKSignal <- struct{}{}:
@@ -603,6 +647,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 					)
 
 					g.sendSeqBase = (m.Seq + 1) % g.s
+					g.resendTicker.Reset(g.resendTimeout)
 
 					// Send a signal to indicate that new
 					// ACKs have been received.

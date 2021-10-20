@@ -50,6 +50,20 @@ const (
 	// set up the clients send stream cipher box.
 	gbnHandshakeTimeout = 2000 * time.Millisecond
 
+	// gbnClientPingTimeout is the time after with the client will send the
+	// server a ping message if it has not received any packets from the
+	// server. The client will close the connection if it then does not
+	// receive an acknowledgement of the ping from the server.
+	gbnClientPingTimeout = 15 * time.Second
+
+	// gbnServerTimeout is the time after with the server will send the
+	// client a ping message if it has not received any packets from the
+	// client. The server will close the connection if it then does not
+	// receive an acknowledgement of the ping from the client. This timeout
+	// is slightly shorter than the gbnClientPingTimeout to prevent both
+	// sides from unnecessarily sending pings simultaneously.
+	gbnServerPingTimeout = 10 * time.Second
+
 	// webSocketRecvLimit is used to set the websocket receive limit. The
 	// default value of 32KB is enough due to the fact that grpc has a
 	// default packet maximum of 32KB which we then further wrap in gbn and
@@ -299,6 +313,7 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 		gbnN, c.sendToStream, c.recvFromStream,
 		gbn.WithTimeout(gbnTimeout),
 		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+		gbn.WithKeepalivePing(gbnClientPingTimeout),
 	)
 	if err != nil {
 		return nil, err
