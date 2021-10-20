@@ -6,9 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
-
-	"google.golang.org/grpc/keepalive"
 
 	"github.com/lightninglabs/terminal-connect/gbn"
 
@@ -66,14 +63,6 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.Creds(noiseConn),
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    time.Second * 10,
-			Timeout: time.Second * 5,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
-			PermitWithoutStream: true,
-		}),
 		grpc.MaxRecvMsgSize(1024*1024*200),
 	)
 	mockrpc.RegisterMockServiceServer(grpcServer, s)

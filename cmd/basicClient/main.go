@@ -11,8 +11,6 @@ import (
 	"os"
 	"time"
 
-	"google.golang.org/grpc/keepalive"
-
 	"github.com/lightninglabs/terminal-connect/gbn"
 
 	"github.com/lightningnetwork/lnd"
@@ -101,14 +99,6 @@ func lndConn(words []string) (*grpc.ClientConn, error) {
 		grpc.WithContextDialer(transportConn.Dial),
 		grpc.WithTransportCredentials(noiseConn),
 		grpc.WithPerRPCCredentials(noiseConn),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
-		),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                15 * time.Second,
-			Timeout:             5 * time.Second,
-			PermitWithoutStream: true,
-		}),
 	}
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
