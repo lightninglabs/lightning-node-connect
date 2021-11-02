@@ -1,9 +1,11 @@
 package mailbox
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,4 +31,31 @@ func TestHash2Curve(t *testing.T) {
 	clientG, err := Hash2Curve([]byte(ClientPointPreimage))
 	require.NoError(t, err)
 	require.Equal(t, clientGeneratorPoint, clientG.SerializeCompressed())
+}
+
+// TestSPAKE2MaskUnmask tests that an ephemeral public key can be masked by
+// adding the product of client/server specific generator point and the
+// stretched one-time-password and then unmasked again using the reverse
+// operation.
+func TestSPAKE2MaskUnmask(t *testing.T) {
+	var password [NumPasswordBytes]byte
+	for i := 0; i < 100; i++ {
+		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(t, err)
+
+		_, err = rand.Read(password[:])
+		require.NoError(t, err)
+
+		masked, err := SPAKE2Mask(
+			privKey.PubKey(), ServerPointPreimage, password[:],
+		)
+		require.NoError(t, err)
+		require.NotEqual(t, privKey.PubKey(), masked)
+
+		unmasked, err := SPAKE2Unmask(
+			masked, ServerPointPreimage, password[:],
+		)
+		require.NoError(t, err)
+		require.Equal(t, privKey.PubKey(), unmasked)
+	}
 }

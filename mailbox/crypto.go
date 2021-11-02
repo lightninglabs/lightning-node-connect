@@ -11,11 +11,16 @@ import (
 	"github.com/kkdai/bstream"
 	"github.com/lightningnetwork/lnd/aezeed"
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
 )
 
 const (
 	ClientPointPreimage = "TerminalConnectClient"
 	ServerPointPreimage = "TerminalConnectServer"
+
+	// PasswordHKDFSalt is the static salt we use for stretching a TC
+	// one-time-password with the HKDF algorithm.
+	PasswordHKDFSalt = "TerminalConnectPassword"
 
 	// Hash2CurveAlgo is the algorithm we use for hashing a value to our
 	// secp256k1 curve, using SHA256, Simplified SWU and the Random Oracle
@@ -106,54 +111,92 @@ func Hash2Curve(preimage []byte) (*btcec.PublicKey, error) {
 	return ecPoint, nil
 }
 
-// TODO(guggero): Implement in an actually secure way.
-func SPAKE2MaskPoint(ephemeralPubKey *btcec.PublicKey,
+// SPAKE2Mask masks an ephemeral public key by adding the product of the
+// generator point and the stretched password.
+//
+// SPAKE2Mask(e, pw):
+//   e + N*pw
+func SPAKE2Mask(ephemeralPubKey *btcec.PublicKey,
 	generatorPointPreimage string, password []byte) (*btcec.PublicKey,
 	error) {
 
-	g, err := Hash2Curve(generatorPointPreimage)
+	// Now we calculate P = e + N*pw, first step is N' = N*pw.
+	nPrime, err := blindingPoint(generatorPointPreimage, password)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use PBKDF2 here?
-	pwHash := sha256.Sum256(password)
-	blindingPoint := &btcec.PublicKey{}
-	blindingPoint.X, blindingPoint.Y = btcec.S256().ScalarMult(
-		g.X, g.Y, pwHash[:],
-	)
-
+	// Second step is P = e + N' which is
+	// result = ephemeralPubKey + blindingPoint
 	result := &btcec.PublicKey{Curve: btcec.S256()}
 	result.X, result.Y = btcec.S256().Add(
-		blindingPoint.X, blindingPoint.Y,
-		ephemeralPubKey.X, ephemeralPubKey.Y,
+		nPrime.X, nPrime.Y, ephemeralPubKey.X, ephemeralPubKey.Y,
 	)
 	return result, nil
 }
 
-// TODO(guggero): Implement in an actually secure way.
-func SPAKE2UnmaskPoint(blindedKey *btcec.PublicKey,
+// SPAKE2Unmask unmasks a previously blinded point by subtracting the product of
+// the generator point and the stretched password from the blinded key.
+//
+// SPAKE2Unmask(e, pw):
+//   e - N*pw
+func SPAKE2Unmask(blindedKey *btcec.PublicKey,
 	generatorPointPreimage string, password []byte) (*btcec.PublicKey,
 	error) {
 
-	g, err := Hash2Curve(generatorPointPreimage)
+	// Now we calculate P = e - N*pw, first step is N' = N*pw.
+	nPrime, err := blindingPoint(generatorPointPreimage, password)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use PBKDF2 here?
-	pwHash := sha256.Sum256(password)
-	blindingPoint := &btcec.PublicKey{}
-	blindingPoint.X, blindingPoint.Y = btcec.S256().ScalarMult(
-		g.X, g.Y, pwHash[:],
+	// With EC we need to calculate P = e + (-N') as there is no
+	// subtraction, only inversion.
+	result := &btcec.PublicKey{Curve: btcec.S256()}
+	negY := new(big.Int).Neg(nPrime.Y)
+	negY = negY.Mod(negY, btcec.S256().P)
+
+	// Now we can calculate P = e + (-N') which is
+	// result = blindedKey + (-nPrime)
+	result.X, result.Y = blindedKey.Curve.Add(
+		blindedKey.X, blindedKey.Y, nPrime.X, negY,
+	)
+	return result, nil
+}
+
+// blindingPoint generates the blinding point from the client or server specific
+// generator point preimage and the stretched one-time-password.
+func blindingPoint(generatorPointPreimage string,
+	password []byte) (*btcec.PublicKey, error) {
+
+	// First we create our generator point (M or N depending on whether we
+	// are the client or server) by hashing to the curve so nobody knows the
+	// discrete log for that generator point.
+	generator, err := Hash2Curve([]byte(generatorPointPreimage))
+	if err != nil {
+		return nil, err
+	}
+
+	// We use HKDF with a static salt to stretch the password to get some
+	// additional entropy.
+	const pwLen = 32
+	var stretchedPassword [pwLen]byte
+	h := hkdf.New(sha256.New, password, []byte(PasswordHKDFSalt), []byte{})
+	n, err := h.Read(stretchedPassword[:])
+	if n != pwLen {
+		return nil, fmt.Errorf("not enough entropy to stretch password")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error stretching password: %v", err)
+	}
+
+	// Now we calculate N' = N*pw which is
+	// result = generator*stretchedPassword.
+	result := &btcec.PublicKey{}
+	result.X, result.Y = btcec.S256().ScalarMult(
+		generator.X, generator.Y, stretchedPassword[:],
 	)
 
-	result := &btcec.PublicKey{Curve: btcec.S256()}
-	negY := new(big.Int).Neg(blindedKey.Y)
-	negY = negY.Mod(negY, btcec.S256().P)
-	result.X, result.Y = blindedKey.Curve.Add(
-		blindedKey.X, blindedKey.Y, blindedKey.X, negY,
-	)
 	return result, nil
 }
 
