@@ -25,6 +25,7 @@ type NoiseConn struct {
 	Conn
 
 	secret   [32]byte
+	password []byte
 	authData []byte
 
 	localKey  keychain.SingleKeyECDH
@@ -37,11 +38,12 @@ type NoiseConn struct {
 // NewNoiseConn creates a new noise connection using given local ECDH key. The
 // auth data can be set for server connections and is sent as the payload to the
 // client during the handshake.
-func NewNoiseConn(localKey keychain.SingleKeyECDH,
+func NewNoiseConn(localKey keychain.SingleKeyECDH, password []byte,
 	authData []byte) *NoiseConn {
 
 	return &NoiseConn{
 		localKey: localKey,
+		password: password,
 		authData: authData,
 	}
 }
@@ -144,20 +146,32 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
 
 	log.Tracef("Starting client handshake")
-
 	transportConn, ok := conn.(Conn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
 	c.Conn = transportConn
 
-	clientHello := NewMsgClientHello(ProtocolVersion, c.localKey.PubKey())
+	// First we need to mask our key with a blinding point that we generate
+	// from our client specific generator point M scalar multiplied by the
+	// stretched password.
+	maskedLocalKey, err := SPAKE2Mask(
+		c.localKey.PubKey(), ClientPointPreimage, c.password,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error masking local key: %v", err)
+	}
+
+	// Send over the masked local key as part of our handshake.
+	clientHello := NewMsgClientHello(ProtocolVersion, maskedLocalKey)
 	if err := c.Conn.SendControlMsg(clientHello); err != nil {
 		return nil, nil, err
 	}
-	log.Debugf("Sent client hello with client_key=%x",
-		c.localKey.PubKey().SerializeCompressed())
+	log.Debugf("Sent client hello with client_key=%x, masked_client_key=%x",
+		c.localKey.PubKey().SerializeCompressed(),
+		maskedLocalKey.SerializeCompressed())
 
+	// We expect to get a key back that is masked as well.
 	serverHello := NewMsgServerHello(ProtocolVersion, nil, nil)
 	if err := c.Conn.ReceiveControlMsg(serverHello); err != nil {
 		return nil, nil, err
@@ -165,8 +179,19 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	log.Debugf("Received server hello with server_key=%x",
 		serverHello.PubKey.SerializeCompressed())
 
-	var err error
-	c.remoteKey = serverHello.PubKey
+	// Unmask the server's key using the server specific generator point N
+	// multiplied by the stretched password.
+	c.remoteKey, err = SPAKE2Unmask(
+		serverHello.PubKey, ServerPointPreimage, c.password,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error unmasking remote key: %v",
+			err)
+	}
+
+	// Now derive the shared secret from the two keys. If something went
+	// wrong or something was masked/unmasked incorrectly then the MAC will
+	// fail when we try to decrypt the auth data the server sent us.
 	c.secret, err = c.localKey.ECDH(c.remoteKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error calculating shared "+
@@ -181,7 +206,6 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	c.authData = authDataBytes
 
 	log.Tracef("Client handshake completed")
-
 	return c, NewAuthInfo(), nil
 }
 
@@ -192,38 +216,63 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	credentials.AuthInfo, error) {
 
 	log.Tracef("Starting server handshake")
-
 	transportConn, ok := conn.(Conn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
 	c.Conn = transportConn
 
+	// We expect the client to send a message first, containing their masked
+	// public key.
 	clientHello := NewMsgClientHello(ProtocolVersion, nil)
 	if err := c.Conn.ReceiveControlMsg(clientHello); err != nil {
 		return nil, nil, fmt.Errorf("error receiving client hello: %v",
 			err)
 	}
-	c.remoteKey = clientHello.PubKey
 
+	// Unmask the client's key using the client specific generator point M
+	// multiplied by the stretched password.
 	var err error
+	c.remoteKey, err = SPAKE2Unmask(
+		clientHello.PubKey, ClientPointPreimage, c.password,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error unmasking remote key: %v",
+			err)
+	}
+
+	// We can now derive the shared secret with the unmasked client key. If
+	// something went wrong during unmasking or the client sent the wrong
+	// key, they won't be able to decrypt our payload and the connection
+	// will fail.
 	c.secret, err = c.localKey.ECDH(c.remoteKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error calculating shared "+
 			"secret: %v", err)
 	}
-
-	log.Debugf("Received client hello msg, client_key=%x",
+	log.Debugf("Received client hello msg, client_key=%x," +
+		"masked_client_key=%x", c.remoteKey.SerializeCompressed(),
 		clientHello.PubKey.SerializeCompressed())
 
+	// Encrypt the authentication data using the symmetric shared secret.
 	encryptedMac, err := Encrypt(c.authData, c.secret[:])
 	if err != nil {
 		return nil, nil, fmt.Errorf("error encrypting macaroon: %v",
 			err)
 	}
 
+	// Finally, we need to mask our key with a blinding point that we
+	// generate from our server specific generator point N scalar multiplied
+	// by the stretched password.
+	maskedLocalKey, err := SPAKE2Mask(
+		c.localKey.PubKey(), ServerPointPreimage, c.password,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error masking local key: %v", err)
+	}
+
 	serverHello := NewMsgServerHello(
-		ProtocolVersion, c.localKey.PubKey(), encryptedMac,
+		ProtocolVersion, maskedLocalKey, encryptedMac,
 	)
 	if err := c.Conn.SendControlMsg(serverHello); err != nil {
 		return nil, nil, fmt.Errorf("error sending server hello: %v",
@@ -231,7 +280,6 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	}
 
 	log.Tracef("Server handshake completed")
-
 	return c, NewAuthInfo(), nil
 }
 

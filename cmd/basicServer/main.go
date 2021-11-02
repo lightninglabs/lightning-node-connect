@@ -60,7 +60,7 @@ func main() {
 	}
 
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
+	noiseConn := mailbox.NewNoiseConn(ecdh, passwordEntropy[:], nil)
 
 	s := &mockrpc.Server{}
 

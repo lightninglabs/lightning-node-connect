@@ -64,7 +64,7 @@ func (s *serverHarness) start() error {
 	}
 
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
+	noiseConn := mailbox.NewNoiseConn(ecdh, passwordEntropy[:], nil)
 
 	s.mockServer = grpc.NewServer(
 		grpc.Creds(noiseConn),

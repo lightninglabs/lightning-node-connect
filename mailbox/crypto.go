@@ -55,6 +55,8 @@ func NewPassword() ([NumPasswordWords]string, [NumPasswordBytes]byte, error) {
 	return password, passwordEntropy, nil
 }
 
+// PasswordEntropyToMnemonic turns a password's raw entropy bytes into the
+// mnemonic representation that is human-readable.
 func PasswordEntropyToMnemonic(
 	entropy [NumPasswordBytes]byte) ([NumPasswordWords]string, error) {
 
