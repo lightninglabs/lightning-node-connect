@@ -3,8 +3,10 @@ package mailbox
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"math/big"
 
+	hash2curve "github.com/armfazh/h2c-go-ref"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/kkdai/bstream"
 	"github.com/lightningnetwork/lnd/aezeed"
@@ -14,8 +16,14 @@ import (
 const (
 	ClientPointPreimage = "TerminalConnectClient"
 	ServerPointPreimage = "TerminalConnectServer"
-	NumPasswordWords    = 8 // TODO: make shorter by masking leftover bits.
-	NumPasswordBytes    = (NumPasswordWords * aezeed.BitsPerWord) / 8
+
+	// Hash2CurveAlgo is the algorithm we use for hashing a value to our
+	// secp256k1 curve, using SHA256, Simplified SWU and the Random Oracle
+	// model.
+	Hash2CurveAlgo = hash2curve.Secp256k1_XMDSHA256_SSWU_RO_
+
+	NumPasswordWords = 8 // TODO: make shorter by masking leftover bits.
+	NumPasswordBytes = (NumPasswordWords * aezeed.BitsPerWord) / 8
 )
 
 var (
@@ -78,11 +86,24 @@ func PasswordMnemonicToEntropy(
 	return passwordEntropy
 }
 
-// TODO(guggero): Implement using "hash-and-increment" algorithm.
-func GeneratorPoint(preimage string) (*btcec.PublicKey, error) {
-	hash := sha256.Sum256([]byte(preimage))
-	_, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), hash[:])
-	return pubKey, nil
+// Hash2Curve uses the hash2curve library referenced in
+// https://datatracker.ietf.org/doc/draft-irtf-cfrg-hash-to-curve/ to generate
+// a point on the secp256k1 curve that nobody knows the discrete log of by
+// hashing the given string to the curve.
+func Hash2Curve(preimage []byte) (*btcec.PublicKey, error) {
+	var pubKey [33]byte
+	h2p, err := Hash2CurveAlgo.Get(pubKey[:])
+	if err != nil {
+		return nil, fmt.Errorf("error hashing to point: %v", err)
+	}
+
+	point := h2p.Hash(preimage)
+	ecPoint := &btcec.PublicKey{
+		Curve: btcec.S256(),
+		X:     point.X().Polynomial()[0],
+		Y:     point.Y().Polynomial()[0],
+	}
+	return ecPoint, nil
 }
 
 // TODO(guggero): Implement in an actually secure way.
@@ -90,7 +111,7 @@ func SPAKE2MaskPoint(ephemeralPubKey *btcec.PublicKey,
 	generatorPointPreimage string, password []byte) (*btcec.PublicKey,
 	error) {
 
-	g, err := GeneratorPoint(generatorPointPreimage)
+	g, err := Hash2Curve(generatorPointPreimage)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +136,7 @@ func SPAKE2UnmaskPoint(blindedKey *btcec.PublicKey,
 	generatorPointPreimage string, password []byte) (*btcec.PublicKey,
 	error) {
 
-	g, err := GeneratorPoint(generatorPointPreimage)
+	g, err := Hash2Curve(generatorPointPreimage)
 	if err != nil {
 		return nil, err
 	}

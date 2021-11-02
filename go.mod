@@ -1,6 +1,7 @@
 module github.com/lightninglabs/terminal-connect
 
 require (
+	github.com/armfazh/h2c-go-ref v0.0.0-20200603094401-c69caec07161
 	github.com/btcsuite/btcd v0.21.0-beta.0.20210513141527-ee5896bad5be
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/go-errors/errors v1.0.1
