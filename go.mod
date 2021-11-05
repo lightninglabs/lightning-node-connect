@@ -9,6 +9,7 @@ require (
 	github.com/lightninglabs/aperture v0.1.6-beta
 	github.com/lightninglabs/terminal-connect/hashmailrpc v1.0.0
 	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210728112744-ebabda671786
+	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0
 	google.golang.org/grpc v1.39.0
