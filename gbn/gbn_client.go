@@ -13,9 +13,7 @@ import (
 // The receiveStream function must read from an underlying transport stream.
 // The resendTimeout parameter defines the duration to wait before resending data
 // if the corresponding ACK for the data is not received.
-func NewClientConn(n uint8,
-	sendToStream func(ctx context.Context, b []byte) error,
-	receiveFromStream func(ctx context.Context) ([]byte, error),
+func NewClientConn(n uint8, sendFunc sendBytesFunc, receiveFunc recvBytesFunc,
 	opts ...Option) (*GoBackNConn, error) {
 
 	if n == math.MaxUint8 {
@@ -23,26 +21,9 @@ func NewClientConn(n uint8,
 			math.MaxUint8)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	conn := &GoBackNConn{
-		n:                 n,
-		s:                 n + 1,
-		resendTimeout:     defaultResendTimeout,
-		handshakeTimeout:  defaultHandshakeTimeout,
-		recvFromStream:    receiveFromStream,
-		sendToStream:      sendToStream,
-		recvDataChan:      make(chan *PacketData, n),
-		errChan:           make(chan error, 3),
-		sendDataChan:      make(chan *PacketData),
-		quit:              make(chan struct{}),
-		handshakeComplete: make(chan struct{}),
-		receivedACKSignal: make(chan struct{}),
-		resendSignal:      make(chan struct{}, 1),
-		isServer:          false,
-		ctx:               ctx,
-		cancel:            cancel,
-	}
+	conn := newGoBackNConn(
+		context.Background(), sendFunc, receiveFunc, false, n,
+	)
 
 	// Apply functional options
 	for _, o := range opts {

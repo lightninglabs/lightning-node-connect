@@ -30,3 +30,16 @@ func WithHandshakeTimeout(timeout time.Duration) Option {
 		conn.handshakeTimeout = timeout
 	}
 }
+
+// WithKeepalivePing is used to send a ping packet if no packets have been
+// received from the other side for the given duration. This helps keep the
+// connection alive and also ensures that the connection is closed if the
+// other side does not respond to the ping in a timely manner. After the ping
+// the connection will be closed if the other side does not respond within
+// time duration.
+func WithKeepalivePing(duration time.Duration) Option {
+	return func(conn *GoBackNConn) {
+		conn.pingTime = duration
+		conn.pongWait = make(chan struct{}, 1)
+	}
+}

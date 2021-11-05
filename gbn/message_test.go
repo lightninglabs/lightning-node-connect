@@ -33,6 +33,7 @@ func TestMsgSerializeDeserialize(t *testing.T) {
 			msg: &PacketData{
 				Seq:        0,
 				FinalChunk: true,
+				IsPing:     true,
 				Payload:    []byte{},
 			},
 		},

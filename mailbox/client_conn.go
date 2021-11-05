@@ -42,13 +42,27 @@ const (
 	// gbnN is the queue size, N, that the gbn server will use. The gbn
 	// server will send up to N packets before requiring an ACK for the
 	// first packet in the queue.
-	gbnN uint8 = 20
+	gbnN uint8 = gbn.DefaultN
 
 	// gbnHandshakeTimeout is the time after which the gbn connection
 	// will abort and restart the handshake after not receiving a response
 	// from the peer. This timeout needs to be long enough for the server to
 	// set up the clients send stream cipher box.
 	gbnHandshakeTimeout = 2000 * time.Millisecond
+
+	// gbnClientPingTimeout is the time after with the client will send the
+	// server a ping message if it has not received any packets from the
+	// server. The client will close the connection if it then does not
+	// receive an acknowledgement of the ping from the server.
+	gbnClientPingTimeout = 15 * time.Second
+
+	// gbnServerTimeout is the time after with the server will send the
+	// client a ping message if it has not received any packets from the
+	// client. The server will close the connection if it then does not
+	// receive an acknowledgement of the ping from the client. This timeout
+	// is slightly shorter than the gbnClientPingTimeout to prevent both
+	// sides from unnecessarily sending pings simultaneously.
+	gbnServerPingTimeout = 10 * time.Second
 
 	// webSocketRecvLimit is used to set the websocket receive limit. The
 	// default value of 32KB is enough due to the fact that grpc has a
@@ -187,8 +201,11 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 		}
 
 		c.sendStreamMu.Lock()
-		ctxt, _ := context.WithTimeout(c.ctx, sendSocketTimeout)
-		err = c.sendSocket.Write(ctxt, websocket.MessageText, sendInitBytes)
+		ctxt, cancel := context.WithTimeout(c.ctx, sendSocketTimeout)
+		err = c.sendSocket.Write(
+			ctxt, websocket.MessageText, sendInitBytes,
+		)
+		cancel()
 		if err != nil {
 			log.Debugf("Client: got failure on send socket, "+
 				"re-trying: %v", err)
@@ -229,7 +246,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		)
 		receiveSocket, _, err := websocket.Dial(ctx, receiveAddr, nil)
 		if err != nil {
-			log.Debugf("Client: error creating receive socket %w", err)
+			log.Debugf("Client: error creating receive socket %v",
+				err)
+
 			continue
 		}
 		receiveSocket.SetReadLimit(webSocketRecvLimit)
@@ -240,7 +259,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		}
 		receiveInitBytes, err := defaultMarshaler.Marshal(receiveInit)
 		if err != nil {
-			log.Debugf("Client: error marshaling receive init bytes %w", err)
+			log.Debugf("Client: error marshaling receive init "+
+				"bytes %w", err)
+
 			continue
 		}
 
@@ -248,7 +269,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 			ctx, websocket.MessageText, receiveInitBytes,
 		)
 		if err != nil {
-			log.Debugf("Client: error creating receive stream %w", err)
+			log.Debugf("Client: error creating receive stream "+
+				"%v", err)
+
 			continue
 		}
 
@@ -278,7 +301,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
 		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
 		if err != nil {
-			log.Debugf("Client: error creating send socket %w", err)
+			log.Debugf("Client: error creating send socket %v", err)
 			continue
 		}
 
@@ -299,6 +322,7 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 		gbnN, c.sendToStream, c.recvFromStream,
 		gbn.WithTimeout(gbnTimeout),
 		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+		gbn.WithKeepalivePing(gbnClientPingTimeout),
 	)
 	if err != nil {
 		return nil, err

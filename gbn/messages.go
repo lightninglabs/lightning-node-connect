@@ -13,8 +13,8 @@ const (
 	FIN    = 0x05
 	SYNACK = 0x06
 
-	notFinalChunk = 0x00
-	finalChunk    = 0x01
+	FALSE = 0x00
+	TRUE  = 0x01
 )
 
 type Message interface {
@@ -24,6 +24,7 @@ type Message interface {
 type PacketData struct {
 	Seq        uint8
 	FinalChunk bool
+	IsPing     bool
 	Payload    []byte
 }
 
@@ -40,11 +41,21 @@ func (m *PacketData) Serialize() ([]byte, error) {
 	}
 
 	if m.FinalChunk {
-		if err := buf.WriteByte(finalChunk); err != nil {
+		if err := buf.WriteByte(TRUE); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := buf.WriteByte(notFinalChunk); err != nil {
+		if err := buf.WriteByte(FALSE); err != nil {
+			return nil, err
+		}
+	}
+
+	if m.IsPing {
+		if err := buf.WriteByte(TRUE); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := buf.WriteByte(FALSE); err != nil {
 			return nil, err
 		}
 	}
@@ -153,8 +164,9 @@ func Deserialize(b []byte) (Message, error) {
 		}
 		return &PacketData{
 			Seq:        b[1],
-			FinalChunk: b[2] == finalChunk,
-			Payload:    b[3:],
+			FinalChunk: b[2] == TRUE,
+			IsPing:     b[3] == TRUE,
+			Payload:    b[4:],
 		}, nil
 	case ACK:
 		if len(b) < 2 {
