@@ -224,7 +224,8 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 	for {
 		select {
 		case err := <-g.errChan:
-			return nil, fmt.Errorf("cannot receive, gbn exited: %v", err)
+			return nil, fmt.Errorf("cannot receive, gbn exited: %v",
+				err)
 		case <-g.quit:
 			return nil, io.EOF
 		case msg = <-g.recvDataChan:
@@ -258,11 +259,12 @@ func (g *GoBackNConn) start() {
 
 		err := g.receivePacketsForever()
 		if err != nil {
-			log.Debugf("Error in receivePacketsForever (isServer=%v): "+
-				"%v", g.isServer, err)
+			log.Debugf("Error in receivePacketsForever "+
+				"(isServer=%v): %v", g.isServer, err)
 			g.errChan <- err
 		}
-		log.Debugf("receivePacketsForever stopped (isServer=%v)", g.isServer)
+		log.Debugf("receivePacketsForever stopped (isServer=%v)",
+			g.isServer)
 	}()
 
 	g.wg.Add(1)
@@ -295,7 +297,10 @@ func (g *GoBackNConn) Close() error {
 	case <-g.handshakeComplete:
 		if !g.remoteClosed {
 			log.Tracef("Try sending FIN, isServer=%v", g.isServer)
-			ctxc, _ := context.WithTimeout(g.ctx, finSendTimeout)
+			ctxc, cancel := context.WithTimeout(
+				g.ctx, finSendTimeout,
+			)
+			defer cancel()
 			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
 				log.Errorf("Error sending FIN: %v", err)
 			}
@@ -451,10 +456,8 @@ func (g *GoBackNConn) sendPacketsForever() error {
 				return errKeepaliveTimeout
 			}
 
-			log.Tracef(
-				"Sending a PING packet (isServer=%v)",
-				g.isServer,
-			)
+			log.Tracef("Sending a PING packet (isServer=%v)",
+				g.isServer)
 
 			packet = &PacketData{
 				IsPing: true,
@@ -556,7 +559,6 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				// an ACK message with that sequence number
 				// and we bump the sequence number that we
 				// expect of the next data packet.
-
 				log.Tracef("Got expected data %d", m.Seq)
 
 				ack := &PacketACK{
@@ -592,10 +594,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				// it could be that we missed a previous packet.
 				// In either case, we send a NACK with the
 				// sequence number that we were expecting.
-
-				log.Tracef(
-					"Got unexpected data %d", m.Seq,
-				)
+				log.Tracef("Got unexpected data %d", m.Seq)
 
 				// If we recently sent a NACK for the same
 				// sequence number then back off.
@@ -605,9 +604,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 					continue
 				}
 
-				log.Tracef(
-					"Sending NACK %d", g.recvSeq,
-				)
+				log.Tracef("Sending NACK %d", g.recvSeq)
 
 				// Send a NACK with the expected sequence
 				// number.
@@ -633,9 +630,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				// expecting. So we increase our base
 				// accordingly and send a signal to indicate
 				// that the queue size has decreased.
-				log.Tracef(
-					"Received correct ack %d", m.Seq,
-				)
+				log.Tracef("Received correct ack %d", m.Seq)
 
 				g.sendSeqBase = (g.sendSeqBase + 1) % g.s
 				g.resendTicker.Reset(g.resendTimeout)
@@ -652,11 +647,8 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				// that we just missed the ACK for the current
 				// base and this is actually an ACK for
 				// another packet in the queue.
-				log.Tracef(
-					"Received wrong ack %d, "+
-						"expected %d", m.Seq,
-					g.sendSeqBase,
-				)
+				log.Tracef("Received wrong ack %d, expected %d",
+					m.Seq, g.sendSeqBase)
 
 				// If this is an ACK for something
 				// in the current queue then maybe we just
@@ -667,11 +659,8 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				if isInQueue(g.sendSeqBase, g.sendSeqTop,
 					m.Seq) {
 
-					log.Tracef(
-						"Sequence %d is in "+
-							"the queue. Bump the "+
-							"base.", m.Seq,
-					)
+					log.Tracef("Sequence %d is in the "+
+						"queue. Bump the base.", m.Seq)
 
 					g.sendSeqBase = (m.Seq + 1) % g.s
 					g.resendTicker.Reset(g.resendTimeout)
@@ -706,12 +695,9 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				g.sendSeqTopMu.RUnlock()
 				g.sendSeqBaseMu.Unlock()
 
-				log.Tracef(
-					"NACK seq %d is not in the "+
-						"queue. Ignoring. "+
-						"(isServer=%v)", m.Seq,
-					g.isServer,
-				)
+				log.Tracef("NACK seq %d is not in the queue. "+
+					"Ignoring. (isServer=%v)", m.Seq,
+					g.isServer)
 				continue
 			}
 
@@ -736,10 +722,8 @@ func (g *GoBackNConn) receivePacketsForever() error {
 				}
 			}
 
-			log.Tracef(
-				"Sending a resend signal (isServer=%v)",
-				g.isServer,
-			)
+			log.Tracef("Sending a resend signal (isServer=%v)",
+				g.isServer)
 
 			// Send a signal to indicate that new sends should pause
 			// and the current queue should be resent instead.
@@ -752,10 +736,8 @@ func (g *GoBackNConn) receivePacketsForever() error {
 			// A FIN packet indicates that the peer would like to
 			// close the connection.
 
-			log.Tracef(
-				"Received a FIN packet (isServer=%v)",
-				g.isServer,
-			)
+			log.Tracef("Received a FIN packet (isServer=%v)",
+				g.isServer)
 
 			g.remoteClosed = true
 

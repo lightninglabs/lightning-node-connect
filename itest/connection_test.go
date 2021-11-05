@@ -23,7 +23,6 @@ func testHappyPath(t *harnessTest) {
 		)
 		require.NoError(t.t, err)
 		require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
-		t.t.Logf("Done with one call")
 	}
 }
 
@@ -37,7 +36,6 @@ func testHashmailServerReconnect(t *harnessTest) {
 	)
 	require.NoError(t.t, err)
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
-	t.t.Logf("Done with initial call")
 
 	// Shut down hashmail server
 	require.NoError(t.t, t.hmserver.stop())
@@ -47,7 +45,6 @@ func testHashmailServerReconnect(t *harnessTest) {
 
 	// Restart hashmail server
 	require.NoError(t.t, t.hmserver.start())
-	t.t.Logf("Done with hashmail server re-init")
 
 	time.Sleep(5000 * time.Millisecond)
 
@@ -56,7 +53,6 @@ func testHashmailServerReconnect(t *harnessTest) {
 	)
 	require.NoError(t.t, err)
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
-	t.t.Logf("Done with second call")
 }
 
 func testClientReconnect(t *harnessTest) {
@@ -67,16 +63,11 @@ func testClientReconnect(t *harnessTest) {
 	)
 	require.NoError(t.t, err)
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
-	t.t.Logf("Done with initial call")
 
 	require.NoError(t.t, t.client.cleanup())
-	t.t.Logf("Done with client cleanup")
-
 	time.Sleep(5000 * time.Millisecond)
 
 	require.NoError(t.t, t.client.setConn(t.server.password[:]))
-	t.t.Logf("Done with client re-init")
-
 	time.Sleep(5000 * time.Millisecond)
 
 	resp, err = t.client.clientConn.MockServiceMethod(
@@ -84,7 +75,6 @@ func testClientReconnect(t *harnessTest) {
 	)
 	require.NoError(t.t, err)
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
-	t.t.Logf("Done with second call")
 }
 
 func testLargeResponse(t *harnessTest) {

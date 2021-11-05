@@ -201,8 +201,11 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 		}
 
 		c.sendStreamMu.Lock()
-		ctxt, _ := context.WithTimeout(c.ctx, sendSocketTimeout)
-		err = c.sendSocket.Write(ctxt, websocket.MessageText, sendInitBytes)
+		ctxt, cancel := context.WithTimeout(c.ctx, sendSocketTimeout)
+		err = c.sendSocket.Write(
+			ctxt, websocket.MessageText, sendInitBytes,
+		)
+		cancel()
 		if err != nil {
 			log.Debugf("Client: got failure on send socket, "+
 				"re-trying: %v", err)
@@ -243,7 +246,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		)
 		receiveSocket, _, err := websocket.Dial(ctx, receiveAddr, nil)
 		if err != nil {
-			log.Debugf("Client: error creating receive socket %w", err)
+			log.Debugf("Client: error creating receive socket %v",
+				err)
+
 			continue
 		}
 		receiveSocket.SetReadLimit(webSocketRecvLimit)
@@ -254,7 +259,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		}
 		receiveInitBytes, err := defaultMarshaler.Marshal(receiveInit)
 		if err != nil {
-			log.Debugf("Client: error marshaling receive init bytes %w", err)
+			log.Debugf("Client: error marshaling receive init " +
+				"bytes %w", err)
+
 			continue
 		}
 
@@ -262,7 +269,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 			ctx, websocket.MessageText, receiveInitBytes,
 		)
 		if err != nil {
-			log.Debugf("Client: error creating receive stream %w", err)
+			log.Debugf("Client: error creating receive stream " +
+				"%v", err)
+
 			continue
 		}
 
@@ -292,7 +301,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
 		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
 		if err != nil {
-			log.Debugf("Client: error creating send socket %w", err)
+			log.Debugf("Client: error creating send socket %v", err)
 			continue
 		}
 
