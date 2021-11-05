@@ -2,13 +2,16 @@ package mailbox
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightningnetwork/lnd/keychain"
-	"google.golang.org/grpc/credentials"
 	"net"
 	"strings"
 	"sync"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/lightningnetwork/lnd/keychain"
+	"golang.org/x/crypto/chacha20poly1305"
+	"google.golang.org/grpc/credentials"
 )
 
 var _ credentials.TransportCredentials = (*NoiseConn)(nil)
@@ -23,6 +26,9 @@ const (
 // implementation that's used by HTTP/2.
 type NoiseConn struct {
 	Conn
+
+	localNonce  uint64
+	remoteNonce uint64
 
 	secret   [32]byte
 	authData []byte
@@ -68,7 +74,7 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 		return 0, fmt.Errorf("error receiving data msg: %v", err)
 	}
 
-	requestBytes, err := Decrypt(msg.Payload, c.secret[:])
+	requestBytes, err := c.Decrypt(msg.Payload, c.secret[:])
 	if err != nil {
 		return 0, fmt.Errorf("error decrypting payload: %v", err)
 	}
@@ -95,7 +101,7 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseConn) Write(b []byte) (int, error) {
-	payload, err := Encrypt(b, c.secret[:])
+	payload, err := c.Encrypt(b, c.secret[:])
 	if err != nil {
 		return 0, fmt.Errorf("error encrypting response: %v", err)
 	}
@@ -136,12 +142,23 @@ func (c *NoiseConn) RemoteAddr() net.Addr {
 	}
 }
 
+// resetCipherState resets the internal state of the noise machine so we can
+// properly reconnect and do the main handshake again.
+func (c *NoiseConn) resetCipherState() {
+	c.localNonce = 0
+	c.remoteNonce = 0
+}
+
 // ClientHandshake implements the client side part of the noise connection
 // handshake.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+
+	// Ensure the cipher state is reset each time we need to do the
+	// handshake.
+	c.resetCipherState()
 
 	log.Tracef("Starting client handshake")
 
@@ -173,7 +190,7 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 			"secret: %v", err)
 	}
 
-	authDataBytes, err := Decrypt(serverHello.AuthData, c.secret[:])
+	authDataBytes, err := c.Decrypt(serverHello.AuthData, c.secret[:])
 	if err != nil {
 		return nil, nil, fmt.Errorf("error decrypting auth data: %v",
 			err)
@@ -190,6 +207,10 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	credentials.AuthInfo, error) {
+
+	// Ensure the cipher state is reset each time we need to do the
+	// handshake.
+	c.resetCipherState()
 
 	log.Tracef("Starting server handshake")
 
@@ -216,7 +237,7 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	log.Debugf("Received client hello msg, client_key=%x",
 		clientHello.PubKey.SerializeCompressed())
 
-	encryptedMac, err := Encrypt(c.authData, c.secret[:])
+	encryptedMac, err := c.Encrypt(c.authData, c.secret[:])
 	if err != nil {
 		return nil, nil, fmt.Errorf("error encrypting macaroon: %v",
 			err)
@@ -252,11 +273,13 @@ func (c *NoiseConn) Info() credentials.ProtocolInfo {
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseConn) Clone() credentials.TransportCredentials {
 	return &NoiseConn{
-		Conn:      c.Conn,
-		secret:    c.secret,
-		authData:  c.authData,
-		localKey:  c.localKey,
-		remoteKey: c.remoteKey,
+		Conn:        c.Conn,
+		secret:      c.secret,
+		authData:    c.authData,
+		localKey:    c.localKey,
+		remoteKey:   c.remoteKey,
+		localNonce:  c.localNonce,
+		remoteNonce: c.remoteNonce,
 	}
 }
 
@@ -297,4 +320,30 @@ func (c *NoiseConn) GetRequestMetadata(_ context.Context,
 		md[parts[0]] = parts[1]
 	}
 	return md, nil
+}
+
+func (c *NoiseConn) Encrypt(plainText []byte, secret []byte) ([]byte, error) {
+	defer func() {
+		c.localNonce++
+	}()
+
+	cipher, _ := chacha20poly1305.New(secret)
+
+	var nonce [12]byte
+	binary.LittleEndian.PutUint64(nonce[4:], c.localNonce)
+
+	return cipher.Seal(nil, nonce[:], plainText, nil), nil
+}
+
+func (c *NoiseConn) Decrypt(cipherText []byte, secret []byte) ([]byte, error) {
+	defer func() {
+		c.remoteNonce++
+	}()
+
+	cipher, _ := chacha20poly1305.New(secret)
+
+	var nonce [12]byte
+	binary.LittleEndian.PutUint64(nonce[4:], c.remoteNonce)
+
+	return cipher.Open(nil, nonce[:], cipherText, nil)
 }

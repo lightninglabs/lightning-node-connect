@@ -8,7 +8,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/kkdai/bstream"
 	"github.com/lightningnetwork/lnd/aezeed"
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
@@ -16,10 +15,6 @@ const (
 	ServerPointPreimage = "TerminalConnectServer"
 	NumPasswordWords    = 8 // TODO: make shorter by masking leftover bits.
 	NumPasswordBytes    = (NumPasswordWords * aezeed.BitsPerWord) / 8
-)
-
-var (
-	nonce = [12]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 )
 
 // NewPassword generates a new one-time-use password, represented as a set of
@@ -134,18 +129,4 @@ func SPAKE2UnmaskPoint(blindedKey *btcec.PublicKey,
 		blindedKey.X, blindedKey.Y, blindedKey.X, negY,
 	)
 	return result, nil
-}
-
-// TODO(guggero): Implement in an actually secure way.
-func Encrypt(plainText []byte, secret []byte) ([]byte, error) {
-	cipher, _ := chacha20poly1305.New(secret)
-
-	return cipher.Seal(nil, nonce[:], plainText, nil), nil
-}
-
-// TODO(guggero): Implement in an actually secure way.
-func Decrypt(cipherText []byte, secret []byte) ([]byte, error) {
-	cipher, _ := chacha20poly1305.New(secret)
-
-	return cipher.Open(nil, nonce[:], cipherText, nil)
 }
