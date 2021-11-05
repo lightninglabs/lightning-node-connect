@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"time"
 )
@@ -91,8 +92,7 @@ type GoBackNConn struct {
 	handshakeComplete chan struct{}
 
 	// receivedACKSignal channel is used to signal that the queue size has
-	// been decreased. Note that this channel should only be listened on
-	// in one place.
+	// been decreased.
 	receivedACKSignal chan struct{}
 
 	// resendSignal is used to signal that normal operation sending should
@@ -105,7 +105,7 @@ type GoBackNConn struct {
 	lastResend time.Time
 
 	pingTime   time.Duration
-	pingTicker *time.Ticker
+	pingTicker *IntervalAwareForceTicker
 	pongWait   chan struct{}
 
 	ctx    context.Context
@@ -246,10 +246,11 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 func (g *GoBackNConn) start() {
 	log.Debugf("Starting (isServer=%v)", g.isServer)
 
-	g.pingTicker = &time.Ticker{}
+	pingTime := time.Duration(math.MaxInt64)
 	if g.pingTime != 0 {
-		g.pingTicker = time.NewTicker(g.pingTime)
+		pingTime = g.pingTime
 	}
+	g.pingTicker = NewIntervalAwareForceTicker(pingTime)
 
 	g.resendTicker = time.NewTicker(g.resendTimeout)
 
@@ -447,7 +448,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			}
 			continue
 
-		case <-g.pingTicker.C:
+		case <-g.pingTicker.Ticks():
 			select {
 			case g.pongWait <- struct{}{}:
 			default:
@@ -539,15 +540,13 @@ func (g *GoBackNConn) receivePacketsForever() error {
 			return fmt.Errorf("deserialize error: %s", err)
 		}
 
-		// If keepalive is enabled, reset the ping timer if any packet
-		// is received and remove any contents from the pongWait
-		// channel.
-		if g.pingTime != 0 {
-			g.pingTicker.Reset(g.pingTime)
-			select {
-			case <-g.pongWait:
-			default:
-			}
+		// Reset the ping timer if any packet is received and remove
+		// any contents from the pongWait channel (if there are any).
+		// If ping/pong is disabled, this is a no-op.
+		g.pingTicker.Reset()
+		select {
+		case <-g.pongWait:
+		default:
 		}
 
 		switch m := msg.(type) {
