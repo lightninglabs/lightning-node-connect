@@ -42,7 +42,7 @@ const (
 	// gbnN is the queue size, N, that the gbn server will use. The gbn
 	// server will send up to N packets before requiring an ACK for the
 	// first packet in the queue.
-	gbnN uint8 = 20
+	gbnN uint8 = gbn.DefaultN
 
 	// gbnHandshakeTimeout is the time after which the gbn connection
 	// will abort and restart the handshake after not receiving a response
@@ -259,7 +259,7 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		}
 		receiveInitBytes, err := defaultMarshaler.Marshal(receiveInit)
 		if err != nil {
-			log.Debugf("Client: error marshaling receive init " +
+			log.Debugf("Client: error marshaling receive init "+
 				"bytes %w", err)
 
 			continue
@@ -269,7 +269,7 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 			ctx, websocket.MessageText, receiveInitBytes,
 		)
 		if err != nil {
-			log.Debugf("Client: error creating receive stream " +
+			log.Debugf("Client: error creating receive stream "+
 				"%v", err)
 
 			continue

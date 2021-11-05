@@ -22,12 +22,8 @@ func NewClientConn(n uint8, sendFunc sendBytesFunc, receiveFunc recvBytesFunc,
 	}
 
 	conn := newGoBackNConn(
-		context.Background(), sendFunc, receiveFunc, false,
+		context.Background(), sendFunc, receiveFunc, false, n,
 	)
-
-	conn.n = n
-	conn.s = n + 1
-	conn.recvDataChan = make(chan *PacketData, n)
 
 	// Apply functional options
 	for _, o := range opts {

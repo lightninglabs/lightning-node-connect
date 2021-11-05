@@ -14,7 +14,7 @@ import (
 func NewServerConn(ctx context.Context, sendFunc sendBytesFunc,
 	recvFunc recvBytesFunc, opts ...Option) (*GoBackNConn, error) {
 
-	conn := newGoBackNConn(ctx, sendFunc, recvFunc, true)
+	conn := newGoBackNConn(ctx, sendFunc, recvFunc, true, DefaultN)
 
 	// Apply functional options
 	for _, o := range opts {
@@ -133,9 +133,7 @@ func (g *GoBackNConn) serverHandshake() error {
 
 	// Set all variables that are dependent on the value of N that we get
 	// from the client
-	g.n = n
-	g.s = n + 1
-	g.recvDataChan = make(chan *PacketData, n)
+	g.setN(n)
 
 	close(g.handshakeComplete)
 
