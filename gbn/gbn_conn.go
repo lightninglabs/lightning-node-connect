@@ -151,12 +151,7 @@ func (g *GoBackNConn) Send(data []byte) error {
 	case <-g.handshakeComplete:
 	}
 
-	if g.maxChunkSize == 0 {
-		// Splitting is disabled.
-		packet := &PacketData{
-			Payload:    data,
-			FinalChunk: true,
-		}
+	sendPacket := func(packet *PacketData) error {
 		select {
 		case g.sendDataChan <- packet:
 			return nil
@@ -166,35 +161,33 @@ func (g *GoBackNConn) Send(data []byte) error {
 			return io.EOF
 		}
 	}
+	
+	if g.maxChunkSize == 0 {
+		// Splitting is disabled.
+		return sendPacket(&PacketData{
+			Payload:    data,
+			FinalChunk: true,
+		})		
+	}
 
-	// Splitting is enabled. Split into packets no larger than g.maxChunkSize
-	//
-	// TODO(elle): use offsets rather than copying a possibly large slice
-	// of bytes
-	d := make([]byte, len(data))
-	copy(d, data)
-	for len(d) > 0 {
+	// Splitting is enabled. Split into packets no larger than maxChunkSize.
+	sentBytes := 0
+	for sentBytes < len(data) {
 		packet := &PacketData{}
 
-		if len(d) < g.maxChunkSize {
-			packet.Payload = d
-		} else {
-			packet.Payload = d[:g.maxChunkSize]
-		}
-
-		d = d[len(packet.Payload):]
-		if len(d) == 0 {
+		remainingBytes := len(data) - sentBytes
+		if remainingBytes <= g.maxChunkSize {
+			packet.Payload = data[sentBytes:]
+			sentBytes += remainingBytes
 			packet.FinalChunk = true
+		} else {
+			packet.Payload = data[sentBytes:sentBytes+g.maxChunkSize]
+			sentBytes += g.maxChunkSize
 		}
 
-		select {
-		case g.sendDataChan <- packet:
-			continue
-		case err := <-g.errChan:
-			return fmt.Errorf("cannot send, gbn exited: %v", err)
-		case <-g.quit:
+		if err := sendPacket(packet); err != nil {
+			return err
 		}
-		return io.EOF
 	}
 
 	return nil
