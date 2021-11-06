@@ -89,8 +89,8 @@ type controlConn interface {
 	SendControlMsg(ControlMsg) error
 }
 
-// Conn is the main interface that any mailbox connection needs to implement.
-type Conn interface {
+// MailboxConn is the main interface that any mailbox connection needs to implement.
+type MailboxConn interface {
 	net.Conn
 	controlConn
 }

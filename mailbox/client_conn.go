@@ -391,7 +391,7 @@ func (c *ClientConn) Close() error {
 	return returnErr
 }
 
-var _ Conn = (*ClientConn)(nil)
+var _ MailboxConn = (*ClientConn)(nil)
 
 func stripJSONWrapper(wrapped string) (string, error) {
 	if resultPattern.MatchString(wrapped) {

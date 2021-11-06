@@ -10,7 +10,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightningnetwork/lnd/keychain"
-	"golang.org/x/crypto/chacha20poly1305"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -25,7 +24,7 @@ const (
 // interface and can therefore be used as a replacement of the default TLS
 // implementation that's used by HTTP/2.
 type NoiseConn struct {
-	Conn
+	MailboxConn
 
 	localNonce  uint64
 	remoteNonce uint64
@@ -70,7 +69,7 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 	}
 
 	msg := NewMsgData(ProtocolVersion, nil)
-	if err := c.Conn.ReceiveControlMsg(msg); err != nil {
+	if err := c.MailboxConn.ReceiveControlMsg(msg); err != nil {
 		return 0, fmt.Errorf("error receiving data msg: %v", err)
 	}
 
@@ -107,7 +106,7 @@ func (c *NoiseConn) Write(b []byte) (int, error) {
 	}
 
 	msg := NewMsgData(ProtocolVersion, payload)
-	if err := c.Conn.SendControlMsg(msg); err != nil {
+	if err := c.MailboxConn.SendControlMsg(msg); err != nil {
 		return 0, fmt.Errorf("error sending data msg: %v", err)
 	}
 
@@ -118,13 +117,13 @@ func (c *NoiseConn) Write(b []byte) (int, error) {
 //
 // NOTE: This is part of the Conn interface.
 func (c *NoiseConn) LocalAddr() net.Addr {
-	if c.Conn == nil {
+	if c.MailboxConn == nil {
 		return &NoiseAddr{PubKey: c.localKey.PubKey()}
 	}
 
 	return &NoiseAddr{
 		PubKey: c.localKey.PubKey(),
-		Server: c.Conn.LocalAddr().String(),
+		Server: c.MailboxConn.LocalAddr().String(),
 	}
 }
 
@@ -132,13 +131,13 @@ func (c *NoiseConn) LocalAddr() net.Addr {
 //
 // NOTE: This is part of the Conn interface.
 func (c *NoiseConn) RemoteAddr() net.Addr {
-	if c.Conn == nil {
+	if c.MailboxConn == nil {
 		return &NoiseAddr{PubKey: c.remoteKey}
 	}
 
 	return &NoiseAddr{
 		PubKey: c.remoteKey,
-		Server: c.Conn.RemoteAddr().String(),
+		Server: c.MailboxConn.RemoteAddr().String(),
 	}
 }
 
@@ -162,21 +161,21 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 
 	log.Tracef("Starting client handshake")
 
-	transportConn, ok := conn.(Conn)
+	transportConn, ok := conn.(MailboxConn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
-	c.Conn = transportConn
+	c.MailboxConn = transportConn
 
 	clientHello := NewMsgClientHello(ProtocolVersion, c.localKey.PubKey())
-	if err := c.Conn.SendControlMsg(clientHello); err != nil {
+	if err := c.MailboxConn.SendControlMsg(clientHello); err != nil {
 		return nil, nil, err
 	}
 	log.Debugf("Sent client hello with client_key=%x",
 		c.localKey.PubKey().SerializeCompressed())
 
 	serverHello := NewMsgServerHello(ProtocolVersion, nil, nil)
-	if err := c.Conn.ReceiveControlMsg(serverHello); err != nil {
+	if err := c.MailboxConn.ReceiveControlMsg(serverHello); err != nil {
 		return nil, nil, err
 	}
 	log.Debugf("Received server hello with server_key=%x",
@@ -214,14 +213,14 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 
 	log.Tracef("Starting server handshake")
 
-	transportConn, ok := conn.(Conn)
+	transportConn, ok := conn.(MailboxConn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
-	c.Conn = transportConn
+	c.MailboxConn = transportConn
 
 	clientHello := NewMsgClientHello(ProtocolVersion, nil)
-	if err := c.Conn.ReceiveControlMsg(clientHello); err != nil {
+	if err := c.MailboxConn.ReceiveControlMsg(clientHello); err != nil {
 		return nil, nil, fmt.Errorf("error receiving client hello: %v",
 			err)
 	}
@@ -246,7 +245,7 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	serverHello := NewMsgServerHello(
 		ProtocolVersion, c.localKey.PubKey(), encryptedMac,
 	)
-	if err := c.Conn.SendControlMsg(serverHello); err != nil {
+	if err := c.MailboxConn.SendControlMsg(serverHello); err != nil {
 		return nil, nil, fmt.Errorf("error sending server hello: %v",
 			err)
 	}
@@ -273,13 +272,11 @@ func (c *NoiseConn) Info() credentials.ProtocolInfo {
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseConn) Clone() credentials.TransportCredentials {
 	return &NoiseConn{
-		Conn:        c.Conn,
+		MailboxConn: c.MailboxConn,
 		secret:      c.secret,
 		authData:    c.authData,
 		localKey:    c.localKey,
 		remoteKey:   c.remoteKey,
-		localNonce:  c.localNonce,
-		remoteNonce: c.remoteNonce,
 	}
 }
 

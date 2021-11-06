@@ -379,7 +379,7 @@ func (c *ServerConn) Done() <-chan struct{} {
 	return c.quit
 }
 
-var _ Conn = (*ServerConn)(nil)
+var _ MailboxConn = (*ServerConn)(nil)
 
 // initAccountCipherBox attempts to initialize a new CipherBox using the
 // account key as an authentication mechanism.
