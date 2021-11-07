@@ -25,6 +25,7 @@ type Listener struct {
 	tcp *net.TCPListener
 
 	passphrase []byte
+	authData   []byte
 
 	handshakeSema chan struct{}
 	conns         chan maybeConn
@@ -37,7 +38,7 @@ var _ net.Listener = (*Listener)(nil)
 // NewListener returns a new net.Listener which enforces the Brontide scheme
 // during both initial connection establishment and data transfer.
 func NewListener(passphrase []byte, localStatic keychain.SingleKeyECDH,
-	listenAddr string) (*Listener, error) {
+	listenAddr string, authData []byte) (*Listener, error) {
 
 	addr, err := net.ResolveTCPAddr("tcp", listenAddr)
 	if err != nil {
@@ -56,6 +57,7 @@ func NewListener(passphrase []byte, localStatic keychain.SingleKeyECDH,
 		conns:         make(chan maybeConn),
 		quit:          make(chan struct{}),
 		passphrase:    passphrase,
+		authData:      authData,
 	}
 
 	for i := 0; i < defaultHandshakes; i++ {
@@ -113,8 +115,11 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 
 	brontideConn := &Conn{
-		conn:  conn,
-		noise: NewBrontideMachine(false, l.localStatic, l.passphrase),
+		conn: conn,
+		noise: NewBrontideMachine(
+			false, l.localStatic, l.passphrase,
+			AuthDataPayload(l.authData),
+		),
 	}
 
 	// We'll ensure that we get ActOne from the remote peer in a timely

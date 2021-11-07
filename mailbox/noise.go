@@ -1,6 +1,7 @@
 package mailbox
 
 import (
+	"bytes"
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/binary"
@@ -333,6 +334,16 @@ func EphemeralGenerator(gen func() (*btcec.PrivateKey, error)) func(*Machine) {
 	}
 }
 
+// AuthDataPayload is a functional option that allows the non-initiator to
+// specify a piece of data that should be sent to the initiator during the
+// final phase of the handshake. This information is typically something like a
+// macaroon.
+func AuthDataPayload(authData []byte) func(*Machine) {
+	return func(m *Machine) {
+		m.authData = authData
+	}
+}
+
 // Machine is a state-machine which implements Brontide: an Authenticated-key
 // Exchange in Three Acts. Brontide is derived from the Noise framework,
 // specifically implementing the Noise_XX handshake with an eke modified, where
@@ -390,6 +401,12 @@ type Machine struct {
 
 	// password if non-nil, then the Noise_XXeke handshake will be used.
 	password []byte
+
+	// authData is a special piece of authentication data that will be sent
+	// from the responder to the initiator at the end of the handshake.
+	// Typically this is a macaroon or some other piece of information used
+	// to authenticate information.
+	authData []byte
 }
 
 // TODO(roasbeef): eventually refactor into proper generic version that takes
@@ -463,11 +480,6 @@ func ekeUnmask(me *btcec.PublicKey, password []byte) *btcec.PublicKey {
 	}
 }
 
-// TODO(roasbeef): need to send auth data as payload?
-//   * also to send macaroon as payload as well?
-
-// TODO(roasbeef): why is the auth data always nil??
-
 const (
 	// HandshakeVersion is the expected version of the brontide handshake.
 	// Any messages that carry a different version will cause the handshake
@@ -481,13 +493,18 @@ const (
 	// 1 + 33 + 16
 	ActOneSize = 50
 
+	// ActTwoPayloadSize is the size of the fixed sized payload that can be
+	// sent from the responder to the initiator in act two.
+	ActTwoPayloadSize = 500
+
 	// ActTwoSize is the size the packet sent from responder to initiator
 	// in ActTwo. The packet consists of a handshake version, an ephemeral
 	// key in compressed format, the static key of the responder (encrypted
-	// with a 16 byte MAC), and a 16-byte poly1305 tag.
+	// with a 16 byte MAC), a fixed 500 bytes reserved for the auth
+	// payload, and a 16-byte poly1305 tag.
 	//
-	// 1 + 33 + (33 + 16) + 16
-	ActTwoSize = 99
+	// 1 + 33 + (33 + 16) + 500 + 16
+	ActTwoSize = 99 + ActTwoPayloadSize
 
 	// ActThreeSize is the size of the packet sent from initiator to
 	// responder in ActThree. The packet consists of a handshake version,
@@ -631,7 +648,34 @@ func (b *Machine) GenActTwo() ([ActTwoSize]byte, error) {
 	}
 	b.mixKey(es)
 
-	authPayload := b.EncryptAndHash([]byte{})
+	// At this point, we've authenticated the responder, and need to carry
+	// out the final step primarily to obtain their long-term public key
+	// and initialize the DH handshake.
+	//
+	// However, we also want to send the client data they may need for
+	// authentication (if present) encrypted with strong forward secrecy.
+	var payload [ActTwoPayloadSize]byte
+	if b.authData != nil {
+		// If we have an auth payload, then we'll write out 2 bytes
+		// that denotes the true length of the payload, followed by the
+		// payload itself.
+		var payloadWriter bytes.Buffer
+
+		var length [2]byte
+		payLoadlen := len(b.authData)
+		binary.BigEndian.PutUint16(length[:], uint16(payLoadlen))
+
+		if _, err := payloadWriter.Write(length[:]); err != nil {
+			return actTwo, err
+		}
+		if _, err := payloadWriter.Write(b.authData); err != nil {
+			return actTwo, err
+		}
+
+		copy(payload[:], payloadWriter.Bytes())
+	}
+
+	authPayload := b.EncryptAndHash(payload[:])
 
 	actTwo[0] = HandshakeVersion
 	copy(actTwo[1:34], ephemeral)
@@ -650,7 +694,7 @@ func (b *Machine) RecvActTwo(actTwo [ActTwoSize]byte) error {
 		err error
 		e   [33]byte
 		s   [33 + 16]byte
-		p   [16]byte
+		p   [ActTwoPayloadSize + 16]byte
 	)
 
 	// If the handshake version is unknown, then the handshake fails
@@ -696,7 +740,27 @@ func (b *Machine) RecvActTwo(actTwo [ActTwoSize]byte) error {
 	}
 	b.mixKey(es)
 
-	_, err = b.DecryptAndHash(p[:])
+	// The payload sent during this second act by the responder is to be
+	// interpreted as an additional piece of authentication information.
+	payload, err := b.DecryptAndHash(p[:])
+	if err != nil {
+		return err
+	}
+
+	// If the payload is a non-zero length, then we'll assume it's the auth
+	// data and attempt to fully decode it.
+	if len(payload) == 0 {
+		return err
+	}
+
+	payloadLen := binary.BigEndian.Uint16(payload[:2])
+	b.authData = make([]byte, payloadLen)
+
+	payloadReader := bytes.NewReader(payload)
+	if _, err := payloadReader.Read(b.authData); err != nil {
+		return err
+	}
+
 	return err
 }
 

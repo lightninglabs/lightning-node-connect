@@ -26,7 +26,7 @@ type maybeNetConn struct {
 	err  error
 }
 
-func makeListener(passphrase []byte) (*Listener, net.Addr, error) {
+func makeListener(passphrase, authData []byte) (*Listener, net.Addr, error) {
 	// First, generate the long-term private keys for the brontide listener.
 	localPriv, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
@@ -39,7 +39,7 @@ func makeListener(passphrase []byte) (*Listener, net.Addr, error) {
 	addr := "localhost:0"
 
 	// Our listener will be local, and the connection remote.
-	listener, err := NewListener(passphrase, localKeyECDH, addr)
+	listener, err := NewListener(passphrase, localKeyECDH, addr, authData)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -52,8 +52,10 @@ func makeListener(passphrase []byte) (*Listener, net.Addr, error) {
 	return listener, netAddr, nil
 }
 
-func establishTestConnection(clientPass, serverPass []byte) (net.Conn, net.Conn, func(), error) {
-	listener, netAddr, err := makeListener(serverPass)
+func establishTestConnection(clientPass, serverPass,
+	authData []byte) (net.Conn, net.Conn, func(), error) {
+
+	listener, netAddr, err := makeListener(serverPass, authData)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -104,16 +106,23 @@ func establishTestConnection(clientPass, serverPass []byte) (net.Conn, net.Conn,
 }
 
 func TestConnectionCorrectness(t *testing.T) {
+	authData := []byte("fake macaroon")
+
 	// Create a test connection, grabbing either side of the connection
 	// into local variables. If the initial crypto handshake fails, then
 	// we'll get a non-nil error here.
 	localConn, remoteConn, cleanUp, err := establishTestConnection(
-		passHash[:], passHash[:],
+		passHash[:], passHash[:], authData,
 	)
 	if err != nil {
 		t.Fatalf("unable to establish test connection: %v", err)
 	}
 	defer cleanUp()
+
+	// At this point, since we specified the auth data above, the client
+	// should now know of this information.
+	noiseConn := localConn.(*Conn)
+	require.Equal(t, authData, noiseConn.noise.authData)
 
 	// Test out some message full-message reads.
 	for i := 0; i < 10; i++ {
@@ -163,9 +172,12 @@ func TestConnectionCorrectnessWrongPassphrase(t *testing.T) {
 	// into local variables. If the initial crypto handshake fails, then
 	// we'll get a non-nil error here.
 	_, _, _, err := establishTestConnection(
-		[]byte("wrong pass"), passHash[:],
+		[]byte("wrong pass"), passHash[:], nil,
 	)
 
+	// The client is trying to connect to the server using the wrong PAKE
+	// pass phrase, should error out here as the ActOne message should be
+	// rejected by the server.
 	require.Error(t, err)
 }
 
@@ -175,7 +187,7 @@ func TestConnectionCorrectnessWrongPassphrase(t *testing.T) {
 // The test passes if real brontide dialer connects while the others are
 // stalled.
 func TestConcurrentHandshakes(t *testing.T) {
-	listener, netAddr, err := makeListener(passHash[:])
+	listener, netAddr, err := makeListener(passHash[:], nil)
 	if err != nil {
 		t.Fatalf("unable to create listener connection: %v", err)
 	}
@@ -286,7 +298,7 @@ func TestWriteMessageChunking(t *testing.T) {
 	// into local variables. If the initial crypto handshake fails, then
 	// we'll get a non-nil error here.
 	localConn, remoteConn, cleanUp, err := establishTestConnection(
-		passHash[:], passHash[:],
+		passHash[:], passHash[:], nil,
 	)
 	if err != nil {
 		t.Fatalf("unable to establish test connection: %v", err)
