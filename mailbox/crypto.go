@@ -2,10 +2,7 @@ package mailbox
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"math/big"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/kkdai/bstream"
 	"github.com/lightningnetwork/lnd/aezeed"
 )
@@ -71,62 +68,4 @@ func PasswordMnemonicToEntropy(
 	copy(passwordEntropy[:], cipherBits.Bytes())
 
 	return passwordEntropy
-}
-
-// TODO(guggero): Implement using "hash-and-increment" algorithm.
-func GeneratorPoint(preimage string) (*btcec.PublicKey, error) {
-	hash := sha256.Sum256([]byte(preimage))
-	_, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), hash[:])
-	return pubKey, nil
-}
-
-// TODO(guggero): Implement in an actually secure way.
-func SPAKE2MaskPoint(ephemeralPubKey *btcec.PublicKey,
-	generatorPointPreimage string, password []byte) (*btcec.PublicKey,
-	error) {
-
-	g, err := GeneratorPoint(generatorPointPreimage)
-	if err != nil {
-		return nil, err
-	}
-
-	// Use PBKDF2 here?
-	pwHash := sha256.Sum256(password)
-	blindingPoint := &btcec.PublicKey{}
-	blindingPoint.X, blindingPoint.Y = btcec.S256().ScalarMult(
-		g.X, g.Y, pwHash[:],
-	)
-
-	result := &btcec.PublicKey{Curve: btcec.S256()}
-	result.X, result.Y = btcec.S256().Add(
-		blindingPoint.X, blindingPoint.Y,
-		ephemeralPubKey.X, ephemeralPubKey.Y,
-	)
-	return result, nil
-}
-
-// TODO(guggero): Implement in an actually secure way.
-func SPAKE2UnmaskPoint(blindedKey *btcec.PublicKey,
-	generatorPointPreimage string, password []byte) (*btcec.PublicKey,
-	error) {
-
-	g, err := GeneratorPoint(generatorPointPreimage)
-	if err != nil {
-		return nil, err
-	}
-
-	// Use PBKDF2 here?
-	pwHash := sha256.Sum256(password)
-	blindingPoint := &btcec.PublicKey{}
-	blindingPoint.X, blindingPoint.Y = btcec.S256().ScalarMult(
-		g.X, g.Y, pwHash[:],
-	)
-
-	result := &btcec.PublicKey{Curve: btcec.S256()}
-	negY := new(big.Int).Neg(blindedKey.Y)
-	negY = negY.Mod(negY, btcec.S256().P)
-	result.X, result.Y = blindedKey.Curve.Add(
-		blindedKey.X, blindedKey.Y, blindedKey.X, negY,
-	)
-	return result, nil
 }
