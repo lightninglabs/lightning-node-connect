@@ -72,10 +72,6 @@ type GoBackNConn struct {
 	// not received from the peer.
 	handshakeTimeout time.Duration
 
-	// handshakeComplete is used to signal if the handshake is complete
-	// or not. If the channel is closed then the handshake is complete.
-	handshakeComplete chan struct{}
-
 	// receivedACKSignal channel is used to signal that the queue size has
 	// been decreased.
 	receivedACKSignal chan struct{}
@@ -123,7 +119,6 @@ func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
 		isServer:          isServer,
 		sendQueue:         newQueue(n+1, defaultHandshakeTimeout),
 		handshakeTimeout:  defaultHandshakeTimeout,
-		handshakeComplete: make(chan struct{}),
 		receivedACKSignal: make(chan struct{}),
 		resendSignal:      make(chan struct{}, 1),
 		ctx:               ctxc,
@@ -148,7 +143,7 @@ func (g *GoBackNConn) Send(data []byte) error {
 	select {
 	case <-g.quit:
 		return io.EOF
-	case <-g.handshakeComplete:
+	default:
 	}
 
 	sendPacket := func(packet *PacketData) error {
@@ -161,13 +156,13 @@ func (g *GoBackNConn) Send(data []byte) error {
 			return io.EOF
 		}
 	}
-	
+
 	if g.maxChunkSize == 0 {
 		// Splitting is disabled.
 		return sendPacket(&PacketData{
 			Payload:    data,
 			FinalChunk: true,
-		})		
+		})
 	}
 
 	// Splitting is enabled. Split into packets no larger than maxChunkSize.
@@ -181,7 +176,7 @@ func (g *GoBackNConn) Send(data []byte) error {
 			sentBytes += remainingBytes
 			packet.FinalChunk = true
 		} else {
-			packet.Payload = data[sentBytes:sentBytes+g.maxChunkSize]
+			packet.Payload = data[sentBytes : sentBytes+g.maxChunkSize]
 			sentBytes += g.maxChunkSize
 		}
 
@@ -199,7 +194,7 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 	select {
 	case <-g.quit:
 		return nil, io.EOF
-	case <-g.handshakeComplete:
+	default:
 	}
 
 	var (
@@ -278,21 +273,16 @@ func (g *GoBackNConn) Close() error {
 	// server.
 	close(g.quit)
 
-	// If a connection had been established, try send a FIN message to
-	// the peer if they have not already done so.
-	select {
-	case <-g.handshakeComplete:
-		if !g.remoteClosed {
-			log.Tracef("Try sending FIN, isServer=%v", g.isServer)
-			ctxc, cancel := context.WithTimeout(
-				g.ctx, finSendTimeout,
-			)
-			defer cancel()
-			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
-				log.Errorf("Error sending FIN: %v", err)
-			}
+	// Try send a FIN message to the peer if they have not already done so.
+	if !g.remoteClosed {
+		log.Tracef("Try sending FIN, isServer=%v", g.isServer)
+		ctxc, cancel := context.WithTimeout(
+			g.ctx, finSendTimeout,
+		)
+		defer cancel()
+		if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
+			log.Errorf("Error sending FIN: %v", err)
 		}
-	default:
 	}
 
 	// Canceling the context will ensure that we are not hanging on the

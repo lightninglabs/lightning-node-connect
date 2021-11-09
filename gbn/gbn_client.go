@@ -30,13 +30,10 @@ func NewClientConn(n uint8, sendFunc sendBytesFunc, receiveFunc recvBytesFunc,
 		o(conn)
 	}
 
-	go func() {
-		if err := conn.clientHandshake(); err != nil {
-			conn.errChan <- err
-			return
-		}
-		conn.start()
-	}()
+	if err := conn.clientHandshake(); err != nil {
+		return nil, err
+	}
+	conn.start()
 
 	return conn, nil
 }
@@ -60,13 +57,14 @@ func (g *GoBackNConn) clientHandshake() error {
 	recvChan := make(chan []byte)
 	recvNext := make(chan int, 1)
 	errChan := make(chan error, 1)
+	handshakeComplete := make(chan struct{})
 	go func() {
 		for {
 			// We only move on to read from the stream if
 			// the handshake is not yet complete and if we get
 			// a signal from the recvNext channel.
 			select {
-			case <-g.handshakeComplete:
+			case <-handshakeComplete:
 				return
 			case <-recvNext:
 			}
@@ -149,7 +147,7 @@ handshake:
 	}
 
 	log.Debugf("Client Handshake complete")
-	close(g.handshakeComplete)
+	close(handshakeComplete)
 
 	return nil
 }
