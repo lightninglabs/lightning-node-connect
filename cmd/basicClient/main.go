@@ -93,7 +93,7 @@ func lndConn(words []string) (*grpc.ClientConn, error) {
 
 	ctx := context.Background()
 	transportConn := mailbox.NewClientConn(ctx, receiveSID, sendSID)
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
+	noiseConn := mailbox.NewNoiseConn(ecdh, nil, password[:])
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),
