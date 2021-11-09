@@ -12,9 +12,15 @@ LINT_COMMIT := v1.18.0
 DEPGET := cd /tmp && GO111MODULE=on go get -v
 GOBUILD := go build -v
 GOINSTALL := go install -v
-GOTEST := go test -v
+GOTEST := GO111MODULE=on go test -v
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
+
+GOLIST := go list $(PKG)/... | grep -v '/vendor/'
+XARGS := xargs -L 1
+
+UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) -tags="$(DEV_TAGS) $(LOG_TAGS)" $(TEST_FLAGS)
+UNIT_RACE := $(UNIT) -race
 
 LDFLAGS := -s -w -buildid=
 
@@ -59,7 +65,7 @@ check: unit
 
 unit:
 	@$(call print, "Running unit tests.")
-	$(GOTEST) ./...
+	$(UNIT)
 
 unit-race:
 	@$(call print, "Running unit race tests.")
