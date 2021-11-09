@@ -21,13 +21,10 @@ func NewServerConn(ctx context.Context, sendFunc sendBytesFunc,
 		o(conn)
 	}
 
-	go func() {
-		if err := conn.serverHandshake(); err != nil {
-			conn.errChan <- err
-			return
-		}
-		conn.start()
-	}()
+	if err := conn.serverHandshake(); err != nil {
+		return nil, err
+	}
+	conn.start()
 
 	return conn, nil
 }
@@ -44,10 +41,13 @@ func (g *GoBackNConn) serverHandshake() error {
 	recvChan := make(chan []byte)
 	recvNext := make(chan int, 1)
 	errChan := make(chan error, 1)
+	handshakeComplete := make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-g.handshakeComplete:
+			case <-handshakeComplete:
+				return
+			case <-g.ctx.Done():
 				return
 			case <-recvNext:
 			}
@@ -66,7 +66,13 @@ func (g *GoBackNConn) serverHandshake() error {
 	for {
 		log.Debugf("Waiting for client SYN")
 		recvNext <- 1
-		b := <-recvChan
+
+		var b []byte
+		select {
+		case <-g.ctx.Done():
+			return nil
+		case b = <-recvChan:
+		}
 
 		msg, err := Deserialize(b)
 		if err != nil {
@@ -109,6 +115,8 @@ func (g *GoBackNConn) serverHandshake() error {
 			continue
 		case err := <-errChan:
 			return err
+		case <-g.ctx.Done():
+			return nil
 		case b = <-recvChan:
 		}
 
@@ -135,7 +143,7 @@ func (g *GoBackNConn) serverHandshake() error {
 	// from the client
 	g.setN(n)
 
-	close(g.handshakeComplete)
+	close(handshakeComplete)
 
 	log.Debugf("Handshake complete (Server)")
 	return nil
