@@ -756,7 +756,7 @@ func (b *Machine) RecvActTwo(actTwo [ActTwoSize]byte) error {
 	payloadLen := binary.BigEndian.Uint16(payload[:2])
 	b.authData = make([]byte, payloadLen)
 
-	payloadReader := bytes.NewReader(payload)
+	payloadReader := bytes.NewReader(payload[2:])
 	if _, err := payloadReader.Read(b.authData); err != nil {
 		return err
 	}

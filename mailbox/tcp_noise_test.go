@@ -121,8 +121,11 @@ func TestConnectionCorrectness(t *testing.T) {
 
 	// At this point, since we specified the auth data above, the client
 	// should now know of this information.
-	noiseConn := localConn.(*Conn)
-	require.Equal(t, authData, noiseConn.noise.authData)
+	noiseConnLocal := localConn.(*Conn)
+	noiseConnRemote := remoteConn.(*Conn)
+	require.Equal(
+		t, noiseConnLocal.noise.authData, noiseConnRemote.noise.authData,
+	)
 
 	// Test out some message full-message reads.
 	for i := 0; i < 10; i++ {
