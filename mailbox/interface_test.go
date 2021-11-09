@@ -23,17 +23,6 @@ func TestControlMsgSerializeDeserialize(t *testing.T) {
 		src: NewMsgConnect(123),
 		dst: &MsgConnect{},
 	}, {
-		src: NewMsgClientHello(255, pubKey),
-		dst: &MsgClientHello{},
-	}, {
-		src: NewMsgServerHello(0, pubKey, []byte{
-			77, 88, 99, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-		}),
-		dst: &MsgServerHello{},
-	}, {
-		src: NewMsgServerHello(0, pubKey, nil),
-		dst: &MsgServerHello{},
-	}, {
 		src: NewMsgData(123, []byte{
 			77, 88, 99, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 			13, 14, 15, 16, 17, 0, 0, 0, 0, 0, 0, 99, 88, 77, 66,

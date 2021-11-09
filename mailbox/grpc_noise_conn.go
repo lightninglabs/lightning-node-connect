@@ -2,15 +2,15 @@ package mailbox
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightningnetwork/lnd/keychain"
-	"golang.org/x/crypto/chacha20poly1305"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -25,12 +25,11 @@ const (
 // interface and can therefore be used as a replacement of the default TLS
 // implementation that's used by HTTP/2.
 type NoiseConn struct {
-	Conn
+	// TODO(roasbee): eliminate this so can be used as generic handshake
+	// bridge?
+	MailboxConn
 
-	localNonce  uint64
-	remoteNonce uint64
-
-	secret   [32]byte
+	password []byte
 	authData []byte
 
 	localKey  keychain.SingleKeyECDH
@@ -38,17 +37,20 @@ type NoiseConn struct {
 
 	nextMsg    []byte
 	nextMsgMtx sync.Mutex
+
+	noise *Machine
 }
 
 // NewNoiseConn creates a new noise connection using given local ECDH key. The
 // auth data can be set for server connections and is sent as the payload to the
 // client during the handshake.
 func NewNoiseConn(localKey keychain.SingleKeyECDH,
-	authData []byte) *NoiseConn {
+	authData []byte, password []byte) *NoiseConn {
 
 	return &NoiseConn{
 		localKey: localKey,
 		authData: authData,
+		password: password,
 	}
 }
 
@@ -69,12 +71,7 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 		return msgLen, nil
 	}
 
-	msg := NewMsgData(ProtocolVersion, nil)
-	if err := c.Conn.ReceiveControlMsg(msg); err != nil {
-		return 0, fmt.Errorf("error receiving data msg: %v", err)
-	}
-
-	requestBytes, err := c.Decrypt(msg.Payload, c.secret[:])
+	requestBytes, err := c.noise.ReadMessage(c.MailboxConn)
 	if err != nil {
 		return 0, fmt.Errorf("error decrypting payload: %v", err)
 	}
@@ -101,30 +98,25 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseConn) Write(b []byte) (int, error) {
-	payload, err := c.Encrypt(b, c.secret[:])
+	err := c.noise.WriteMessage(b)
 	if err != nil {
-		return 0, fmt.Errorf("error encrypting response: %v", err)
+		return 0, err
 	}
 
-	msg := NewMsgData(ProtocolVersion, payload)
-	if err := c.Conn.SendControlMsg(msg); err != nil {
-		return 0, fmt.Errorf("error sending data msg: %v", err)
-	}
-
-	return len(b), nil
+	return c.noise.Flush(c.MailboxConn)
 }
 
 // LocalAddr returns the local address of this connection.
 //
 // NOTE: This is part of the Conn interface.
 func (c *NoiseConn) LocalAddr() net.Addr {
-	if c.Conn == nil {
+	if c.MailboxConn == nil {
 		return &NoiseAddr{PubKey: c.localKey.PubKey()}
 	}
 
 	return &NoiseAddr{
 		PubKey: c.localKey.PubKey(),
-		Server: c.Conn.LocalAddr().String(),
+		Server: c.MailboxConn.LocalAddr().String(),
 	}
 }
 
@@ -132,21 +124,14 @@ func (c *NoiseConn) LocalAddr() net.Addr {
 //
 // NOTE: This is part of the Conn interface.
 func (c *NoiseConn) RemoteAddr() net.Addr {
-	if c.Conn == nil {
+	if c.MailboxConn == nil {
 		return &NoiseAddr{PubKey: c.remoteKey}
 	}
 
 	return &NoiseAddr{
 		PubKey: c.remoteKey,
-		Server: c.Conn.RemoteAddr().String(),
+		Server: c.MailboxConn.RemoteAddr().String(),
 	}
-}
-
-// resetCipherState resets the internal state of the noise machine so we can
-// properly reconnect and do the main handshake again.
-func (c *NoiseConn) resetCipherState() {
-	c.localNonce = 0
-	c.remoteNonce = 0
 }
 
 // ClientHandshake implements the client side part of the noise connection
@@ -156,46 +141,77 @@ func (c *NoiseConn) resetCipherState() {
 func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
 
-	// Ensure the cipher state is reset each time we need to do the
-	// handshake.
-	c.resetCipherState()
-
 	log.Tracef("Starting client handshake")
 
-	transportConn, ok := conn.(Conn)
+	transportConn, ok := conn.(MailboxConn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
-	c.Conn = transportConn
+	c.MailboxConn = transportConn
 
-	clientHello := NewMsgClientHello(ProtocolVersion, c.localKey.PubKey())
-	if err := c.Conn.SendControlMsg(clientHello); err != nil {
-		return nil, nil, err
-	}
-	log.Debugf("Sent client hello with client_key=%x",
+	// First, initialize a new noise machine with our static long term, and
+	// password.
+	//
+	// TODO(roasbeef): use memory hard function here after testing in
+	// browser to ensure isn't too perf intensive
+	c.noise = NewBrontideMachine(true, c.localKey, c.password)
+
+	log.Debugf("Kicking off client handshake with client_key=%x",
 		c.localKey.PubKey().SerializeCompressed())
 
-	serverHello := NewMsgServerHello(ProtocolVersion, nil, nil)
-	if err := c.Conn.ReceiveControlMsg(serverHello); err != nil {
+	// Initiate the handshake by sending the first act to the receiver.
+	actOne, err := c.noise.GenActOne()
+	if err != nil {
 		return nil, nil, err
 	}
-	log.Debugf("Received server hello with server_key=%x",
-		serverHello.PubKey.SerializeCompressed())
-
-	var err error
-	c.remoteKey = serverHello.PubKey
-	c.secret, err = c.localKey.ECDH(c.remoteKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error calculating shared "+
-			"secret: %v", err)
+	if _, err := c.MailboxConn.Write(actOne[:]); err != nil {
+		return nil, nil, err
 	}
 
-	authDataBytes, err := c.Decrypt(serverHello.AuthData, c.secret[:])
+	// We'll ensure that we get ActTwo from the remote peer in a timely
+	// manner. If they don't respond within 1s, then we'll kill the
+	// connection.
+	err = c.MailboxConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
-		return nil, nil, fmt.Errorf("error decrypting auth data: %v",
-			err)
+		return nil, nil, err
 	}
-	c.authData = authDataBytes
+
+	// If the first act was successful (we know that address is actually
+	// remotePub), then read the second act after which we'll be able to
+	// send our static public key to the remote peer with strong forward
+	// secrecy.
+	var actTwo [ActTwoSize]byte
+	if _, err := io.ReadFull(c.MailboxConn, actTwo[:]); err != nil {
+		return nil, nil, err
+	}
+
+	if err := c.noise.RecvActTwo(actTwo); err != nil {
+		return nil, nil, err
+	}
+
+	// Finally, complete the handshake by sending over our encrypted static
+	// key and execute the final ECDH operation.
+	actThree, err := c.noise.GenActThree()
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := c.MailboxConn.Write(actThree[:]); err != nil {
+		return nil, nil, err
+	}
+
+	// We'll reset the deadline as it's no longer critical beyond the
+	// initial handshake.
+	err = c.MailboxConn.SetReadDeadline(time.Time{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	log.Debugf("Completed client handshake with with server_key=%x",
+		c.noise.remoteStatic.SerializeCompressed())
+
+	// At this point, we'll also extract the auth data obtained during the
+	// second act of the handshake.
+	c.authData = c.noise.authData
 
 	log.Tracef("Client handshake completed")
 
@@ -208,50 +224,77 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	credentials.AuthInfo, error) {
 
-	// Ensure the cipher state is reset each time we need to do the
-	// handshake.
-	c.resetCipherState()
-
 	log.Tracef("Starting server handshake")
 
-	transportConn, ok := conn.(Conn)
+	transportConn, ok := conn.(MailboxConn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
-	c.Conn = transportConn
+	c.MailboxConn = transportConn
 
-	clientHello := NewMsgClientHello(ProtocolVersion, nil)
-	if err := c.Conn.ReceiveControlMsg(clientHello); err != nil {
-		return nil, nil, fmt.Errorf("error receiving client hello: %v",
-			err)
-	}
-	c.remoteKey = clientHello.PubKey
-
-	var err error
-	c.secret, err = c.localKey.ECDH(c.remoteKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error calculating shared "+
-			"secret: %v", err)
-	}
-
-	log.Debugf("Received client hello msg, client_key=%x",
-		clientHello.PubKey.SerializeCompressed())
-
-	encryptedMac, err := c.Encrypt(c.authData, c.secret[:])
-	if err != nil {
-		return nil, nil, fmt.Errorf("error encrypting macaroon: %v",
-			err)
-	}
-
-	serverHello := NewMsgServerHello(
-		ProtocolVersion, c.localKey.PubKey(), encryptedMac,
+	// First, we'll initialize a new borntide machine with our static key,
+	// passphrase, and also the macaroon authentication data.
+	c.noise = NewBrontideMachine(
+		false, c.localKey, c.password, AuthDataPayload(c.authData),
 	)
-	if err := c.Conn.SendControlMsg(serverHello); err != nil {
-		return nil, nil, fmt.Errorf("error sending server hello: %v",
-			err)
+
+	// We'll ensure that we get ActOne from the remote peer in a timely
+	// manner. If they don't respond within 1s, then we'll kill the
+	// connection.
+	err := c.MailboxConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	if err != nil {
+		return nil, nil, err
 	}
 
-	log.Tracef("Server handshake completed")
+	// Attempt to carry out the first act of the handshake protocol. If the
+	// connecting node doesn't know our long-term static public key, then
+	// this portion will fail with a non-nil error.
+	var actOne [ActOneSize]byte
+	if _, err := io.ReadFull(conn, actOne[:]); err != nil {
+		return nil, nil, err
+	}
+	if err := c.noise.RecvActOne(actOne); err != nil {
+		return nil, nil, err
+	}
+
+	// Next, progress the handshake processes by sending over our ephemeral
+	// key for the session along with an authenticating tag.
+	actTwo, err := c.noise.GenActTwo()
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := conn.Write(actTwo[:]); err != nil {
+		return nil, nil, err
+	}
+
+	// We'll ensure that we get ActTwo from the remote peer in a timely
+	// manner. If they don't respond within 1 second, then we'll kill the
+	// connection.
+	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Finally, finish the handshake processes by reading and decrypting
+	// the connection peer's static public key. If this succeeds then both
+	// sides have mutually authenticated each other.
+	var actThree [ActThreeSize]byte
+	if _, err := io.ReadFull(conn, actThree[:]); err != nil {
+		return nil, nil, err
+	}
+	if err := c.noise.RecvActThree(actThree); err != nil {
+		return nil, nil, err
+	}
+
+	// We'll reset the deadline as it's no longer critical beyond the
+	// initial handshake.
+	err = conn.SetReadDeadline(time.Time{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	log.Debugf("Finished server handshake, client_key=%x",
+		c.noise.remoteStatic.SerializeCompressed())
 
 	return c, NewAuthInfo(), nil
 }
@@ -273,13 +316,10 @@ func (c *NoiseConn) Info() credentials.ProtocolInfo {
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseConn) Clone() credentials.TransportCredentials {
 	return &NoiseConn{
-		Conn:        c.Conn,
-		secret:      c.secret,
+		MailboxConn: c.MailboxConn,
 		authData:    c.authData,
 		localKey:    c.localKey,
 		remoteKey:   c.remoteKey,
-		localNonce:  c.localNonce,
-		remoteNonce: c.remoteNonce,
 	}
 }
 
@@ -320,30 +360,4 @@ func (c *NoiseConn) GetRequestMetadata(_ context.Context,
 		md[parts[0]] = parts[1]
 	}
 	return md, nil
-}
-
-func (c *NoiseConn) Encrypt(plainText []byte, secret []byte) ([]byte, error) {
-	defer func() {
-		c.localNonce++
-	}()
-
-	cipher, _ := chacha20poly1305.New(secret)
-
-	var nonce [12]byte
-	binary.LittleEndian.PutUint64(nonce[4:], c.localNonce)
-
-	return cipher.Seal(nil, nonce[:], plainText, nil), nil
-}
-
-func (c *NoiseConn) Decrypt(cipherText []byte, secret []byte) ([]byte, error) {
-	defer func() {
-		c.remoteNonce++
-	}()
-
-	cipher, _ := chacha20poly1305.New(secret)
-
-	var nonce [12]byte
-	binary.LittleEndian.PutUint64(nonce[4:], c.remoteNonce)
-
-	return cipher.Open(nil, nonce[:], cipherText, nil)
 }
