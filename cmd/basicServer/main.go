@@ -56,8 +56,10 @@ func main() {
 		log.Fatalf(err.Error())
 	}
 
+	ps := mailbox.PasswordMnemonicToEntropy(password)
+
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
+	noiseConn := mailbox.NewNoiseConn(ecdh, nil, ps[:])
 
 	s := &mockrpc.Server{}
 

@@ -58,7 +58,7 @@ func main() {
 
 func chatWithLND(c mockrpc.MockServiceClient) error {
 
-	largeResp := make([]byte, 1024*1024*4)
+	largeResp := make([]byte, 1024*4)
 	rand.Read(largeResp)
 	req := &mockrpc.Request{Req: largeResp}
 
@@ -70,7 +70,6 @@ func chatWithLND(c mockrpc.MockServiceClient) error {
 		}
 
 		fmt.Println("got the thing", time.Since(t))
-		time.Sleep(5 * time.Second)
 	}
 
 	return nil
@@ -93,7 +92,7 @@ func lndConn(words []string) (*grpc.ClientConn, error) {
 
 	ctx := context.Background()
 	transportConn := mailbox.NewClientConn(ctx, receiveSID, sendSID)
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil)
+	noiseConn := mailbox.NewNoiseConn(ecdh, nil, password[:])
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),
