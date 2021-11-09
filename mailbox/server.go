@@ -92,7 +92,7 @@ func (s *Server) Accept() (net.Conn, error) {
 			return nil, err
 		}
 	} else {
-		s.mailboxConn, err = RefreshServerConn(s.mailboxConn)
+		*s.mailboxConn, err = RefreshServerConn(s.mailboxConn)
 		if err != nil {
 			log.Errorf("couldn't refresh server: %v", err)
 			return nil, err
