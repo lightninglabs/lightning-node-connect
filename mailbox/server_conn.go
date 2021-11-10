@@ -83,15 +83,14 @@ func NewServerConn(ctx context.Context, serverHost string,
 // RefreshServerConn returns the same ServerConn object created in
 // NewServerConn but creates a new quit channel as well as
 // instantiates a new GoBN connection.
-func RefreshServerConn(s *ServerConn) (ServerConn, error) {
+func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 	s.receiveStreamMu.Lock()
 	defer s.receiveStreamMu.Unlock()
 
 	s.sendStreamMu.Lock()
 	defer s.sendStreamMu.Unlock()
 
-	sc := ServerConn{
-		connKit:           s.connKit,
+	sc := &ServerConn{
 		client:            s.client,
 		receiveBoxCreated: s.receiveBoxCreated,
 		sendBoxCreated:    s.sendBoxCreated,
@@ -100,12 +99,21 @@ func RefreshServerConn(s *ServerConn) (ServerConn, error) {
 		quit:              make(chan struct{}),
 	}
 
+	// Ensure that the connKit is also re-created.
+	sc.connKit = &connKit{
+		ctx:        s.connKit.ctx,
+		serverAddr: s.connKit.serverAddr,
+		impl:       sc,
+		receiveSID: s.connKit.receiveSID,
+		sendSID:    s.connKit.sendSID,
+	}
+
 	log.Debugf("ServerConn: creating gbn")
 	gbnConn, err := gbn.NewServerConn(
 		sc.ctx, sc.sendToStream, sc.recvFromStream, sc.gbnOptions...,
 	)
 	if err != nil {
-		return ServerConn{}, err
+		return nil, err
 	}
 
 	sc.gbnConn = gbnConn
