@@ -317,6 +317,7 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 	error) {
 
 	c.connKit.serverAddr = serverHost
+	c.quit = make(chan struct{})
 
 	gbnConn, err := gbn.NewClientConn(
 		gbnN, c.sendToStream, c.recvFromStream,
@@ -328,7 +329,6 @@ func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
 		return nil, err
 	}
 	c.gbnConn = gbnConn
-	c.quit = make(chan struct{})
 
 	return c, nil
 }
