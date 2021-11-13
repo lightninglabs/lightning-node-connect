@@ -89,8 +89,9 @@ type controlConn interface {
 	SendControlMsg(ControlMsg) error
 }
 
-// MailboxConn is the main interface that any mailbox connection needs to implement.
-type MailboxConn interface {
+// ProxyConn is the main interface that any mailbox connection needs to
+// implement.
+type ProxyConn interface {
 	net.Conn
 	controlConn
 }

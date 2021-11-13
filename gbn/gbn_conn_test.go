@@ -51,7 +51,9 @@ func TestNormal(t *testing.T) {
 		return nil
 	}
 
-	server, client, cleanup, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
+	server, client, cleanup := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
 	defer cleanup()
 
 	payload1 := []byte("payload 1")
@@ -129,8 +131,10 @@ func TestDroppedMessage(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
@@ -208,8 +212,10 @@ func TestDroppedACKs(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, n, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, n, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
@@ -295,8 +301,10 @@ func TestReceiveDuplicateMessages(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
@@ -391,8 +399,10 @@ func TestReceiveDuplicateDataAndACKs(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
@@ -454,8 +464,10 @@ func TestBidirectional(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
@@ -535,13 +547,15 @@ func TestSendNBeforeNeedingAck(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
 
-	err = p1.Send(payload1)
+	err := p1.Send(payload1)
 	require.NoError(t, err)
 
 	err = p1.Send(payload2)
@@ -571,7 +585,7 @@ func TestDropFirstNPackets(t *testing.T) {
 
 	var (
 		n       uint8 = 3
-		count   int
+		count   uint8
 		countMu sync.Mutex
 	)
 	s1Write := func(ctx context.Context, b []byte) error {
@@ -582,7 +596,7 @@ func TestDropFirstNPackets(t *testing.T) {
 		}()
 
 		// drop first non-handshake packet
-		if count > 0 && count < int(n+1) {
+		if count > 0 && count < n+1 {
 			return nil
 		}
 
@@ -612,14 +626,16 @@ func TestDropFirstNPackets(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, n, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, n, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
 	payload3 := []byte("payload 3")
 
-	err = p1.Send(payload1)
+	err := p1.Send(payload1)
 	require.NoError(t, err)
 
 	err = p1.Send(payload2)
@@ -681,8 +697,10 @@ func TestBidirectional2(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("client hello")
 	payload2 := []byte("server hello")
@@ -695,8 +713,8 @@ func TestBidirectional2(t *testing.T) {
 	payload9 := []byte("server bye")
 
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 
 		// Server
@@ -734,7 +752,7 @@ func TestBidirectional2(t *testing.T) {
 	}()
 
 	// Client
-	err = p1.Send(payload1)
+	err := p1.Send(payload1)
 	require.NoError(t, err)
 
 	msg, err := p1.Recv()
@@ -823,8 +841,10 @@ func TestSendingIsNonBlockingUpToN(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, close, err := setUpClientServerConns(t, 2, s1Read, s2Read, s2Write, s1Write)
-	defer close()
+	p1, p2, cleanUp := setUpClientServerConns(
+		t, 2, s1Read, s2Read, s2Write, s1Write,
+	)
+	defer cleanUp()
 
 	payload1 := []byte("payload 1")
 	payload2 := []byte("payload 2")
@@ -846,7 +866,7 @@ func TestSendingIsNonBlockingUpToN(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	err = p2.Send(payload3)
+	err := p2.Send(payload3)
 	require.NoError(t, err)
 
 	msg, err := p2.Recv()
@@ -902,8 +922,9 @@ func TestSendingLargeNumberOfMessages(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, cleanup, err := setUpClientServerConns(t, 100, s1Read, s2Read, s2Write, s1Write)
-	require.NoError(t, err)
+	p1, p2, cleanup := setUpClientServerConns(
+		t, 100, s1Read, s2Read, s2Write, s1Write,
+	)
 	defer cleanup()
 
 	payload1 := []byte("payload 1")
@@ -973,13 +994,14 @@ func TestResendAfterTimeout(t *testing.T) {
 		return nil
 	}
 
-	p1, p2, cleanup, err := setUpClientServerConns(t, 100, s1Read, s2Read, s2Write, s1Write)
-	require.NoError(t, err)
+	p1, p2, cleanup := setUpClientServerConns(
+		t, 100, s1Read, s2Read, s2Write, s1Write,
+	)
 	defer cleanup()
 
 	payload1 := []byte("payload 1")
 
-	err = p1.Send(payload1)
+	err := p1.Send(payload1)
 	require.NoError(t, err)
 
 	msg, err := p2.Recv()
@@ -1031,7 +1053,7 @@ func TestPayloadSplitting(t *testing.T) {
 	payload1 := make([]byte, 4000)
 	rand.Read(payload1)
 
-	server, client, cleanup, err := setUpClientServerConns(
+	server, client, cleanup := setUpClientServerConns(
 		t, 2, s1Read, s2Read, s2Write, s1Write,
 		WithMaxSendSize(maxPayloadSize),
 	)
@@ -1050,8 +1072,7 @@ func TestPayloadSplitting(t *testing.T) {
 func setUpClientServerConns(t *testing.T, n uint8,
 	cRead, sRead func(ctx context.Context) ([]byte, error),
 	cWrite, sWrite func(ctx context.Context, b []byte) error,
-	opts ...Option) (*GoBackNConn,
-	*GoBackNConn, func(), error) {
+	opts ...Option) (*GoBackNConn, *GoBackNConn, func()) {
 
 	var (
 		server *GoBackNConn
@@ -1081,5 +1102,5 @@ func setUpClientServerConns(t *testing.T, n uint8,
 	return server, client, func() {
 		client.Close()
 		server.Close()
-	}, nil
+	}
 }

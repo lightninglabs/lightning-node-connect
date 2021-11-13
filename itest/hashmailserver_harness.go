@@ -65,6 +65,7 @@ func (hm *hashmailHarness) initAperture() error {
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			return fmt.Errorf("invalid status: %d", resp.StatusCode)
 		}

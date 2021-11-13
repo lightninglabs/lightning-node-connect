@@ -104,7 +104,7 @@ handshake:
 
 			var b []byte
 			select {
-			case <-time.Tick(g.handshakeTimeout):
+			case <-time.After(g.handshakeTimeout):
 				log.Debugf("SYN resendTimeout. Resending SYN.")
 				continue handshake
 			case err := <-errChan:

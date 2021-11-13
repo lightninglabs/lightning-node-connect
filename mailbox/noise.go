@@ -182,8 +182,8 @@ func (c *cipherState) rotateKey() {
 	// | \
 	// |  \
 	// ck  k'
-	h.Read(c.salt[:])
-	h.Read(nextKey[:])
+	_, _ = h.Read(c.salt[:])
+	_, _ = h.Read(nextKey[:])
 
 	c.InitializeKey(nextKey)
 }
@@ -230,8 +230,8 @@ func (s *symmetricState) mixKey(input []byte) {
 	// | \
 	// |  \
 	// ck  k
-	h.Read(s.chainingKey[:])
-	h.Read(s.tempKey[:])
+	_, _ = h.Read(s.chainingKey[:])
+	_, _ = h.Read(s.tempKey[:])
 
 	// cipher.k = temp_key
 	s.InitializeKey(s.tempKey)
@@ -242,8 +242,8 @@ func (s *symmetricState) mixKey(input []byte) {
 // decryption/encryption operations.
 func (s *symmetricState) mixHash(data []byte) {
 	h := sha256.New()
-	h.Write(s.handshakeDigest[:])
-	h.Write(data)
+	_, _ = h.Write(s.handshakeDigest[:])
+	_, _ = h.Write(data)
 
 	copy(s.handshakeDigest[:], h.Sum(nil))
 }
@@ -296,8 +296,8 @@ type handshakeState struct {
 	localStatic    keychain.SingleKeyECDH
 	localEphemeral keychain.SingleKeyECDH // nolint (false positive)
 
-	remoteStatic    *btcec.PublicKey
-	remoteEphemeral *btcec.PublicKey
+	remoteStatic    *btcec.PublicKey // nolint
+	remoteEphemeral *btcec.PublicKey // nolint
 }
 
 // newHandshakeState returns a new instance of the handshake state initialized
@@ -577,7 +577,7 @@ func (b *Machine) RecvActOne(actOne [ActOneSize]byte) error {
 	// TODO(roasbeef); use version to gate the initial and subsequent
 	// pairings
 	if actOne[0] != HandshakeVersion {
-		return fmt.Errorf("Act One: invalid handshake version: %v, "+
+		return fmt.Errorf("act one: invalid handshake version: %v, "+
 			"only %v is valid, msg=%x", actOne[0], HandshakeVersion,
 			actOne[:])
 	}
@@ -700,7 +700,7 @@ func (b *Machine) RecvActTwo(actTwo [ActTwoSize]byte) error {
 	// If the handshake version is unknown, then the handshake fails
 	// immediately.
 	if actTwo[0] != HandshakeVersion {
-		return fmt.Errorf("Act Two: invalid handshake version: %v, "+
+		return fmt.Errorf("act two: invalid handshake version: %v, "+
 			"only %v is valid, msg=%x", actTwo[0], HandshakeVersion,
 			actTwo[:])
 	}
@@ -812,7 +812,7 @@ func (b *Machine) RecvActThree(actThree [ActThreeSize]byte) error {
 	// If the handshake version is unknown, then the handshake fails
 	// immediately.
 	if actThree[0] != HandshakeVersion {
-		return fmt.Errorf("Act Three: invalid handshake version: %v, "+
+		return fmt.Errorf("act three: invalid handshake version: %v, "+
 			"only %v is valid, msg=%x", actThree[0], HandshakeVersion,
 			actThree[:])
 	}
@@ -866,19 +866,19 @@ func (b *Machine) split() {
 	// messages and the second 32-bytes to decrypt their messages. For the
 	// responder the opposite is true.
 	if b.initiator {
-		h.Read(sendKey[:])
+		_, _ = h.Read(sendKey[:])
 		b.sendCipher = cipherState{}
 		b.sendCipher.InitializeKeyWithSalt(b.chainingKey, sendKey)
 
-		h.Read(recvKey[:])
+		_, _ = h.Read(recvKey[:])
 		b.recvCipher = cipherState{}
 		b.recvCipher.InitializeKeyWithSalt(b.chainingKey, recvKey)
 	} else {
-		h.Read(recvKey[:])
+		_, _ = h.Read(recvKey[:])
 		b.recvCipher = cipherState{}
 		b.recvCipher.InitializeKeyWithSalt(b.chainingKey, recvKey)
 
-		h.Read(sendKey[:])
+		_, _ = h.Read(sendKey[:])
 		b.sendCipher = cipherState{}
 		b.sendCipher.InitializeKeyWithSalt(b.chainingKey, sendKey)
 	}

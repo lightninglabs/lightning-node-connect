@@ -4,13 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/stretchr/testify/require"
-)
-
-var (
-	privKey, _ = btcec.NewPrivateKey(btcec.S256())
-	pubKey     = privKey.PubKey()
 )
 
 func TestControlMsgSerializeDeserialize(t *testing.T) {

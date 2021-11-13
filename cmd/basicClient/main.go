@@ -28,6 +28,9 @@ import (
 func main() {
 	logWriter := build.NewRotatingLogWriter()
 	interceptor, err := signal.Intercept()
+	if err != nil {
+		panic(err)
+	}
 	lnd.AddSubLogger(logWriter, gbn.Subsystem, interceptor, gbn.UseLogger)
 	lnd.AddSubLogger(logWriter, mailbox.Subsystem, interceptor, mailbox.UseLogger)
 	logWriter.SetLogLevels("debug")
@@ -92,7 +95,7 @@ func lndConn(words []string) (*grpc.ClientConn, error) {
 
 	ctx := context.Background()
 	transportConn := mailbox.NewClientConn(ctx, receiveSID, sendSID)
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil, password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),

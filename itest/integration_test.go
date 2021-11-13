@@ -16,6 +16,8 @@ func TestTerminalConnect(t *testing.T) {
 	t.Logf("Running %v integration tests", len(testCases))
 	for _, testCase := range testCases {
 
+		testCase := testCase
+
 		success := t.Run(testCase.name, func(t1 *testing.T) {
 			clientHarness, serverHarness, hashmailHarness := setupHarnesses(t1)
 

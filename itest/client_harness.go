@@ -29,7 +29,7 @@ func newClientHarness(serverAddress string) *clientHarness {
 
 func (c *clientHarness) setConn(words []string) error {
 	var mnemonicWords [mailbox.NumPasswordWords]string
-	copy(mnemonicWords[:], words[:])
+	copy(mnemonicWords[:], words)
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
 	sid := sha512.Sum512(password[:])
@@ -44,7 +44,7 @@ func (c *clientHarness) setConn(words []string) error {
 
 	ctx := context.Background()
 	transportConn := mailbox.NewClientConn(ctx, receiveSID, sendSID)
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil, password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),

@@ -31,10 +31,9 @@ func newServerHarness(serverHost string) *serverHarness {
 	}
 }
 
-func (s *serverHarness) stop() error {
+func (s *serverHarness) stop() {
 	s.mockServer.Stop()
 	s.wg.Wait()
-	return nil
 }
 
 func (s *serverHarness) start() error {
@@ -61,7 +60,7 @@ func (s *serverHarness) start() error {
 	}
 
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseConn(ecdh, nil, passwordEntropy[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, passwordEntropy[:])
 
 	s.mockServer = grpc.NewServer(
 		grpc.Creds(noiseConn),

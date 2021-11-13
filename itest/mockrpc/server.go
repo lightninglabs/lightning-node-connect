@@ -13,7 +13,9 @@ func (s *Server) MockServiceMethod(_ context.Context, req *Request) (*Response,
 
 	// Let the response be 10x the size of the request
 	resp := make([]byte, 10*len(req.Req))
-	rand.Read(resp)
+	if _, err := rand.Read(resp); err != nil {
+		return nil, err
+	}
 
 	return &Response{
 		Resp: resp,

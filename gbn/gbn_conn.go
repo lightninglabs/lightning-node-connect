@@ -411,7 +411,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 // data, an ACK, NACK or FIN signal and then processes the packet accordingly.
 //
 // This function must be called in a go routine.
-func (g *GoBackNConn) receivePacketsForever() error {
+func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 	var (
 		lastNackSeq  uint8
 		lastNackTime time.Time

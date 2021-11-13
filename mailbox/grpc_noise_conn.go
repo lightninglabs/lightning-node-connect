@@ -14,20 +14,18 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-var _ credentials.TransportCredentials = (*NoiseConn)(nil)
-var _ credentials.PerRPCCredentials = (*NoiseConn)(nil)
+var _ credentials.TransportCredentials = (*NoiseGrpcConn)(nil)
+var _ credentials.PerRPCCredentials = (*NoiseGrpcConn)(nil)
 
 const (
 	defaultGrpcWriteBufSize = 32 * 1024
 )
 
-// NoiseConn is a type that implements the credentials.TransportCredentials
+// NoiseGrpcConn is a type that implements the credentials.TransportCredentials
 // interface and can therefore be used as a replacement of the default TLS
 // implementation that's used by HTTP/2.
-type NoiseConn struct {
-	// TODO(roasbee): eliminate this so can be used as generic handshake
-	// bridge?
-	MailboxConn
+type NoiseGrpcConn struct {
+	ProxyConn
 
 	password []byte
 	authData []byte
@@ -41,13 +39,13 @@ type NoiseConn struct {
 	noise *Machine
 }
 
-// NewNoiseConn creates a new noise connection using given local ECDH key. The
-// auth data can be set for server connections and is sent as the payload to the
-// client during the handshake.
-func NewNoiseConn(localKey keychain.SingleKeyECDH,
-	authData []byte, password []byte) *NoiseConn {
+// NewNoiseGrpcConn creates a new noise connection using given local ECDH key.
+// The auth data can be set for server connections and is sent as the payload
+// to the client during the handshake.
+func NewNoiseGrpcConn(localKey keychain.SingleKeyECDH,
+	authData []byte, password []byte) *NoiseGrpcConn {
 
-	return &NoiseConn{
+	return &NoiseGrpcConn{
 		localKey: localKey,
 		authData: authData,
 		password: password,
@@ -58,7 +56,7 @@ func NewNoiseConn(localKey keychain.SingleKeyECDH,
 // connection and then tries to decrypt it.
 //
 // NOTE: This is part of the net.Conn interface.
-func (c *NoiseConn) Read(b []byte) (n int, err error) {
+func (c *NoiseGrpcConn) Read(b []byte) (n int, err error) {
 	c.nextMsgMtx.Lock()
 	defer c.nextMsgMtx.Unlock()
 
@@ -71,7 +69,7 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 		return msgLen, nil
 	}
 
-	requestBytes, err := c.noise.ReadMessage(c.MailboxConn)
+	requestBytes, err := c.noise.ReadMessage(c.ProxyConn)
 	if err != nil {
 		return 0, fmt.Errorf("error decrypting payload: %v", err)
 	}
@@ -97,40 +95,40 @@ func (c *NoiseConn) Read(b []byte) (n int, err error) {
 // message over the underlying control connection.
 //
 // NOTE: This is part of the net.Conn interface.
-func (c *NoiseConn) Write(b []byte) (int, error) {
+func (c *NoiseGrpcConn) Write(b []byte) (int, error) {
 	err := c.noise.WriteMessage(b)
 	if err != nil {
 		return 0, err
 	}
 
-	return c.noise.Flush(c.MailboxConn)
+	return c.noise.Flush(c.ProxyConn)
 }
 
 // LocalAddr returns the local address of this connection.
 //
 // NOTE: This is part of the Conn interface.
-func (c *NoiseConn) LocalAddr() net.Addr {
-	if c.MailboxConn == nil {
+func (c *NoiseGrpcConn) LocalAddr() net.Addr {
+	if c.ProxyConn == nil {
 		return &NoiseAddr{PubKey: c.localKey.PubKey()}
 	}
 
 	return &NoiseAddr{
 		PubKey: c.localKey.PubKey(),
-		Server: c.MailboxConn.LocalAddr().String(),
+		Server: c.ProxyConn.LocalAddr().String(),
 	}
 }
 
 // RemoteAddr returns the remote address of this connection.
 //
 // NOTE: This is part of the Conn interface.
-func (c *NoiseConn) RemoteAddr() net.Addr {
-	if c.MailboxConn == nil {
+func (c *NoiseGrpcConn) RemoteAddr() net.Addr {
+	if c.ProxyConn == nil {
 		return &NoiseAddr{PubKey: c.remoteKey}
 	}
 
 	return &NoiseAddr{
 		PubKey: c.remoteKey,
-		Server: c.MailboxConn.RemoteAddr().String(),
+		Server: c.ProxyConn.RemoteAddr().String(),
 	}
 }
 
@@ -138,16 +136,16 @@ func (c *NoiseConn) RemoteAddr() net.Addr {
 // handshake.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
+func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
 
 	log.Tracef("Starting client handshake")
 
-	transportConn, ok := conn.(MailboxConn)
+	transportConn, ok := conn.(ProxyConn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
-	c.MailboxConn = transportConn
+	c.ProxyConn = transportConn
 
 	// First, initialize a new noise machine with our static long term, and
 	// password.
@@ -164,14 +162,14 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err := c.MailboxConn.Write(actOne[:]); err != nil {
+	if _, err := c.ProxyConn.Write(actOne[:]); err != nil {
 		return nil, nil, err
 	}
 
 	// We'll ensure that we get ActTwo from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
-	err = c.MailboxConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	err = c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -181,7 +179,7 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	// send our static public key to the remote peer with strong forward
 	// secrecy.
 	var actTwo [ActTwoSize]byte
-	if _, err := io.ReadFull(c.MailboxConn, actTwo[:]); err != nil {
+	if _, err := io.ReadFull(c.ProxyConn, actTwo[:]); err != nil {
 		return nil, nil, err
 	}
 
@@ -195,13 +193,13 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err := c.MailboxConn.Write(actThree[:]); err != nil {
+	if _, err := c.ProxyConn.Write(actThree[:]); err != nil {
 		return nil, nil, err
 	}
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
-	err = c.MailboxConn.SetReadDeadline(time.Time{})
+	err = c.ProxyConn.SetReadDeadline(time.Time{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -221,16 +219,16 @@ func (c *NoiseConn) ClientHandshake(_ context.Context, _ string,
 // ServerHandshake implements the server part of the noise connection handshake.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
+func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	credentials.AuthInfo, error) {
 
 	log.Tracef("Starting server handshake")
 
-	transportConn, ok := conn.(MailboxConn)
+	transportConn, ok := conn.(ProxyConn)
 	if !ok {
 		return nil, nil, fmt.Errorf("invalid connection type")
 	}
-	c.MailboxConn = transportConn
+	c.ProxyConn = transportConn
 
 	// First, we'll initialize a new borntide machine with our static key,
 	// passphrase, and also the macaroon authentication data.
@@ -241,7 +239,7 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 	// We'll ensure that we get ActOne from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
-	err := c.MailboxConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	err := c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -303,7 +301,7 @@ func (c *NoiseConn) ServerHandshake(conn net.Conn) (net.Conn,
 // this connection.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseConn) Info() credentials.ProtocolInfo {
+func (c *NoiseGrpcConn) Info() credentials.ProtocolInfo {
 	return credentials.ProtocolInfo{
 		ProtocolVersion:  fmt.Sprintf("%d", ProtocolVersion),
 		SecurityProtocol: ProtocolName,
@@ -314,12 +312,12 @@ func (c *NoiseConn) Info() credentials.ProtocolInfo {
 // Clone makes a copy of this TransportCredentials.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseConn) Clone() credentials.TransportCredentials {
-	return &NoiseConn{
-		MailboxConn: c.MailboxConn,
-		authData:    c.authData,
-		localKey:    c.localKey,
-		remoteKey:   c.remoteKey,
+func (c *NoiseGrpcConn) Clone() credentials.TransportCredentials {
+	return &NoiseGrpcConn{
+		ProxyConn: c.ProxyConn,
+		authData:  c.authData,
+		localKey:  c.localKey,
+		remoteKey: c.remoteKey,
 	}
 }
 
@@ -327,7 +325,7 @@ func (c *NoiseConn) Clone() credentials.TransportCredentials {
 // the returned certificates from the server.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseConn) OverrideServerName(_ string) error {
+func (c *NoiseGrpcConn) OverrideServerName(_ string) error {
 	return nil
 }
 
@@ -335,14 +333,14 @@ func (c *NoiseConn) OverrideServerName(_ string) error {
 // transport security.
 //
 // NOTE: This is part of the credentials.PerRPCCredentials interface.
-func (c *NoiseConn) RequireTransportSecurity() bool {
+func (c *NoiseGrpcConn) RequireTransportSecurity() bool {
 	return true
 }
 
 // GetRequestMetadata returns the per RPC credentials encoded as gRPC metadata.
 //
 // NOTE: This is part of the credentials.PerRPCCredentials interface.
-func (c *NoiseConn) GetRequestMetadata(_ context.Context,
+func (c *NoiseGrpcConn) GetRequestMetadata(_ context.Context,
 	_ ...string) (map[string]string, error) {
 
 	md := make(map[string]string)
