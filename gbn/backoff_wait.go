@@ -24,7 +24,7 @@ func (b *BackoffWaiter) Wait() {
 		b.currentBackoff = b.minBackoff
 
 	case b.currentBackoff < b.maxBackoff:
-		b.currentBackoff = b.currentBackoff * 2
+		b.currentBackoff *= 2
 		if b.currentBackoff > b.maxBackoff {
 			b.currentBackoff = b.maxBackoff
 		}

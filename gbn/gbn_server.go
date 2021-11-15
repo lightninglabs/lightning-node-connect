@@ -109,7 +109,7 @@ func (g *GoBackNConn) serverHandshake() error {
 		}
 
 		select {
-		case <-time.Tick(g.handshakeTimeout):
+		case <-time.After(g.handshakeTimeout):
 			log.Debugf("SYNCACK resendTimeout. Abort and wait for" +
 				"client to re-initiate")
 			continue

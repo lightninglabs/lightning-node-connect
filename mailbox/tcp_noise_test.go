@@ -121,8 +121,8 @@ func TestConnectionCorrectness(t *testing.T) {
 
 	// At this point, since we specified the auth data above, the client
 	// should now know of this information.
-	noiseConnLocal := localConn.(*Conn)
-	noiseConnRemote := remoteConn.(*Conn)
+	noiseConnLocal := localConn.(*NoiseConn)
+	noiseConnRemote := remoteConn.(*NoiseConn)
 	require.Equal(
 		t, noiseConnLocal.noise.authData, noiseConnRemote.noise.authData,
 	)
@@ -462,6 +462,7 @@ var flushTests = []flushTest{
 func TestFlush(t *testing.T) {
 	// Run each test individually, to assert that they pass in isolation.
 	for _, test := range flushTests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			var (
 				w bytes.Buffer

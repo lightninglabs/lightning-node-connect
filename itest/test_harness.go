@@ -123,10 +123,7 @@ func (h *harnessTest) shutdown() error {
 		returnErr = err
 	}
 
-	err = h.server.stop()
-	if err != nil {
-		returnErr = err
-	}
+	h.server.stop()
 
 	return returnErr
 }

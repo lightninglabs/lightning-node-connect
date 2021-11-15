@@ -114,7 +114,7 @@ func (l *Listener) doHandshake(conn net.Conn) {
 
 	remoteAddr := conn.RemoteAddr().String()
 
-	brontideConn := &Conn{
+	brontideConn := &NoiseConn{
 		conn: conn,
 		noise: NewBrontideMachine(
 			false, l.localStatic, l.passphrase,
@@ -207,12 +207,12 @@ func (l *Listener) doHandshake(conn net.Conn) {
 // maybeConn holds either a brontide connection or an error returned from the
 // handshake.
 type maybeConn struct {
-	conn *Conn
+	conn *NoiseConn
 	err  error
 }
 
 // acceptConn returns a connection that successfully performed a handshake.
-func (l *Listener) acceptConn(conn *Conn) {
+func (l *Listener) acceptConn(conn *NoiseConn) {
 	select {
 	case l.conns <- maybeConn{conn: conn}:
 	case <-l.quit:

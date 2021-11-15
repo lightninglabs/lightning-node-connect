@@ -12,13 +12,13 @@ import (
 	"github.com/lightningnetwork/lnd/tor"
 )
 
-// Conn is an implementation of net.Conn which enforces an authenticated key
-// exchange and message encryption protocol dubbed "Brontide" after initial TCP
-// connection establishment. In the case of a successful handshake, all
+// NoiseConn is an implementation of net.Conn which enforces an authenticated
+// key exchange and message encryption protocol dubbed "Brontide" after initial
+// TCP connection establishment. In the case of a successful handshake, all
 // messages sent via the .Write() method are encrypted with an AEAD cipher
-// along with an encrypted length-prefix. See the Machine struct for
-// additional details w.r.t to the handshake and encryption scheme.
-type Conn struct {
+// along with an encrypted length-prefix. See the Machine struct for additional
+// details w.r.t to the handshake and encryption scheme.
+type NoiseConn struct {
 	conn net.Conn
 
 	noise *Machine
@@ -27,14 +27,14 @@ type Conn struct {
 }
 
 // A compile-time assertion to ensure that Conn meets the net.Conn interface.
-var _ net.Conn = (*Conn)(nil)
+var _ net.Conn = (*NoiseConn)(nil)
 
 // Dial attempts to establish an encrypted+authenticated connection with the
 // remote peer located at address which has remotePub as its long-term static
 // public key. In the case of a handshake failure, the connection is closed and
 // a non-nil error is returned.
-func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
-	timeout time.Duration, dialer tor.DialFunc) (*Conn, error) {
+func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte, //nolint:interfacer
+	timeout time.Duration, dialer tor.DialFunc) (*NoiseConn, error) {
 
 	ipAddr := netAddr.String()
 	var conn net.Conn
@@ -44,7 +44,7 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		return nil, err
 	}
 
-	b := &Conn{
+	b := &NoiseConn{
 		conn:  conn,
 		noise: NewBrontideMachine(true, localPriv, passphrase),
 	}
@@ -115,7 +115,7 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 // adversarial and induce long delays. If the caller needs to set read deadlines
 // appropriately, it is preferred that they use the split ReadNextHeader and
 // ReadNextBody methods so that the deadlines can be set appropriately on each.
-func (c *Conn) ReadNextMessage() ([]byte, error) {
+func (c *NoiseConn) ReadNextMessage() ([]byte, error) {
 	return c.noise.ReadMessage(c.conn)
 }
 
@@ -123,7 +123,7 @@ func (c *Conn) ReadNextMessage() ([]byte, error) {
 // stream. This function will block until the read of the header succeeds and
 // return the packet length (including MAC overhead) that is expected from the
 // subsequent call to ReadNextBody.
-func (c *Conn) ReadNextHeader() (uint32, error) {
+func (c *NoiseConn) ReadNextHeader() (uint32, error) {
 	return c.noise.ReadHeader(c.conn)
 }
 
@@ -131,7 +131,7 @@ func (c *Conn) ReadNextHeader() (uint32, error) {
 // brontide stream. This function will block until the read of the body succeeds
 // and return the decrypted payload. The provided buffer MUST be the packet
 // length returned by the preceding call to ReadNextHeader.
-func (c *Conn) ReadNextBody(buf []byte) ([]byte, error) {
+func (c *NoiseConn) ReadNextBody(buf []byte) ([]byte, error) {
 	return c.noise.ReadBody(c.conn, buf)
 }
 
@@ -140,7 +140,7 @@ func (c *Conn) ReadNextBody(buf []byte) ([]byte, error) {
 // SetDeadline and SetReadDeadline.
 //
 // Part of the net.Conn interface.
-func (c *Conn) Read(b []byte) (n int, err error) {
+func (c *NoiseConn) Read(b []byte) (n int, err error) {
 	// In order to reconcile the differences between the record abstraction
 	// of our AEAD connection, and the stream abstraction of TCP, we
 	// maintain an intermediate read buffer. If this buffer becomes
@@ -165,7 +165,7 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 // SetDeadline and SetWriteDeadline.
 //
 // Part of the net.Conn interface.
-func (c *Conn) Write(b []byte) (n int, err error) {
+func (c *NoiseConn) Write(b []byte) (n int, err error) {
 	// If the message doesn't require any chunking, then we can go ahead
 	// with a single write.
 	if len(b) <= math.MaxUint16 {
@@ -213,7 +213,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 //
 // NOTE: This DOES NOT write the message to the wire, it should be followed by a
 // call to Flush to ensure the message is written.
-func (c *Conn) WriteMessage(b []byte) error {
+func (c *NoiseConn) WriteMessage(b []byte) error {
 	return c.noise.WriteMessage(b)
 }
 
@@ -225,7 +225,7 @@ func (c *Conn) WriteMessage(b []byte) error {
 // does not account for the overhead of the header or MACs.
 //
 // NOTE: It is safe to call this method again iff a timeout error is returned.
-func (c *Conn) Flush() (int, error) {
+func (c *NoiseConn) Flush() (int, error) {
 	return c.noise.Flush(c.conn)
 }
 
@@ -233,7 +233,7 @@ func (c *Conn) Flush() (int, error) {
 // unblocked and return errors.
 //
 // Part of the net.Conn interface.
-func (c *Conn) Close() error {
+func (c *NoiseConn) Close() error {
 	// TODO(roasbeef): reset brontide state?
 	return c.conn.Close()
 }
@@ -241,14 +241,14 @@ func (c *Conn) Close() error {
 // LocalAddr returns the local network address.
 //
 // Part of the net.Conn interface.
-func (c *Conn) LocalAddr() net.Addr {
+func (c *NoiseConn) LocalAddr() net.Addr {
 	return c.conn.LocalAddr()
 }
 
 // RemoteAddr returns the remote network address.
 //
 // Part of the net.Conn interface.
-func (c *Conn) RemoteAddr() net.Addr {
+func (c *NoiseConn) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
 }
 
@@ -257,7 +257,7 @@ func (c *Conn) RemoteAddr() net.Addr {
 // SetWriteDeadline.
 //
 // Part of the net.Conn interface.
-func (c *Conn) SetDeadline(t time.Time) error {
+func (c *NoiseConn) SetDeadline(t time.Time) error {
 	return c.conn.SetDeadline(t)
 }
 
@@ -265,7 +265,7 @@ func (c *Conn) SetDeadline(t time.Time) error {
 // means Read will not time out.
 //
 // Part of the net.Conn interface.
-func (c *Conn) SetReadDeadline(t time.Time) error {
+func (c *NoiseConn) SetReadDeadline(t time.Time) error {
 	return c.conn.SetReadDeadline(t)
 }
 
@@ -274,16 +274,16 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 // successfully written.  A zero value for t means Write will not time out.
 //
 // Part of the net.Conn interface.
-func (c *Conn) SetWriteDeadline(t time.Time) error {
+func (c *NoiseConn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
 
 // RemotePub returns the remote peer's static public key.
-func (c *Conn) RemotePub() *btcec.PublicKey {
+func (c *NoiseConn) RemotePub() *btcec.PublicKey {
 	return c.noise.remoteStatic
 }
 
 // LocalPub returns the local peer's static public key.
-func (c *Conn) LocalPub() *btcec.PublicKey {
+func (c *NoiseConn) LocalPub() *btcec.PublicKey {
 	return c.noise.localStatic.PubKey()
 }
