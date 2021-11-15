@@ -88,8 +88,8 @@ type GoBackNConn struct {
 	ctx    context.Context
 	cancel func()
 
-	// remoteClosed is true if the remote party initiated the FIN sequence.
-	remoteClosed bool
+	// remoteClosed is closed if the remote party initiated the FIN sequence.
+	remoteClosed chan struct{}
 
 	// quit is used to stop the normal operations of the connection.
 	// Once closed, the send and receive streams will still be available
@@ -121,6 +121,7 @@ func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
 		handshakeTimeout:  defaultHandshakeTimeout,
 		receivedACKSignal: make(chan struct{}),
 		resendSignal:      make(chan struct{}, 1),
+		remoteClosed:      make(chan struct{}),
 		ctx:               ctxc,
 		cancel:            cancel,
 		quit:              make(chan struct{}),
@@ -274,7 +275,9 @@ func (g *GoBackNConn) Close() error {
 	close(g.quit)
 
 	// Try send a FIN message to the peer if they have not already done so.
-	if !g.remoteClosed {
+	select {
+	case <-g.remoteClosed:
+	default:
 		log.Tracef("Try sending FIN, isServer=%v", g.isServer)
 		ctxc, cancel := context.WithTimeout(
 			g.ctx, finSendTimeout,
@@ -569,7 +572,7 @@ func (g *GoBackNConn) receivePacketsForever() error {
 			log.Tracef("Received a FIN packet (isServer=%v)",
 				g.isServer)
 
-			g.remoteClosed = true
+			close(g.remoteClosed)
 
 			return errTransportClosing
 

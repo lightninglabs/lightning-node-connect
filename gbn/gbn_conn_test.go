@@ -87,9 +87,16 @@ func TestDroppedMessage(t *testing.T) {
 		return nil, nil
 	}
 
-	count := 0
+	var (
+		count   int
+		countMu sync.Mutex
+	)
 	s1Write := func(ctx context.Context, b []byte) error {
-		count++
+		countMu.Lock()
+		defer func() {
+			count++
+			countMu.Unlock()
+		}()
 
 		// Drop the first message (after handshake)
 		if count == 2 {
@@ -177,16 +184,19 @@ func TestDroppedACKs(t *testing.T) {
 	}
 
 	var (
-		count uint8
-		n     uint8 = 2
+		count   int
+		countMu sync.Mutex
+		n       uint8 = 2
 	)
 	s2Write := func(ctx context.Context, b []byte) error {
+		countMu.Lock()
 		defer func() {
 			count++
+			countMu.Unlock()
 		}()
 
 		// Drop the first n messages (after handshake)
-		if count > 2 && count < n+2 {
+		if count > 2 && count < int(n+2) {
 			return nil
 		}
 
@@ -243,10 +253,15 @@ func TestReceiveDuplicateMessages(t *testing.T) {
 	}
 
 	// duplicate messages (not including handshake)
-	count := 0
+	var (
+		count   int
+		countMu sync.Mutex
+	)
 	s1Write := func(ctx context.Context, b []byte) error {
+		countMu.Lock()
 		defer func() {
 			count++
+			countMu.Unlock()
 		}()
 
 		s1Chan <- b
@@ -317,10 +332,15 @@ func TestReceiveDuplicateDataAndACKs(t *testing.T) {
 	}
 
 	// duplicate messages (not including handshake)
-	count := 0
+	var (
+		count   int
+		countMu sync.Mutex
+	)
 	s1Write := func(ctx context.Context, b []byte) error {
+		countMu.Lock()
 		defer func() {
 			count++
+			countMu.Unlock()
 		}()
 
 		s1Chan <- b
@@ -346,10 +366,15 @@ func TestReceiveDuplicateDataAndACKs(t *testing.T) {
 	}
 
 	// duplicate messages (not including handshake)
-	count2 := 0
+	var (
+		count2   int
+		count2Mu sync.Mutex
+	)
 	s2Write := func(ctx context.Context, b []byte) error {
+		count2Mu.Lock()
 		defer func() {
 			count2++
+			count2Mu.Unlock()
 		}()
 
 		s2Chan <- b
@@ -545,16 +570,19 @@ func TestDropFirstNPackets(t *testing.T) {
 	}
 
 	var (
-		n     uint8 = 3
-		count uint8 = 0
+		n       uint8 = 3
+		count   int
+		countMu sync.Mutex
 	)
 	s1Write := func(ctx context.Context, b []byte) error {
+		countMu.Lock()
 		defer func() {
 			count++
+			countMu.Unlock()
 		}()
 
 		// drop first non-handshake packet
-		if count > 0 && count < n+1 {
+		if count > 0 && count < int(n+1) {
 			return nil
 		}
 
@@ -754,10 +782,15 @@ func TestSendingIsNonBlockingUpToN(t *testing.T) {
 	}
 
 	// drop every 3rd packet (after handshake)
-	count := 0
+	var (
+		count   int
+		countMu sync.Mutex
+	)
 	s1Write := func(ctx context.Context, b []byte) error {
+		countMu.Lock()
 		defer func() {
 			count++
+			countMu.Unlock()
 		}()
 
 		if count != 0 && count%3 == 0 {
@@ -1031,6 +1064,8 @@ func setUpClientServerConns(t *testing.T, n uint8,
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
+		var err error
 		server, err = NewServerConn(ctx, sWrite, sRead, opts...)
 		require.NoError(t, err)
 	}()

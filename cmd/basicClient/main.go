@@ -58,7 +58,7 @@ func main() {
 
 func chatWithLND(c mockrpc.MockServiceClient) error {
 
-	largeResp := make([]byte, 1024*1024*4)
+	largeResp := make([]byte, 1024*4)
 	rand.Read(largeResp)
 	req := &mockrpc.Request{Req: largeResp}
 
@@ -70,7 +70,6 @@ func chatWithLND(c mockrpc.MockServiceClient) error {
 		}
 
 		fmt.Println("got the thing", time.Since(t))
-		time.Sleep(5 * time.Second)
 	}
 
 	return nil
