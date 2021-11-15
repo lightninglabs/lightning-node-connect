@@ -27,6 +27,8 @@ const (
 type NoiseGrpcConn struct {
 	ProxyConn
 
+	proxyConnMtx sync.RWMutex
+
 	password []byte
 	authData []byte
 
@@ -57,6 +59,9 @@ func NewNoiseGrpcConn(localKey keychain.SingleKeyECDH,
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseGrpcConn) Read(b []byte) (n int, err error) {
+	c.proxyConnMtx.RLock()
+	defer c.proxyConnMtx.RUnlock()
+
 	c.nextMsgMtx.Lock()
 	defer c.nextMsgMtx.Unlock()
 
@@ -96,6 +101,9 @@ func (c *NoiseGrpcConn) Read(b []byte) (n int, err error) {
 //
 // NOTE: This is part of the net.Conn interface.
 func (c *NoiseGrpcConn) Write(b []byte) (int, error) {
+	c.proxyConnMtx.RLock()
+	defer c.proxyConnMtx.RUnlock()
+
 	err := c.noise.WriteMessage(b)
 	if err != nil {
 		return 0, err
@@ -108,6 +116,9 @@ func (c *NoiseGrpcConn) Write(b []byte) (int, error) {
 //
 // NOTE: This is part of the Conn interface.
 func (c *NoiseGrpcConn) LocalAddr() net.Addr {
+	c.proxyConnMtx.RLock()
+	defer c.proxyConnMtx.RUnlock()
+
 	if c.ProxyConn == nil {
 		return &NoiseAddr{PubKey: c.localKey.PubKey()}
 	}
@@ -122,6 +133,9 @@ func (c *NoiseGrpcConn) LocalAddr() net.Addr {
 //
 // NOTE: This is part of the Conn interface.
 func (c *NoiseGrpcConn) RemoteAddr() net.Addr {
+	c.proxyConnMtx.RLock()
+	defer c.proxyConnMtx.RUnlock()
+
 	if c.ProxyConn == nil {
 		return &NoiseAddr{PubKey: c.remoteKey}
 	}
@@ -138,6 +152,9 @@ func (c *NoiseGrpcConn) RemoteAddr() net.Addr {
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+
+	c.proxyConnMtx.Lock()
+	defer c.proxyConnMtx.Unlock()
 
 	log.Tracef("Starting client handshake")
 
@@ -221,6 +238,9 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	credentials.AuthInfo, error) {
+
+	c.proxyConnMtx.Lock()
+	defer c.proxyConnMtx.Unlock()
 
 	log.Tracef("Starting server handshake")
 
@@ -313,6 +333,9 @@ func (c *NoiseGrpcConn) Info() credentials.ProtocolInfo {
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
 func (c *NoiseGrpcConn) Clone() credentials.TransportCredentials {
+	c.proxyConnMtx.RLock()
+	defer c.proxyConnMtx.RUnlock()
+
 	return &NoiseGrpcConn{
 		ProxyConn: c.ProxyConn,
 		authData:  c.authData,
