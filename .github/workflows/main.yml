@@ -56,5 +56,8 @@ jobs:
       - name: wasm compile
         run: make wasm
 
+      - name: prepare for itest
+        run: mkdir -p /home/runner/.aperture
+
       - name: unit-race
         run: make unit-race

@@ -21,6 +21,6 @@ replace git.schwanenlied.me/yawning/bsaes.git => github.com/Yawning/bsaes v0.0.0
 
 replace github.com/lightninglabs/terminal-connect/hashmailrpc => ./hashmailrpc
 
-replace github.com/lightninglabs/aperture => github.com/lightninglabs/aperture-mailbox v0.0.0-20210813150142-b26a468d46c9
+replace github.com/lightninglabs/aperture => github.com/lightninglabs/aperture-mailbox v0.0.0-20211115091244-7625bf56a5f2
 
 go 1.16
