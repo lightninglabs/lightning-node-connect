@@ -419,11 +419,19 @@ type Machine struct {
 // arguments for adding additional options to the brontide Machine
 // initialization.
 func NewBrontideMachine(initiator bool, localPub keychain.SingleKeyECDH,
-	password []byte, options ...func(*Machine)) *Machine {
+	passphrase []byte, options ...func(*Machine)) (*Machine, error) {
 
 	handshake := newHandshakeState(
 		initiator, terminalConnectPrologue, localPub,
 	)
+
+	// We always stretch the passphrase here in order to partially thwart
+	// brute force attempts, and also ensure we obtain a high entropy
+	// blidning point.
+	password, err := stretchPassword(passphrase)
+	if err != nil {
+		return nil, err
+	}
 
 	m := &Machine{
 		handshakeState: handshake,
@@ -437,7 +445,7 @@ func NewBrontideMachine(initiator bool, localPub keychain.SingleKeyECDH,
 		option(m)
 	}
 
-	return m
+	return m, nil
 }
 
 // ekeMask masks the passed ephemeral key with the stored pass phrase, using
