@@ -44,9 +44,14 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		return nil, err
 	}
 
+	noise, err := NewBrontideMachine(true, localPriv, passphrase)
+	if err != nil {
+		return nil, err
+	}
+
 	b := &NoiseConn{
 		conn:  conn,
-		noise: NewBrontideMachine(true, localPriv, passphrase),
+		noise: noise,
 	}
 
 	// Initiate the handshake by sending the first act to the receiver.

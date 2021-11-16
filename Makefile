@@ -19,7 +19,7 @@ GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
 XARGS := xargs -L 1
 
-UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) -tags="$(DEV_TAGS) $(LOG_TAGS)" $(TEST_FLAGS)
+UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) -tags="rpctest $(DEV_TAGS) $(LOG_TAGS)" $(TEST_FLAGS)
 UNIT_RACE := $(UNIT) -race
 
 LDFLAGS := -s -w -buildid=

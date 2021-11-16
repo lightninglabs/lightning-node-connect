@@ -166,10 +166,11 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 
 	// First, initialize a new noise machine with our static long term, and
 	// password.
-	//
-	// TODO(roasbeef): use memory hard function here after testing in
-	// browser to ensure isn't too perf intensive
-	c.noise = NewBrontideMachine(true, c.localKey, c.password)
+	var err error
+	c.noise, err = NewBrontideMachine(true, c.localKey, c.password)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	log.Debugf("Kicking off client handshake with client_key=%x",
 		c.localKey.PubKey().SerializeCompressed())
@@ -252,14 +253,18 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 
 	// First, we'll initialize a new borntide machine with our static key,
 	// passphrase, and also the macaroon authentication data.
-	c.noise = NewBrontideMachine(
+	var err error
+	c.noise, err = NewBrontideMachine(
 		false, c.localKey, c.password, AuthDataPayload(c.authData),
 	)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// We'll ensure that we get ActOne from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
-	err := c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	err = c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
 		return nil, nil, err
 	}

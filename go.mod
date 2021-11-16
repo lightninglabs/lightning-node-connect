@@ -3,6 +3,7 @@ module github.com/lightninglabs/terminal-connect
 require (
 	github.com/btcsuite/btcd v0.21.0-beta.0.20210513141527-ee5896bad5be
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
+	github.com/btcsuite/btcwallet v0.12.1-0.20210519225359-6ab9b615576f
 	github.com/go-errors/errors v1.0.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/kkdai/bstream v0.0.0-20181106074824-b3251f7901ec

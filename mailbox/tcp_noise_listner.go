@@ -114,18 +114,22 @@ func (l *Listener) doHandshake(conn net.Conn) {
 
 	remoteAddr := conn.RemoteAddr().String()
 
+	noise, err := NewBrontideMachine(
+		false, l.localStatic, l.passphrase, AuthDataPayload(l.authData),
+	)
+	if err != nil {
+		l.rejectConn(rejectedConnErr(err, remoteAddr))
+		return
+	}
 	brontideConn := &NoiseConn{
-		conn: conn,
-		noise: NewBrontideMachine(
-			false, l.localStatic, l.passphrase,
-			AuthDataPayload(l.authData),
-		),
+		conn:  conn,
+		noise: noise,
 	}
 
 	// We'll ensure that we get ActOne from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
-	err := conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
 		brontideConn.conn.Close()
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
