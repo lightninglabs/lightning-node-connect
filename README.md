@@ -13,8 +13,9 @@ Placeholder repository for everything that is needed for Lightning Node Connect.
 
 ### Compile and run the example
 
-1. In this repo, run `make wasm` to compile the example client to WASM.
-2. Run `make example-server` to start the example HTTP server.
-3. Visit [http://localhost:8080](http://localhost:8080) to see the example
+1. Make sure you're using `golang 1.17.x`.
+2. In this repo, run `make wasm` to compile the example client to WASM.
+3. Run `make example-server` to start the example HTTP server.
+4. Visit [http://localhost:8080](http://localhost:8080) to see the example
    client in action. It is recommended to open the browser console (F12) to see
    the console logs.
