@@ -1,4 +1,4 @@
-module github.com/lightninglabs/terminal-connect/hashmailrpc
+module github.com/lightninglabs/lightning-node-connect/hashmailrpc
 
 go 1.16
 

@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"time"
 
-	"github.com/lightninglabs/terminal-connect/itest/mockrpc"
+	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 	"github.com/stretchr/testify/require"
 )
 

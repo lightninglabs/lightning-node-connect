@@ -1,4 +1,4 @@
-module github.com/lightninglabs/terminal-connect
+module github.com/lightninglabs/lightning-node-connect
 
 require (
 	github.com/btcsuite/btcd v0.21.0-beta.0.20210513141527-ee5896bad5be
@@ -7,7 +7,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/kkdai/bstream v0.0.0-20181106074824-b3251f7901ec
 	github.com/lightninglabs/aperture v0.1.6-beta
-	github.com/lightninglabs/terminal-connect/hashmailrpc v1.0.0
+	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.0
 	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210728112744-ebabda671786
 	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/stretchr/testify v1.7.0
@@ -19,7 +19,7 @@ require (
 
 replace git.schwanenlied.me/yawning/bsaes.git => github.com/Yawning/bsaes v0.0.0-20180720073208-c0276d75487e
 
-replace github.com/lightninglabs/terminal-connect/hashmailrpc => ./hashmailrpc
+replace github.com/lightninglabs/lightning-node-connect/hashmailrpc => ./hashmailrpc
 
 replace github.com/lightninglabs/aperture => github.com/lightninglabs/aperture-mailbox v0.0.0-20211115091244-7625bf56a5f2
 

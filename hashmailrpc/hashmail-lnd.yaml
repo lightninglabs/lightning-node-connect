@@ -1,6 +1,8 @@
 type: google.api.Service
 config_version: 3
 
+# We keep the URLs under the old name to keep everything backward compatible
+# with the closed beta version.
 http:
   rules:
     - selector: hashmailrpc.HashMail.NewCipherBox

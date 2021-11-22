@@ -9,16 +9,23 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/lightninglabs/terminal-connect/gbn"
-	"github.com/lightninglabs/terminal-connect/hashmailrpc"
+	"github.com/lightninglabs/lightning-node-connect/gbn"
+	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"nhooyr.io/websocket"
 )
 
 var (
+	// receivePath is the URL under which the read stream of the mailbox
+	// server's WebSocket proxy is reachable. We keep this under the old
+	// name to make the version backward compatible with the closed beta.
 	receivePath = "/v1/terminal-connect/hashmail/receive"
-	sendPath    = "/v1/terminal-connect/hashmail/send"
-	addrFormat  = "wss://%s%s?method=POST"
+
+	// sendPath is the URL under which the write stream of the mailbox
+	// server's WebSocket proxy is reachable. We keep this under the old
+	// name to make the version backward compatible with the closed beta.
+	sendPath   = "/v1/terminal-connect/hashmail/send"
+	addrFormat = "wss://%s%s?method=POST"
 
 	resultPattern    = regexp.MustCompile("{\"result\":(.*)}")
 	errorPattern     = regexp.MustCompile("{\"error\":(.*)}")

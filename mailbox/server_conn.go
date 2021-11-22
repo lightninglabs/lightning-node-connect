@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lightninglabs/terminal-connect/gbn"
+	"github.com/lightninglabs/lightning-node-connect/gbn"
 
-	"github.com/lightninglabs/terminal-connect/hashmailrpc"
+	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

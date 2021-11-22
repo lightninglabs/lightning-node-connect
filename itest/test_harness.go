@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture"
-	"github.com/lightninglabs/terminal-connect/gbn"
-	"github.com/lightninglabs/terminal-connect/mailbox"
+	"github.com/lightninglabs/lightning-node-connect/gbn"
+	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"

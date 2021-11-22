@@ -1,4 +1,4 @@
-PKG := github.com/lightninglabs/terminal-connect
+PKG := github.com/lightninglabs/lightning-node-connect
 
 LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
 GOVERALLS_PKG := github.com/mattn/goveralls
@@ -48,7 +48,7 @@ $(LINT_BIN):
 # ============
 
 build:
-	@$(call print, "Building terminal-connect.")
+	@$(call print, "Building lightning-node-connect.")
 	$(GOBUILD) $(PKG)/...
 
 wasm:

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/terminal-connect/gbn"
+	"github.com/lightninglabs/lightning-node-connect/gbn"
 )
 
 const (

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hashmailrpc;
 
-option go_package = "github.com/lightninglabs/terminal-connect/hashmailrpc";
+option go_package = "github.com/lightninglabs/lightning-node-connect/hashmailrpc";
 
 // HashMail exposes a simple synchronous network stream that can be used for
 // various types of synchronization and coordination. The service allows

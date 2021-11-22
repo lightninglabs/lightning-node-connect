@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/lightninglabs/terminal-connect/hashmailrpc"
+	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc"
 )
 

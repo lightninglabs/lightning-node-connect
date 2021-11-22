@@ -6,10 +6,10 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/lightninglabs/terminal-connect/itest/mockrpc"
+	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightninglabs/terminal-connect/mailbox"
+	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 )

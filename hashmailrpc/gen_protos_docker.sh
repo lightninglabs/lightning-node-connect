@@ -9,7 +9,7 @@ PROTOBUF_VERSION=$(go list -f '{{.Version}}' -m google.golang.org/protobuf)
 GRPC_GATEWAY_VERSION=$(go list -f '{{.Version}}' -m github.com/grpc-ecosystem/grpc-gateway/v2)
 
 echo "Building protobuf compiler docker image..."
-docker build -t terminal-connect-protobuf-builder \
+docker build -t lightning-node-connect-protobuf-builder \
   --build-arg PROTOBUF_VERSION="$PROTOBUF_VERSION" \
   --build-arg GRPC_GATEWAY_VERSION="$GRPC_GATEWAY_VERSION" \
   .
@@ -20,4 +20,4 @@ docker run \
   --user "$UID:$(id -g)" \
   -e UID=$UID \
   -v "$DIR/../:/build" \
-  terminal-connect-protobuf-builder
+  lightning-node-connect-protobuf-builder

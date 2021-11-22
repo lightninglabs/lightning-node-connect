@@ -7,16 +7,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lightninglabs/terminal-connect/gbn"
+	"github.com/lightninglabs/lightning-node-connect/gbn"
 
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
 
-	"github.com/lightninglabs/terminal-connect/itest/mockrpc"
+	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightninglabs/terminal-connect/mailbox"
+	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
