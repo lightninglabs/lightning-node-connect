@@ -1,4 +1,4 @@
-module github.com/lightninglabs/terminal-connect/mailbox/numsgen
+module github.com/lightninglabs/lightning-node-connect/mailbox/numsgen
 
 go 1.17
 

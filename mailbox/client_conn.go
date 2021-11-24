@@ -19,12 +19,12 @@ var (
 	// receivePath is the URL under which the read stream of the mailbox
 	// server's WebSocket proxy is reachable. We keep this under the old
 	// name to make the version backward compatible with the closed beta.
-	receivePath = "/v1/terminal-connect/hashmail/receive"
+	receivePath = "/v1/lightning-node-connect/hashmail/receive"
 
 	// sendPath is the URL under which the write stream of the mailbox
 	// server's WebSocket proxy is reachable. We keep this under the old
 	// name to make the version backward compatible with the closed beta.
-	sendPath   = "/v1/terminal-connect/hashmail/send"
+	sendPath   = "/v1/lightning-node-connect/hashmail/send"
 	addrFormat = "wss://%s%s?method=POST"
 
 	resultPattern    = regexp.MustCompile("{\"result\":(.*)}")

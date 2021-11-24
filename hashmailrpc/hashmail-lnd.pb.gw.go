@@ -182,7 +182,7 @@ func RegisterHashMailHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/hashmailrpc.HashMail/NewCipherBox", runtime.WithHTTPPathPattern("/v1/terminal-connect/hashmail"))
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/hashmailrpc.HashMail/NewCipherBox", runtime.WithHTTPPathPattern("/v1/lightning-node-connect/hashmail"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -205,7 +205,7 @@ func RegisterHashMailHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/hashmailrpc.HashMail/DelCipherBox", runtime.WithHTTPPathPattern("/v1/terminal-connect/hashmail"))
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/hashmailrpc.HashMail/DelCipherBox", runtime.WithHTTPPathPattern("/v1/lightning-node-connect/hashmail"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -281,7 +281,7 @@ func RegisterHashMailHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/NewCipherBox", runtime.WithHTTPPathPattern("/v1/terminal-connect/hashmail"))
+		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/NewCipherBox", runtime.WithHTTPPathPattern("/v1/lightning-node-connect/hashmail"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -301,7 +301,7 @@ func RegisterHashMailHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/DelCipherBox", runtime.WithHTTPPathPattern("/v1/terminal-connect/hashmail"))
+		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/DelCipherBox", runtime.WithHTTPPathPattern("/v1/lightning-node-connect/hashmail"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -321,7 +321,7 @@ func RegisterHashMailHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/SendStream", runtime.WithHTTPPathPattern("/v1/terminal-connect/hashmail/send"))
+		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/SendStream", runtime.WithHTTPPathPattern("/v1/lightning-node-connect/hashmail/send"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -341,7 +341,7 @@ func RegisterHashMailHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/RecvStream", runtime.WithHTTPPathPattern("/v1/terminal-connect/hashmail/receive"))
+		rctx, err := runtime.AnnotateContext(ctx, mux, req, "/hashmailrpc.HashMail/RecvStream", runtime.WithHTTPPathPattern("/v1/lightning-node-connect/hashmail/receive"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -361,13 +361,13 @@ func RegisterHashMailHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 }
 
 var (
-	pattern_HashMail_NewCipherBox_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "terminal-connect", "hashmail"}, ""))
+	pattern_HashMail_NewCipherBox_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "lightning-node-connect", "hashmail"}, ""))
 
-	pattern_HashMail_DelCipherBox_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "terminal-connect", "hashmail"}, ""))
+	pattern_HashMail_DelCipherBox_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "lightning-node-connect", "hashmail"}, ""))
 
-	pattern_HashMail_SendStream_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "terminal-connect", "hashmail", "send"}, ""))
+	pattern_HashMail_SendStream_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "lightning-node-connect", "hashmail", "send"}, ""))
 
-	pattern_HashMail_RecvStream_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "terminal-connect", "hashmail", "receive"}, ""))
+	pattern_HashMail_RecvStream_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "lightning-node-connect", "hashmail", "receive"}, ""))
 )
 
 var (

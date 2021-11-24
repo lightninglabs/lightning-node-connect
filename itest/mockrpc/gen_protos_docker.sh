@@ -8,7 +8,7 @@ DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)"
 PROTOC_GEN_VERSION=$(go list -f '{{.Version}}' -m github.com/golang/protobuf)
 
 echo "Building protobuf compiler docker image..."
-docker build -t terminal-connect-protobuf-builder \
+docker build -t lightning-node-connect-protobuf-builder \
   --build-arg PROTOC_GEN_VERSION="$PROTOC_GEN_VERSION" \
   .
 
@@ -18,4 +18,4 @@ docker run \
   --user "$UID:$(id -g)" \
   -e UID=$UID \
   -v "$DIR/../:/build" \
-  terminal-connect-protobuf-builder
+  lightning-node-connect-protobuf-builder
