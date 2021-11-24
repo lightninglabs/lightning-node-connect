@@ -13,7 +13,7 @@ const (
 	// NumPasswordWords is the number of words we use for the pairing
 	// phrase.
 	NumPasswordWords = 10
-	
+
 	// NumPasswordBytes is the number of bytes we use for the pairing
 	// phrase. This must be:
 	//   ceil( (NumPasswordWords * aezeed.BitsPerWord) / 8 )
@@ -51,7 +51,7 @@ func NewPassword() ([NumPasswordWords]string, [NumPasswordBytes]byte, error) {
 	if err != nil {
 		return password, passwordEntropy, err
 	}
-	
+
 	// To make sure the words and raw bytes match, we convert the words
 	// back into raw bytes, effectively setting the last, unused bits to
 	// zero.
