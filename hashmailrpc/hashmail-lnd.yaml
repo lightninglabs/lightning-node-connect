@@ -1,18 +1,16 @@
 type: google.api.Service
 config_version: 3
 
-# We keep the URLs under the old name to keep everything backward compatible
-# with the closed beta version.
 http:
   rules:
     - selector: hashmailrpc.HashMail.NewCipherBox
-      post: "/v1/terminal-connect/hashmail"
+      post: "/v1/lightning-node-connect/hashmail"
       body: "*"
     - selector: hashmailrpc.HashMail.DelCipherBox
-      delete: "/v1/terminal-connect/hashmail"
+      delete: "/v1/lightning-node-connect/hashmail"
     - selector: hashmailrpc.HashMail.SendStream
-      post: "/v1/terminal-connect/hashmail/send"
+      post: "/v1/lightning-node-connect/hashmail/send"
       body: "*"
     - selector: hashmailrpc.HashMail.RecvStream
-      post: "/v1/terminal-connect/hashmail/receive"
+      post: "/v1/lightning-node-connect/hashmail/receive"
       body: "*"

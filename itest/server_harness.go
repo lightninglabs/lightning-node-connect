@@ -17,7 +17,7 @@ type serverHarness struct {
 	serverHost string
 	mockServer *grpc.Server
 	server     *mockrpc.Server
-	password   [8]string
+	password   [mailbox.NumPasswordWords]string
 
 	errChan chan error
 

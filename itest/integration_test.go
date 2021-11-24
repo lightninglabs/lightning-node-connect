@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestTerminalConnect(t *testing.T) {
+func TestLightningNodeConnect(t *testing.T) {
 	// If no tests are registered, then we can exit early.
 	if len(testCases) == 0 {
 		t.Skip("integration tests not selected")

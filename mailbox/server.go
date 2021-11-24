@@ -75,8 +75,6 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
-	log.Debugf("new conn entering")
-
 	receiveSID := GetSID(s.sid, false)
 	sendSID := GetSID(s.sid, true)
 
@@ -98,8 +96,6 @@ func (s *Server) Accept() (net.Conn, error) {
 			return nil, err
 		}
 	}
-
-	log.Debugf("new conn succeeded")
 
 	return s.mailboxConn, nil
 }
