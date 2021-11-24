@@ -6,7 +6,7 @@ require (
 	github.com/go-errors/errors v1.0.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.5.0
 	github.com/kkdai/bstream v0.0.0-20181106074824-b3251f7901ec
-	github.com/lightninglabs/aperture v0.1.6-beta
+	github.com/lightninglabs/aperture v0.1.11-beta
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2
 	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210728112744-ebabda671786
 	github.com/lightningnetwork/lnd/ticker v1.0.0
@@ -20,7 +20,5 @@ require (
 replace git.schwanenlied.me/yawning/bsaes.git => github.com/Yawning/bsaes v0.0.0-20180720073208-c0276d75487e
 
 replace github.com/lightninglabs/lightning-node-connect/hashmailrpc => ./hashmailrpc
-
-replace github.com/lightninglabs/aperture => github.com/lightninglabs/aperture-mailbox v0.0.0-20211122154801-ffb5578c7582
 
 go 1.16
