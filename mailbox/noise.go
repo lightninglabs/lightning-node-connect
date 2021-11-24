@@ -61,9 +61,9 @@ var (
 	// message because the prior message has not been fully flushed.
 	ErrMessageNotFlushed = errors.New("prior message not flushed")
 
-	// terminalConnectPrologue is the noise prologue that is used to initialize
-	// the brontide noise handshake.
-	terminalConnectPrologue = []byte("terminal-connect")
+	// lightningNodeConnectPrologue is the noise prologue that is used to
+	// initialize the brontide noise handshake.
+	lightningNodeConnectPrologue = []byte("lightning-node-connect")
 
 	// ephemeralGen is the default ephemeral key generator, used to derive a
 	// unique ephemeral key for each brontide handshake.
@@ -75,7 +75,7 @@ var (
 	// generated via a try-and-increment approach using the phrase
 	// "Lightning Connect" with SHA2-256.
 	nBytes, _ = hex.DecodeString(
-		"02f502341557af2b8276c7c5f6689071735b3d9af86e93dd15ded3209f661f6e9e",
+		"0254a58cd0f31c008fd0bc9b2dd5ba586144933829f6da33ac4130b555fb5ea32c",
 	)
 	N, _ = btcec.ParsePubKey(nBytes, btcec.S256())
 )
@@ -422,7 +422,7 @@ func NewBrontideMachine(initiator bool, localPub keychain.SingleKeyECDH,
 	password []byte, options ...func(*Machine)) *Machine {
 
 	handshake := newHandshakeState(
-		initiator, terminalConnectPrologue, localPub,
+		initiator, lightningNodeConnectPrologue, localPub,
 	)
 
 	m := &Machine{
