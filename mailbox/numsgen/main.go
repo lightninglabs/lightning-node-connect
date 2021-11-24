@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultSeedPhrase = "Lightning Connect"
+	defaultSeedPhrase = "Lightning Node Connect"
 )
 
 var (
