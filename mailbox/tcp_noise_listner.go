@@ -197,6 +197,17 @@ func (l *Listener) doHandshake(conn net.Conn) {
 		return
 	}
 
+	// Send the authData to the client in a normal message if we are using
+	// a handshake version above version 0.
+	if brontideConn.noise.handshakeVersion > HandshakeVersion0 {
+		err := brontideConn.noise.WriteAuthData(brontideConn.conn)
+		if err != nil {
+			brontideConn.conn.Close()
+			l.rejectConn(rejectedConnErr(err, remoteAddr))
+			return
+		}
+	}
+
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
 	err = conn.SetReadDeadline(time.Time{})

@@ -104,6 +104,15 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		return nil, err
 	}
 
+	// Read the authData from the server if using a handshake version above
+	// version 0.
+	if b.noise.handshakeVersion > HandshakeVersion0 {
+		if err := b.noise.ReadAuthData(conn); err != nil {
+			b.conn.Close()
+			return nil, err
+		}
+	}
+
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
 	err = conn.SetReadDeadline(time.Time{})

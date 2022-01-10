@@ -513,11 +513,15 @@ const (
 	// currently supported.
 	MinHandshakeVersion = HandshakeVersion0
 
+	// HandshakeVersion1 is the handshake version where the authData is
+	// sent in act 4.
+	HandshakeVersion1 = byte(1)
+
 	// MaxHandshakeVersion is the maximum handshake that we currently
 	// support. Any messages that carry a version not between
 	// MinHandshakeVersion and MaxHandshakeVersion will cause the handshake
 	// to abort immediately.
-	MaxHandshakeVersion = HandshakeVersion0
+	MaxHandshakeVersion = HandshakeVersion1
 
 	// ActOneSize is the size of the packet sent from initiator to
 	// responder in ActOne. The packet consists of a handshake version, an
@@ -688,10 +692,11 @@ func (b *Machine) GenActTwo() ([ActTwoSize]byte, error) {
 	// out the final step primarily to obtain their long-term public key
 	// and initialize the DH handshake.
 	//
-	// However, we also want to send the client data they may need for
-	// authentication (if present) encrypted with strong forward secrecy.
+	// However, if we are using HandshakeVersion 0, we also want to send the
+	// client data they may need for authentication (if present) encrypted
+	// with strong forward secrecy.
 	var payload [ActTwoPayloadSize]byte
-	if b.authData != nil {
+	if b.handshakeVersion == HandshakeVersion0 && b.authData != nil {
 		// If we have an auth payload, then we'll write out 2 bytes
 		// that denotes the true length of the payload, followed by the
 		// payload itself.
@@ -893,6 +898,90 @@ func (b *Machine) RecvActThree(actThree [ActThreeSize]byte) error {
 	// and receiving keys.
 	b.split()
 
+	return nil
+}
+
+// WriteAuthData appends a length prefix to the authData and sends it in chunks
+// on the wire.
+func (b *Machine) WriteAuthData(w io.Writer) error {
+	payloadLen := uint32(len(b.authData))
+	if payloadLen > maxAuthDataPayloadSize {
+		return fmt.Errorf("payload size of %d exceeds the maximum "+
+			"aload size of %d", payloadLen, maxAuthDataPayloadSize)
+	}
+
+	// Concatenate the length prefix and the payload.
+	data := make([]byte, authDataLengthSize+len(b.authData))
+	binary.BigEndian.PutUint32(data[:authDataLengthSize], payloadLen)
+	copy(data[authDataLengthSize:], b.authData)
+
+	var (
+		done         bool
+		payload      []byte
+		offset       int
+		maxChunkSize = math.MaxUint16
+	)
+	for !done {
+		payload = data[offset:]
+		if len(payload) < maxChunkSize {
+			done = true
+		} else {
+			payload = data[offset : offset+maxChunkSize]
+			offset += maxChunkSize
+		}
+
+		if err := b.WriteMessage(payload); err != nil {
+			return err
+		}
+
+		if _, err := b.Flush(w); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ReadAuthData reads authData in chunks from the wire. It expects the first
+// authDataLengthSize bytes to define the length of the authData payload to
+// follow.
+func (b *Machine) ReadAuthData(r io.Reader) error {
+	chunk, err := b.ReadMessage(r)
+	if err != nil {
+		return err
+	}
+
+	if len(chunk) < authDataLengthSize {
+		return fmt.Errorf("auth data length is expected to be "+
+			"encoded in a %d byte prefix", authDataLengthSize)
+	}
+
+	// First, read the size of the authData to follow and ensure that it is
+	// a sane size.
+	payloadLen := binary.BigEndian.Uint32(chunk[:authDataLengthSize])
+	if payloadLen > maxAuthDataPayloadSize {
+		return fmt.Errorf("auth data length of %d exceeds the "+
+			"maximum sane length of %d", payloadLen,
+			maxAuthDataPayloadSize)
+	}
+
+	offset := len(chunk) - authDataLengthSize
+	authData := make([]byte, payloadLen)
+	copy(authData[:offset], chunk[authDataLengthSize:])
+
+	var nextOffset int
+	for uint32(offset) < payloadLen {
+		chunk, err = b.ReadMessage(r)
+		if err != nil {
+			return err
+		}
+
+		nextOffset = offset + len(chunk)
+		copy(authData[offset:nextOffset], chunk)
+		offset = nextOffset
+	}
+
+	b.authData = authData
 	return nil
 }
 

@@ -19,6 +19,8 @@ var _ credentials.PerRPCCredentials = (*NoiseGrpcConn)(nil)
 
 const (
 	defaultGrpcWriteBufSize = 32 * 1024
+	maxAuthDataPayloadSize  = 4 * 1024 * 1024
+	authDataLengthSize      = 4
 )
 
 // NoiseGrpcConn is a type that implements the credentials.TransportCredentials
@@ -246,6 +248,14 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 		return nil, nil, err
 	}
 
+	// For handshake versions above version 0, we now expect to receive the
+	// authData from the server.
+	if c.noise.handshakeVersion > HandshakeVersion0 {
+		if err := c.noise.ReadAuthData(c.ProxyConn); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
 	err = c.ProxyConn.SetReadDeadline(time.Time{})
@@ -339,6 +349,14 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	}
 	if err := c.noise.RecvActThree(actThree); err != nil {
 		return nil, nil, err
+	}
+
+	// For handshake versions above version 0, we now send the authData
+	// to the client in a normal message.
+	if c.noise.handshakeVersion > HandshakeVersion0 {
+		if err := c.noise.WriteAuthData(c.ProxyConn); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// We'll reset the deadline as it's no longer critical beyond the
