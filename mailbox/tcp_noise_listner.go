@@ -115,7 +115,8 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 
 	noise, err := NewBrontideMachine(
-		false, l.localStatic, l.passphrase, AuthDataPayload(l.authData),
+		false, l.localStatic, l.passphrase, MinHandshakeVersion,
+		MaxHandshakeVersion, AuthDataPayload(l.authData),
 	)
 	if err != nil {
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
