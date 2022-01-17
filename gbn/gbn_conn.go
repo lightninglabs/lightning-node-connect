@@ -294,6 +294,10 @@ func (g *GoBackNConn) Close() error {
 	g.cancel()
 
 	g.wg.Wait()
+
+	g.pingTicker.Stop()
+	g.resendTicker.Stop()
+
 	log.Debugf("GBN is closed, isServer=%v", g.isServer)
 
 	return nil
