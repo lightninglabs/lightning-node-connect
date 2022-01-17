@@ -233,6 +233,7 @@ func (g *GoBackNConn) start() {
 		pingTime = g.pingTime
 	}
 	g.pingTicker = NewIntervalAwareForceTicker(pingTime)
+	g.pingTicker.Resume()
 
 	g.resendTicker = time.NewTicker(g.resendTimeout)
 
