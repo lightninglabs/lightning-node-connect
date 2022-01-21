@@ -233,6 +233,7 @@ func (g *GoBackNConn) start() {
 		pingTime = g.pingTime
 	}
 	g.pingTicker = NewIntervalAwareForceTicker(pingTime)
+	g.pingTicker.Resume()
 
 	g.resendTicker = time.NewTicker(g.resendTimeout)
 
@@ -293,6 +294,10 @@ func (g *GoBackNConn) Close() error {
 	g.cancel()
 
 	g.wg.Wait()
+
+	g.pingTicker.Stop()
+	g.resendTicker.Stop()
+
 	log.Debugf("GBN is closed, isServer=%v", g.isServer)
 
 	return nil

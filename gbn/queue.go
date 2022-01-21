@@ -172,6 +172,15 @@ func (q *queue) processNACK(seq uint8) (bool, bool) {
 
 	log.Tracef("Received NACK %d", seq)
 
+	// If the NACK is the same as sequenceTop, it probably means that queue
+	// was sent successfully, but we just missed the necessary ACKs. So we
+	// can empty the queue here by bumping the base and we dont need to
+	// trigger a resend.
+	if seq == q.sequenceTop {
+		q.sequenceBase = q.sequenceTop
+		return true, false
+	}
+
 	// Is the NACKed sequence even in our queue?
 	if !containsSequence(q.sequenceBase, q.sequenceTop, seq) {
 		return false, false
