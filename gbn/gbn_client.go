@@ -58,6 +58,8 @@ func (g *GoBackNConn) clientHandshake() error {
 	recvNext := make(chan int, 1)
 	errChan := make(chan error, 1)
 	handshakeComplete := make(chan struct{})
+	defer close(handshakeComplete)
+
 	go func() {
 		for {
 			// We only move on to read from the stream if
@@ -65,6 +67,10 @@ func (g *GoBackNConn) clientHandshake() error {
 			// a signal from the recvNext channel.
 			select {
 			case <-handshakeComplete:
+				return
+			case <-g.ctx.Done():
+				return
+			case <-g.quit:
 				return
 			case <-recvNext:
 			}
@@ -74,7 +80,16 @@ func (g *GoBackNConn) clientHandshake() error {
 				errChan <- err
 				return
 			}
-			recvChan <- b
+
+			select {
+			case <-handshakeComplete:
+				return
+			case <-g.ctx.Done():
+				return
+			case <-g.quit:
+				return
+			case recvChan <- b:
+			}
 		}
 	}()
 
@@ -99,6 +114,10 @@ handshake:
 			log.Debugf("Client waiting for SYN")
 			select {
 			case recvNext <- 1:
+			case <-g.quit:
+				return nil
+			case <-g.ctx.Done():
+				return g.ctx.Err()
 			default:
 			}
 
@@ -107,6 +126,10 @@ handshake:
 			case <-time.After(g.handshakeTimeout):
 				log.Debugf("SYN resendTimeout. Resending SYN.")
 				continue handshake
+			case <-g.quit:
+				return nil
+			case <-g.ctx.Done():
+				return g.ctx.Err()
 			case err := <-errChan:
 				return err
 			case b = <-recvChan:
@@ -147,7 +170,6 @@ handshake:
 	}
 
 	log.Debugf("Client Handshake complete")
-	close(handshakeComplete)
 
 	return nil
 }
