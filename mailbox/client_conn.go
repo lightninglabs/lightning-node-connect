@@ -307,6 +307,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		waiter.Wait()
 
+		log.Debugf("Client: Attempting to create send socket")
 		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
 		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
 		if err != nil {
@@ -316,7 +317,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		c.sendSocket = sendSocket
 
-		log.Debugf("Client: Send mailbox created")
+		log.Debugf("Client: Send socket created")
 		return
 	}
 }

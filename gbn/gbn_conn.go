@@ -628,7 +628,7 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			return errTransportClosing
 
 		default:
-			return errors.New("received unexpected message")
+			return fmt.Errorf("received unexpected message: %T", msg)
 		}
 	}
 }

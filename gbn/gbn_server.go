@@ -137,8 +137,8 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 
 		select {
 		case <-time.After(g.handshakeTimeout):
-			log.Debugf("SYNCACK resendTimeout. Abort and wait for" +
-				"client to re-initiate")
+			log.Debugf("SYNCACK resendTimeout. Abort and wait " +
+				"for client to re-initiate")
 			continue
 		case err := <-errChan:
 			return err
