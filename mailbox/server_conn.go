@@ -222,6 +222,16 @@ func (c *ServerConn) SendControlMsg(controlMsg ControlMsg) error {
 	return c.gbnConn.Send(payload)
 }
 
+// SetRecvTimeout sets the timeout to be used when attempting to receive data.
+func (c *ServerConn) SetRecvTimeout(timeout time.Duration) {
+	c.gbnConn.SetRecvTimeout(timeout)
+}
+
+// SetSendTimeout sets the timeout to be used when attempting to send data.
+func (c *ServerConn) SetSendTimeout(timeout time.Duration) {
+	c.gbnConn.SetSendTimeout(timeout)
+}
+
 // createReceiveMailBox attempts to create a cipher box on the hashmail server
 // and then to fetch the read stream of that cipher box. It retries until it
 // succeeds or the ServerConn quits or the passed in context is canceled.

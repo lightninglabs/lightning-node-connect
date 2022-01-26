@@ -366,6 +366,16 @@ func (c *ClientConn) SendControlMsg(controlMsg ControlMsg) error {
 	return c.gbnConn.Send(payloadBytes)
 }
 
+// SetRecvTimeout sets the timeout to be used when attempting to receive data.
+func (c *ClientConn) SetRecvTimeout(timeout time.Duration) {
+	c.gbnConn.SetRecvTimeout(timeout)
+}
+
+// SetSendTimeout sets the timeout to be used when attempting to send data.
+func (c *ClientConn) SetSendTimeout(timeout time.Duration) {
+	c.gbnConn.SetSendTimeout(timeout)
+}
+
 // Close closes the underlying mailbox connection.
 //
 // NOTE: This is part of the net.Conn interface.

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"time"
 
@@ -87,6 +88,8 @@ var _ net.Addr = (*NoiseAddr)(nil)
 type controlConn interface {
 	ReceiveControlMsg(ControlMsg) error
 	SendControlMsg(ControlMsg) error
+	SetRecvTimeout(timeout time.Duration)
+	SetSendTimeout(timeout time.Duration)
 }
 
 // ProxyConn is the main interface that any mailbox connection needs to
@@ -167,6 +170,12 @@ func (k *connKit) SetDeadline(t time.Time) error {
 func (k *connKit) SetReadDeadline(t time.Time) error {
 	k.readDeadline = t
 
+	timeout := time.Until(t)
+	if t.IsZero() {
+		timeout = math.MaxInt64
+	}
+	k.impl.SetRecvTimeout(timeout)
+
 	return nil
 }
 
@@ -176,6 +185,12 @@ func (k *connKit) SetReadDeadline(t time.Time) error {
 // NOTE: This is part of the net.Conn interface.
 func (k *connKit) SetWriteDeadline(t time.Time) error {
 	k.writeDeadline = t
+
+	timeout := time.Until(t)
+	if t.IsZero() {
+		timeout = math.MaxInt64
+	}
+	k.impl.SetSendTimeout(timeout)
 
 	return nil
 }
