@@ -15,6 +15,7 @@ import (
 
 type serverHarness struct {
 	serverHost string
+	insecure   bool
 	mockServer *grpc.Server
 	server     *mockrpc.Server
 	password   [mailbox.NumPasswordWords]string
@@ -24,9 +25,10 @@ type serverHarness struct {
 	wg sync.WaitGroup
 }
 
-func newServerHarness(serverHost string) *serverHarness {
+func newServerHarness(serverHost string, insecure bool) *serverHarness {
 	return &serverHarness{
 		serverHost: serverHost,
+		insecure:   insecure,
 		errChan:    make(chan error, 1),
 	}
 }
@@ -48,11 +50,16 @@ func (s *serverHarness) start() error {
 		return err
 	}
 
+	tlsConfig := &tls.Config{}
+	if s.insecure {
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+
 	mailboxServer, err := mailbox.NewServer(
 		s.serverHost, passwordEntropy[:], grpc.WithTransportCredentials(
-			credentials.NewTLS(&tls.Config{
-				InsecureSkipVerify: true,
-			}),
+			credentials.NewTLS(tlsConfig),
 		),
 	)
 	if err != nil {
