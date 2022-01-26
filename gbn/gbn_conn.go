@@ -13,6 +13,8 @@ import (
 var (
 	errTransportClosing = errors.New("gbn transport is closing")
 	errKeepaliveTimeout = errors.New("no pong received")
+	errSendTimeout      = errors.New("send timeout")
+	errRecvTimeout      = errors.New("receive timeout")
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 	defaultHandshakeTimeout = 100 * time.Millisecond
 	defaultResendTimeout    = 100 * time.Millisecond
 	finSendTimeout          = 1000 * time.Millisecond
+	DefaultSendTimeout      = math.MaxInt64
+	DefaultRecvTimeout      = math.MaxInt64
 )
 
 type sendBytesFunc func(ctx context.Context, b []byte) error
@@ -64,6 +68,12 @@ type GoBackNConn struct {
 
 	recvDataChan chan *PacketData
 	sendDataChan chan *PacketData
+
+	sendTimeout   time.Duration
+	sendTimeoutMu sync.RWMutex
+
+	recvTimeout   time.Duration
+	recvTimeoutMu sync.RWMutex
 
 	isServer bool
 
@@ -117,6 +127,8 @@ func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
 		isServer:          isServer,
 		sendQueue:         newQueue(n+1, defaultHandshakeTimeout),
 		handshakeTimeout:  defaultHandshakeTimeout,
+		recvTimeout:       DefaultRecvTimeout,
+		sendTimeout:       DefaultSendTimeout,
 		receivedACKSignal: make(chan struct{}),
 		resendSignal:      make(chan struct{}, 1),
 		remoteClosed:      make(chan struct{}),
@@ -135,6 +147,22 @@ func (g *GoBackNConn) setN(n uint8) {
 	g.sendQueue = newQueue(n+1, defaultHandshakeTimeout)
 }
 
+// SetSendTimeout sets the timeout used in the Send function.
+func (g *GoBackNConn) SetSendTimeout(timeout time.Duration) {
+	g.sendTimeoutMu.Lock()
+	defer g.sendTimeoutMu.Unlock()
+
+	g.sendTimeout = timeout
+}
+
+// SetRecvTimeout sets the timeout used in the Recv function.
+func (g *GoBackNConn) SetRecvTimeout(timeout time.Duration) {
+	g.recvTimeoutMu.Lock()
+	defer g.recvTimeoutMu.Unlock()
+
+	g.recvTimeout = timeout
+}
+
 // Send blocks until an ack is received for the packet sent N packets before.
 func (g *GoBackNConn) Send(data []byte) error {
 	// Wait for handshake to complete before we can send data.
@@ -144,10 +172,17 @@ func (g *GoBackNConn) Send(data []byte) error {
 	default:
 	}
 
+	g.sendTimeoutMu.RLock()
+	ticker := time.NewTimer(g.sendTimeout)
+	g.sendTimeoutMu.RUnlock()
+	defer ticker.Stop()
+
 	sendPacket := func(packet *PacketData) error {
 		select {
 		case g.sendDataChan <- packet:
 			return nil
+		case <-ticker.C:
+			return errSendTimeout
 		case <-g.quit:
 			return fmt.Errorf("cannot send, gbn exited")
 		}
@@ -198,10 +233,17 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 		msg *PacketData
 	)
 
+	g.recvTimeoutMu.RLock()
+	ticker := time.NewTimer(g.recvTimeout)
+	g.recvTimeoutMu.RUnlock()
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-g.quit:
 			return nil, fmt.Errorf("cannot receive, gbn exited")
+		case <-ticker.C:
+			return nil, errRecvTimeout
 		case msg = <-g.recvDataChan:
 		}
 
