@@ -272,9 +272,11 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 			continue
 		}
 
+		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
 		err = c.receiveSocket.Write(
-			ctx, websocket.MessageText, receiveInitBytes,
+			ctxt, websocket.MessageText, receiveInitBytes,
 		)
+		cancel()
 		if err != nil {
 			log.Debugf("Client: error creating receive stream "+
 				"%v", err)
