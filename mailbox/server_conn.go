@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/lightninglabs/lightning-node-connect/gbn"
-
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,15 +66,14 @@ func NewServerConn(ctx context.Context, serverHost string,
 	}
 
 	log.Debugf("ServerConn: creating gbn, waiting for sync")
-	gbnConn, err := gbn.NewServerConn(
+	var err error
+	c.gbnConn, err = gbn.NewServerConn(
 		ctxc, c.sendToStream, c.recvFromStream, c.gbnOptions...,
 	)
 	if err != nil {
-		return nil, err
+		return c, err
 	}
 	log.Debugf("ServerConn: done creating gbn")
-
-	c.gbnConn = gbnConn
 
 	return c, nil
 }
@@ -109,14 +107,14 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 	}
 
 	log.Debugf("ServerConn: creating gbn")
-	gbnConn, err := gbn.NewServerConn(
+	var err error
+	sc.gbnConn, err = gbn.NewServerConn(
 		sc.ctx, sc.sendToStream, sc.recvFromStream, sc.gbnOptions...,
 	)
 	if err != nil {
-		return nil, err
+		return sc, err
 	}
 
-	sc.gbnConn = gbnConn
 	log.Debugf("ServerConn: done creating gbn")
 
 	return sc, nil
@@ -366,10 +364,12 @@ func (c *ServerConn) Close() error {
 	c.closeOnce.Do(func() {
 		log.Debugf("Server connection is closing")
 
-		if err := c.gbnConn.Close(); err != nil {
-			log.Debugf("Error closing gbn connection in " +
-				"server conn")
-			returnErr = err
+		if c.gbnConn != nil {
+			if err := c.gbnConn.Close(); err != nil {
+				log.Debugf("Error closing gbn connection in " +
+					"server conn")
+				returnErr = err
+			}
 		}
 
 		if c.receiveStream != nil {
