@@ -92,7 +92,9 @@ type GoBackNConn struct {
 	resendSignal chan struct{}
 
 	pingTime   time.Duration
+	pongTime   time.Duration
 	pingTicker *IntervalAwareForceTicker
+	pongTicker *IntervalAwareForceTicker
 	pongWait   chan struct{}
 
 	ctx    context.Context
@@ -266,8 +268,16 @@ func (g *GoBackNConn) start() {
 	if g.pingTime != 0 {
 		pingTime = g.pingTime
 	}
+
 	g.pingTicker = NewIntervalAwareForceTicker(pingTime)
 	g.pingTicker.Resume()
+
+	pongTime := time.Duration(math.MaxInt64)
+	if g.pongTime != 0 {
+		pongTime = g.pongTime
+	}
+
+	g.pongTicker = NewIntervalAwareForceTicker(pongTime)
 
 	g.resendTicker = time.NewTicker(g.resendTimeout)
 
@@ -401,13 +411,10 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			continue
 
 		case <-g.pingTicker.Ticks():
-			select {
-			case g.pongWait <- struct{}{}:
-			default:
-				// already waiting for pong. Timed
-				// out. close conn.
-				return errKeepaliveTimeout
-			}
+
+			// Start the pong timer.
+			g.pongTicker.Reset()
+			g.pongTicker.Resume()
 
 			log.Tracef("Sending a PING packet (isServer=%v)",
 				g.isServer)
@@ -415,6 +422,9 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			packet = &PacketData{
 				IsPing: true,
 			}
+
+		case <-g.pongTicker.Ticks():
+			return errKeepaliveTimeout
 
 		case packet = <-g.sendDataChan:
 		}
@@ -486,13 +496,11 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			return fmt.Errorf("deserialize error: %s", err)
 		}
 
-		// Reset the ping timer if any packet is received and remove
-		// any contents from the pongWait channel (if there are any).
+		// Reset the ping & pong timer if any packet is received.
 		// If ping/pong is disabled, this is a no-op.
 		g.pingTicker.Reset()
-		select {
-		case <-g.pongWait:
-		default:
+		if g.pongTicker.IsActive() {
+			g.pongTicker.Pause()
 		}
 
 		switch m := msg.(type) {

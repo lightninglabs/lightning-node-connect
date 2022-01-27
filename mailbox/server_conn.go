@@ -54,7 +54,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeout(gbnTimeout),
 			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-			gbn.WithKeepalivePing(gbnServerPingTimeout),
+			gbn.WithKeepalivePing(gbnServerPingTimeout, gbnPongTimeout),
 		},
 	}
 	c.connKit = &connKit{

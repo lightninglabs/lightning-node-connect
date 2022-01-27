@@ -37,9 +37,10 @@ func WithHandshakeTimeout(timeout time.Duration) Option {
 // other side does not respond to the ping in a timely manner. After the ping
 // the connection will be closed if the other side does not respond within
 // time duration.
-func WithKeepalivePing(duration time.Duration) Option {
+func WithKeepalivePing(ping, pong time.Duration) Option {
 	return func(conn *GoBackNConn) {
-		conn.pingTime = duration
+		conn.pingTime = ping
+		conn.pongTime = pong
 		conn.pongWait = make(chan struct{}, 1)
 	}
 }
