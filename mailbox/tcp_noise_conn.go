@@ -2,7 +2,6 @@ package mailbox
 
 import (
 	"bytes"
-	"io"
 	"math"
 	"net"
 	"time"
@@ -44,7 +43,13 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		return nil, err
 	}
 
-	noise, err := NewBrontideMachine(true, localPriv, passphrase)
+	noise, err := NewBrontideMachine(&BrontideMachineConfig{
+		Initiator:        true,
+		HandshakePattern: XXPattern,
+		HandshakeVersion: HandshakeVersion,
+		LocalStaticKey:   localPriv,
+		PAKEPassphrase:   passphrase,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -54,18 +59,7 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		noise: noise,
 	}
 
-	// Initiate the handshake by sending the first act to the receiver.
-	actOne, err := b.noise.GenActOne()
-	if err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-	if _, err := conn.Write(actOne[:]); err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-
-	// We'll ensure that we get ActTwo from the remote peer in a timely
+	// We'll ensure that we get a response from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
 	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
@@ -74,29 +68,7 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		return nil, err
 	}
 
-	// If the first act was successful (we know that address is actually
-	// remotePub), then read the second act after which we'll be able to
-	// send our static public key to the remote peer with strong forward
-	// secrecy.
-	var actTwo [ActTwoSize]byte
-	if _, err := io.ReadFull(conn, actTwo[:]); err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-
-	if err := b.noise.RecvActTwo(actTwo); err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-
-	// Finally, complete the handshake by sending over our encrypted static
-	// key and execute the final ECDH operation.
-	actThree, err := b.noise.GenActThree()
-	if err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-	if _, err := conn.Write(actThree[:]); err != nil {
+	if err := b.noise.DoHandshake(conn); err != nil {
 		b.conn.Close()
 		return nil, err
 	}

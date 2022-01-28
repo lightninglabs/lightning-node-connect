@@ -3,7 +3,6 @@ package mailbox
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"time"
 
@@ -114,9 +113,14 @@ func (l *Listener) doHandshake(conn net.Conn) {
 
 	remoteAddr := conn.RemoteAddr().String()
 
-	noise, err := NewBrontideMachine(
-		false, l.localStatic, l.passphrase, AuthDataPayload(l.authData),
-	)
+	noise, err := NewBrontideMachine(&BrontideMachineConfig{
+		Initiator:        false,
+		HandshakePattern: XXPattern,
+		HandshakeVersion: HandshakeVersion,
+		LocalStaticKey:   l.localStatic,
+		PAKEPassphrase:   l.passphrase,
+		AuthData:         l.authData,
+	})
 	if err != nil {
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
 		return
@@ -136,30 +140,7 @@ func (l *Listener) doHandshake(conn net.Conn) {
 		return
 	}
 
-	// Attempt to carry out the first act of the handshake protocol. If the
-	// connecting node doesn't know our long-term static public key, then
-	// this portion will fail with a non-nil error.
-	var actOne [ActOneSize]byte
-	if _, err := io.ReadFull(conn, actOne[:]); err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
-	}
-	if err := brontideConn.noise.RecvActOne(actOne); err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
-	}
-
-	// Next, progress the handshake processes by sending over our ephemeral
-	// key for the session along with an authenticating tag.
-	actTwo, err := brontideConn.noise.GenActTwo()
-	if err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
-	}
-	if _, err := conn.Write(actTwo[:]); err != nil {
+	if err := brontideConn.noise.DoHandshake(conn); err != nil {
 		brontideConn.conn.Close()
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
 		return
@@ -169,31 +150,6 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	case <-l.quit:
 		return
 	default:
-	}
-
-	// We'll ensure that we get ActTwo from the remote peer in a timely
-	// manner. If they don't respond within 1 second, then we'll kill the
-	// connection.
-	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
-	if err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
-	}
-
-	// Finally, finish the handshake processes by reading and decrypting
-	// the connection peer's static public key. If this succeeds then both
-	// sides have mutually authenticated each other.
-	var actThree [ActThreeSize]byte
-	if _, err := io.ReadFull(conn, actThree[:]); err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
-	}
-	if err := brontideConn.noise.RecvActThree(actThree); err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
 	}
 
 	// We'll reset the deadline as it's no longer critical beyond the
