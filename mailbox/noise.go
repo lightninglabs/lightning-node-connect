@@ -57,6 +57,10 @@ const (
 	// is sent in a fixed sized payload in act 2.
 	HandshakeVersion0 = byte(0)
 
+	// HandshakeVersion1 is the handshake version in which the auth data
+	// is sent in a dynamically sized, length-prefixed payload in act 2.
+	HandshakeVersion1 = byte(1)
+
 	// MinHandshakeVersion is the minimum handshake version that is
 	// currently supported.
 	MinHandshakeVersion = HandshakeVersion0
@@ -65,7 +69,7 @@ const (
 	// support. Any messages that carry a version not between
 	// MinHandshakeVersion and MaxHandshakeVersion will cause the handshake
 	// to abort immediately.
-	MaxHandshakeVersion = HandshakeVersion0
+	MaxHandshakeVersion = HandshakeVersion1
 
 	// ActTwoPayloadSize is the size of the fixed sized payload that can be
 	// sent from the responder to the Initiator in act two.
@@ -448,12 +452,50 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 				}
 			}
 
-			copy(payload[:], payloadWriter.Bytes())
+			copy(payload, payloadWriter.Bytes())
 
 		default:
 			return fmt.Errorf("unknown act number: %d", mp.ActNum)
 		}
 
+		_, err := buff.Write(h.EncryptAndHash(payload))
+		if err != nil {
+			return err
+		}
+
+	case HandshakeVersion1:
+		var payload []byte
+		switch mp.ActNum {
+		case act1, act3:
+		case act2:
+			payload = h.payloadToSend
+
+			// The total length of each message payload including
+			// the MAC size payload exceed the largest number
+			// encodable within a 32-bit unsigned integer.
+			if len(payload) > math.MaxUint32 {
+				return ErrMaxMessageLengthExceeded
+			}
+
+			// The full length of the packet is only the packet
+			// length, and does NOT include the MAC.
+			fullLength := uint32(len(payload))
+
+			var pktLen [4]byte
+			binary.BigEndian.PutUint32(pktLen[:], fullLength)
+
+			// First, generate the encrypted+MAC'd length prefix for
+			// the packet.
+			_, err := buff.Write(h.EncryptAndHash(pktLen[:]))
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("unknown act number: %d", mp.ActNum)
+		}
+
+		// Finally, generate the encrypted packet itself.
 		_, err := buff.Write(h.EncryptAndHash(payload))
 		if err != nil {
 			return err
@@ -524,12 +566,12 @@ func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 		}
 
 		cipherText := make([]byte, payloadSize+macSize)
-		_, err := r.Read(cipherText[:])
+		_, err := r.Read(cipherText)
 		if err != nil {
 			return err
 		}
 
-		payload, err := h.DecryptAndHash(cipherText[:])
+		payload, err := h.DecryptAndHash(cipherText)
 		if err != nil {
 			return err
 		}
@@ -551,6 +593,52 @@ func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 		}
 
 		h.receivedPayload = authData
+
+	case HandshakeVersion1:
+		var payloadSize uint32
+		switch mp.ActNum {
+		case act1, act3:
+			payloadSize = macSize
+		case act2:
+			header := [4 + macSize]byte{}
+			_, err := r.Read(header[:])
+			if err != nil {
+				return err
+			}
+
+			// Attempt to decrypt+auth the packet length present in
+			// the stream.
+			pktLenBytes, err := h.DecryptAndHash(header[:])
+			if err != nil {
+				return err
+			}
+
+			// Compute the packet length that we will need to read
+			// off the wire.
+			payloadSize = macSize +
+				binary.BigEndian.Uint32(pktLenBytes)
+
+		default:
+			return fmt.Errorf("unknown act number: %d", mp.ActNum)
+		}
+
+		cipherText := make([]byte, payloadSize)
+		_, err := r.Read(cipherText)
+		if err != nil {
+			return err
+		}
+
+		// Finally, decrypt the message held in the buffer, and return a
+		// new byte slice containing the plaintext.
+		authData, err := h.DecryptAndHash(cipherText)
+		if err != nil {
+			return err
+		}
+
+		if mp.ActNum == 2 {
+			h.receivedPayload = authData
+		}
+
 	default:
 		return fmt.Errorf("unknown handshake version: %v", h.version)
 	}
