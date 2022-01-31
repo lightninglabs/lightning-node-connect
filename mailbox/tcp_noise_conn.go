@@ -44,11 +44,12 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 	}
 
 	noise, err := NewBrontideMachine(&BrontideMachineConfig{
-		Initiator:        true,
-		HandshakePattern: XXPattern,
-		HandshakeVersion: HandshakeVersion,
-		LocalStaticKey:   localPriv,
-		PAKEPassphrase:   passphrase,
+		Initiator:           true,
+		HandshakePattern:    XXPattern,
+		MinHandshakeVersion: MinHandshakeVersion,
+		MaxHandshakeVersion: MaxHandshakeVersion,
+		LocalStaticKey:      localPriv,
+		PAKEPassphrase:      passphrase,
 	})
 	if err != nil {
 		return nil, err

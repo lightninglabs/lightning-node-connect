@@ -53,10 +53,19 @@ const (
 	// time frame, then we'll fail the connection.
 	handshakeReadTimeout = time.Second * 5
 
-	// HandshakeVersion is the expected version of the brontide handshake.
-	// Any messages that carry a different version will cause the handshake
+	// HandshakeVersion0 is the handshake version in which the auth data
+	// is sent in a fixed sized payload in act 2.
+	HandshakeVersion0 = byte(0)
+
+	// MinHandshakeVersion is the minimum handshake version that is
+	// currently supported.
+	MinHandshakeVersion = HandshakeVersion0
+
+	// MaxHandshakeVersion is the maximum handshake that we currently
+	// support. Any messages that carry a version not between
+	// MinHandshakeVersion and MaxHandshakeVersion will cause the handshake
 	// to abort immediately.
-	HandshakeVersion = byte(0)
+	MaxHandshakeVersion = HandshakeVersion0
 
 	// ActTwoPayloadSize is the size of the fixed sized payload that can be
 	// sent from the responder to the Initiator in act two.
@@ -316,6 +325,16 @@ type handshakeState struct {
 
 	pattern HandshakePattern
 
+	// minVersion is the minimum handshake version that the Machine
+	// supports.
+	minVersion byte
+
+	// maxVersion is the maximum handshake version that the Machine
+	// supports.
+	maxVersion byte
+
+	// version is handshake version that the client and server have agreed
+	// on.
 	version byte
 
 	ephemeralGen func() (*btcec.PrivateKey, error)
@@ -323,14 +342,21 @@ type handshakeState struct {
 
 // newHandshakeState returns a new instance of the handshake state initialized
 // with the prologue and protocol name.
-func newHandshakeState(version byte, pattern HandshakePattern, initiator bool,
-	prologue []byte, localPub keychain.SingleKeyECDH,
+func newHandshakeState(minVersion, maxVersion byte, pattern HandshakePattern,
+	initiator bool, prologue []byte, localPub keychain.SingleKeyECDH,
 	remoteStatic *btcec.PublicKey, password []byte, authData []byte,
 	ephemeralGen func() (*btcec.PrivateKey, error)) (handshakeState,
 	error) {
 
+	startVersion := maxVersion
+	if initiator {
+		startVersion = minVersion
+	}
+
 	h := handshakeState{
-		version:        version,
+		minVersion:     minVersion,
+		maxVersion:     maxVersion,
+		version:        startVersion,
 		symmetricState: symmetricState{},
 		initiator:      initiator,
 		localStatic:    localPub,
@@ -393,7 +419,7 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 
 	// Write payload data.
 	switch h.version {
-	case HandshakeVersion:
+	case HandshakeVersion0:
 		var payload []byte
 		switch mp.ActNum {
 		case act1, act3:
@@ -447,14 +473,41 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 // decrypted as defined by the handshake version.
 func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 	// Read and check version.
-	var version [1]byte
-	if _, err := r.Read(version[:]); err != nil {
+	var versionScratch [1]byte
+	if _, err := r.Read(versionScratch[:]); err != nil {
 		return err
 	}
+	version := versionScratch[0]
 
-	if version[0] != h.version {
-		return fmt.Errorf("received unexpected handshake version: %v",
-			version[0])
+	switch mp.ActNum {
+	case act1, act2:
+		// During act 1 and 2 is when the initiator and responder are
+		// negotiating their handshake versions. If the handshake
+		// version is unknown or no longer supported, then the handshake
+		// fails immediately.
+		if version < h.minVersion || version > h.maxVersion {
+			return fmt.Errorf("received unexpected handshake "+
+				"version: %v", version)
+		}
+
+		// The initiator will adapt to the version chosen by the
+		// responder since in our use case, the initiator is always
+		// updated first and so will be aware of a new version before
+		// the responder is.
+		if h.initiator {
+			h.version = version
+		}
+
+	case act3:
+		// When the responder receives act 3, it is expected to be the
+		// same version that it used in its act 2 message.
+		if version != h.version {
+			return fmt.Errorf("received unexpected handshake "+
+				"version: %v", version)
+		}
+
+	default:
+		return fmt.Errorf("unknown act number: %d", mp.ActNum)
 	}
 
 	// Read Tokens.
@@ -463,8 +516,8 @@ func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 	}
 
 	// Read the payload data.
-	switch h.version {
-	case HandshakeVersion:
+	switch version {
+	case HandshakeVersion0:
 		payloadSize := 0
 		if mp.ActNum == act2 {
 			payloadSize = ActTwoPayloadSize
@@ -798,14 +851,15 @@ type Machine struct {
 // BrontideMachineConfig holds the config necessary to construct a new Machine
 // object.
 type BrontideMachineConfig struct {
-	Initiator        bool
-	HandshakePattern HandshakePattern
-	HandshakeVersion byte
-	LocalStaticKey   keychain.SingleKeyECDH
-	RemoteStaticKey  *btcec.PublicKey
-	PAKEPassphrase   []byte
-	AuthData         []byte
-	EphemeralGen     func() (*btcec.PrivateKey, error)
+	Initiator           bool
+	HandshakePattern    HandshakePattern
+	MinHandshakeVersion byte
+	MaxHandshakeVersion byte
+	LocalStaticKey      keychain.SingleKeyECDH
+	RemoteStaticKey     *btcec.PublicKey
+	PAKEPassphrase      []byte
+	AuthData            []byte
+	EphemeralGen        func() (*btcec.PrivateKey, error)
 }
 
 // NewBrontideMachine creates a new instance of the brontide state-machine.
@@ -823,7 +877,8 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 	}
 
 	handshake, err := newHandshakeState(
-		cfg.HandshakeVersion, cfg.HandshakePattern, cfg.Initiator,
+		cfg.MinHandshakeVersion, cfg.MaxHandshakeVersion,
+		cfg.HandshakePattern, cfg.Initiator,
 		lightningNodeConnectPrologue, cfg.LocalStaticKey,
 		cfg.RemoteStaticKey, password, cfg.AuthData, cfg.EphemeralGen,
 	)
