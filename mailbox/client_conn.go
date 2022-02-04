@@ -3,7 +3,6 @@ package mailbox
 import (
 	"context"
 	"fmt"
-	"net"
 	"regexp"
 	"sync"
 	"time"
@@ -98,7 +97,8 @@ type ClientConn struct {
 	sendSocket   *websocket.Conn
 	sendStreamMu sync.Mutex
 
-	gbnConn *gbn.GoBackNConn
+	gbnConn    *gbn.GoBackNConn
+	gbnOptions []gbn.Option
 
 	closeOnce sync.Once
 
@@ -108,13 +108,23 @@ type ClientConn struct {
 // NewClientConn creates a new client connection with the given receive and send
 // session identifiers. The context given as the first parameter will be used
 // throughout the connection lifetime.
-func NewClientConn(ctx context.Context, receiveSID,
-	sendSID [64]byte) *ClientConn {
+func NewClientConn(ctx context.Context, sid [64]byte,
+	serverHost string) (*ClientConn, error) {
+
+	receiveSID := GetSID(sid, true)
+	sendSID := GetSID(sid, false)
 
 	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
 		receiveSID[:], sendSID[:])
 
 	c := &ClientConn{
+		gbnOptions: []gbn.Option{
+			gbn.WithTimeout(gbnTimeout),
+			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+			gbn.WithKeepalivePing(
+				gbnClientPingTimeout, gbnPongTimeout,
+			),
+		},
 		quit: make(chan struct{}),
 	}
 	c.connKit = &connKit{
@@ -122,8 +132,67 @@ func NewClientConn(ctx context.Context, receiveSID,
 		impl:       c,
 		receiveSID: receiveSID,
 		sendSID:    sendSID,
+		serverAddr: serverHost,
 	}
-	return c
+
+	gbnConn, err := gbn.NewClientConn(
+		gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
+	)
+	if err != nil {
+		return c, err
+	}
+	c.gbnConn = gbnConn
+
+	return c, nil
+}
+
+// RefreshClientConn creates a new ClientConn object with the same values as
+// the passed ClientConn but with a new quit channel, a new closeOnce var and
+// a new gbn connection.
+func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
+	error) {
+
+	c.sendStreamMu.Lock()
+	defer c.sendStreamMu.Unlock()
+
+	c.receiveStreamMu.Lock()
+	defer c.receiveStreamMu.Unlock()
+
+	log.Debugf("Refreshing client conn, read_stream=%x, write_stream=%x",
+		c.receiveSID[:], c.sendSID[:])
+
+	cc := &ClientConn{
+		receiveSocket: c.receiveSocket,
+		sendSocket:    c.sendSocket,
+		gbnOptions:    c.gbnOptions,
+		quit:          make(chan struct{}),
+	}
+	c.sendSocket = nil
+	c.receiveSocket = nil
+
+	cc.connKit = &connKit{
+		ctx:        ctx,
+		impl:       cc,
+		receiveSID: c.receiveSID,
+		sendSID:    c.sendSID,
+		serverAddr: c.serverAddr,
+	}
+
+	gbnConn, err := gbn.NewClientConn(
+		gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
+	)
+	if err != nil {
+		return cc, err
+	}
+	cc.gbnConn = gbnConn
+
+	return cc, nil
+}
+
+// Done returns the quit channel of the ClientConn and thus can be used
+// to determine if the current connection is closed or not.
+func (c *ClientConn) Done() <-chan struct{} {
+	return c.quit
 }
 
 // recvFromStream is used to receive a payload from the receive socket.
@@ -326,27 +395,6 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 	}
 }
 
-// Dial returns a net.Conn abstraction over the mailbox connection.
-func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
-	error) {
-
-	c.connKit.serverAddr = serverHost
-	c.quit = make(chan struct{})
-
-	gbnConn, err := gbn.NewClientConn(
-		gbnN, c.sendToStream, c.recvFromStream,
-		gbn.WithTimeout(gbnTimeout),
-		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-		gbn.WithKeepalivePing(gbnClientPingTimeout, gbnPongTimeout),
-	)
-	if err != nil {
-		return nil, err
-	}
-	c.gbnConn = gbnConn
-
-	return c, nil
-}
-
 // ReceiveControlMsg tries to receive a control message over the underlying
 // mailbox connection.
 //
@@ -395,21 +443,25 @@ func (c *ClientConn) Close() error {
 			log.Debugf("Error closing gbn connection: %v", err)
 		}
 
-		close(c.quit)
-
+		c.receiveStreamMu.Lock()
 		if c.receiveSocket != nil {
 			log.Debugf("sending bye on receive socket")
 			returnErr = c.receiveSocket.Close(
 				websocket.StatusGoingAway, "bye",
 			)
 		}
+		c.receiveStreamMu.Unlock()
 
+		c.sendStreamMu.Lock()
 		if c.sendSocket != nil {
 			log.Debugf("sending bye on send socket")
 			returnErr = c.sendSocket.Close(
 				websocket.StatusGoingAway, "bye",
 			)
 		}
+		c.sendStreamMu.Unlock()
+
+		close(c.quit)
 	})
 
 	return returnErr

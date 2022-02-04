@@ -23,8 +23,6 @@ func mailboxRPCConnection(mailboxServer,
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
 	sid := sha512.Sum512(password[:])
-	receiveSID := mailbox.GetSID(sid, true)
-	sendSID := mailbox.GetSID(sid, false)
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
@@ -33,7 +31,11 @@ func mailboxRPCConnection(mailboxServer,
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 
 	ctx := context.Background()
-	transportConn := mailbox.NewClientConn(ctx, receiveSID, sendSID)
+	transportConn, err := mailbox.NewClient(ctx, sid)
+	if err != nil {
+		return nil, err
+	}
+
 	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
 
 	dialOpts := []grpc.DialOption{
