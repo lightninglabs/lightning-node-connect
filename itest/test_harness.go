@@ -136,7 +136,6 @@ func (h *harnessTest) shutdown() error {
 	}
 
 	h.server.stop()
-
 	return returnErr
 }
 
@@ -160,13 +159,15 @@ func setupClientAndServerHarnesses(t *testing.T,
 	mailboxAddr string, insecure bool) (*clientHarness, *serverHarness) {
 
 	serverHarness := newServerHarness(mailboxAddr, insecure)
-	if err := serverHarness.start(); err != nil {
+	if err := serverHarness.start(true); err != nil {
 		t.Fatalf("could not start server: %v", err)
 	}
 
 	select {
 	case err := <-serverHarness.errChan:
-		t.Fatalf("could not start server: %v", err)
+		if err != nil {
+			t.Fatalf("could not start server: %v", err)
+		}
 	default:
 	}
 

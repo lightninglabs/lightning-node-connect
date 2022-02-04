@@ -4,9 +4,8 @@ import (
 	"crypto/tls"
 	"sync"
 
-	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
-
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
@@ -38,12 +37,14 @@ func (s *serverHarness) stop() {
 	s.wg.Wait()
 }
 
-func (s *serverHarness) start() error {
-	password, passwordEntropy, err := mailbox.NewPassword()
-	if err != nil {
-		return err
+func (s *serverHarness) start(newPassword bool) error {
+	if newPassword {
+		password, _, err := mailbox.NewPassword()
+		if err != nil {
+			return err
+		}
+		s.password = password
 	}
-	s.password = password
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
@@ -57,8 +58,9 @@ func (s *serverHarness) start() error {
 		}
 	}
 
+	pswdEntropy := mailbox.PasswordMnemonicToEntropy(s.password)
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, passwordEntropy[:], grpc.WithTransportCredentials(
+		s.serverHost, pswdEntropy[:], grpc.WithTransportCredentials(
 			credentials.NewTLS(tlsConfig),
 		),
 	)
@@ -67,7 +69,7 @@ func (s *serverHarness) start() error {
 	}
 
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, passwordEntropy[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, pswdEntropy[:])
 
 	s.mockServer = grpc.NewServer(
 		grpc.Creds(noiseConn),
