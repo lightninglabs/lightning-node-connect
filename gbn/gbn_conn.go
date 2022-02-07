@@ -94,11 +94,9 @@ type GoBackNConn struct {
 	// quit is used to stop the normal operations of the connection.
 	// Once closed, the send and receive streams will still be available
 	// for the FIN sequence.
-	quit chan struct{}
-
-	wg sync.WaitGroup
-
-	errChan chan error
+	quit      chan struct{}
+	closeOnce sync.Once
+	wg        sync.WaitGroup
 }
 
 // newGoBackNConn creates a GoBackNConn instance with all the members which
@@ -125,7 +123,6 @@ func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
 		ctx:               ctxc,
 		cancel:            cancel,
 		quit:              make(chan struct{}),
-		errChan:           make(chan error, 3),
 	}
 }
 
@@ -151,10 +148,8 @@ func (g *GoBackNConn) Send(data []byte) error {
 		select {
 		case g.sendDataChan <- packet:
 			return nil
-		case err := <-g.errChan:
-			return fmt.Errorf("cannot send, gbn exited: %v", err)
 		case <-g.quit:
-			return io.EOF
+			return fmt.Errorf("cannot send, gbn exited")
 		}
 	}
 
@@ -205,11 +200,8 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 
 	for {
 		select {
-		case err := <-g.errChan:
-			return nil, fmt.Errorf("cannot receive, gbn exited: %v",
-				err)
 		case <-g.quit:
-			return nil, io.EOF
+			return nil, fmt.Errorf("cannot receive, gbn exited")
 		case msg = <-g.recvDataChan:
 		}
 
@@ -239,13 +231,17 @@ func (g *GoBackNConn) start() {
 
 	g.wg.Add(1)
 	go func() {
-		defer g.wg.Done()
+		defer func() {
+			g.wg.Done()
+			if err := g.Close(); err != nil {
+				log.Errorf("error closing GoBackNConn: %v", err)
+			}
+		}()
 
 		err := g.receivePacketsForever()
 		if err != nil {
 			log.Debugf("Error in receivePacketsForever "+
 				"(isServer=%v): %v", g.isServer, err)
-			g.errChan <- err
 		}
 		log.Debugf("receivePacketsForever stopped (isServer=%v)",
 			g.isServer)
@@ -253,14 +249,18 @@ func (g *GoBackNConn) start() {
 
 	g.wg.Add(1)
 	go func() {
-		defer g.wg.Done()
+		defer func() {
+			g.wg.Done()
+			if err := g.Close(); err != nil {
+				log.Errorf("error closing GoBackNConn: %v", err)
+			}
+		}()
 
 		err := g.sendPacketsForever()
 		if err != nil {
 			log.Debugf("Error in sendPacketsForever "+
 				"(isServer=%v): %v", g.isServer, err)
 
-			g.errChan <- err
 		}
 		log.Debugf("sendPacketsForever stopped (isServer=%v)",
 			g.isServer)
@@ -269,36 +269,40 @@ func (g *GoBackNConn) start() {
 
 // Close attempts to cleanly close the connection by sending a FIN message.
 func (g *GoBackNConn) Close() error {
-	log.Debugf("Closing GoBackNConn, isServer=%v", g.isServer)
+	g.closeOnce.Do(func() {
+		log.Debugf("Closing GoBackNConn, isServer=%v", g.isServer)
 
-	// We close the quit channel to stop the usual operations of the
-	// server.
-	close(g.quit)
+		// We close the quit channel to stop the usual operations of the
+		// server.
+		close(g.quit)
 
-	// Try send a FIN message to the peer if they have not already done so.
-	select {
-	case <-g.remoteClosed:
-	default:
-		log.Tracef("Try sending FIN, isServer=%v", g.isServer)
-		ctxc, cancel := context.WithTimeout(
-			g.ctx, finSendTimeout,
-		)
-		defer cancel()
-		if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
-			log.Errorf("Error sending FIN: %v", err)
+		// Try send a FIN message to the peer if they have not already
+		// done so.
+		select {
+		case <-g.remoteClosed:
+		default:
+			log.Tracef("Try sending FIN, isServer=%v", g.isServer)
+			ctxc, cancel := context.WithTimeout(
+				g.ctx, finSendTimeout,
+			)
+			defer cancel()
+			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
+				log.Errorf("Error sending FIN: %v", err)
+			}
 		}
-	}
 
-	// Canceling the context will ensure that we are not hanging on the
-	// receive or send functions passed to the server on initialisation.
-	g.cancel()
+		// Canceling the context will ensure that we are not hanging on
+		// the receive or send functions passed to the server on
+		// initialisation.
+		g.cancel()
 
-	g.wg.Wait()
+		g.wg.Wait()
 
-	g.pingTicker.Stop()
-	g.resendTicker.Stop()
+		g.pingTicker.Stop()
+		g.resendTicker.Stop()
 
-	log.Debugf("GBN is closed, isServer=%v", g.isServer)
+		log.Debugf("GBN is closed, isServer=%v", g.isServer)
+	})
 
 	return nil
 }
