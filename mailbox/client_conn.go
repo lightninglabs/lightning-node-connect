@@ -208,7 +208,7 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 		}
 
 		c.sendStreamMu.Lock()
-		ctxt, cancel := context.WithTimeout(c.ctx, sendSocketTimeout)
+		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
 		err = c.sendSocket.Write(
 			ctxt, websocket.MessageText, sendInitBytes,
 		)
