@@ -334,6 +334,18 @@ func (c *NoiseGrpcConn) Info() credentials.ProtocolInfo {
 	}
 }
 
+// Close ensures that we hold a lock on the ProxyConn before calling close on
+// it to ensure that the handshake functions don't use the ProxyConn at the same
+// time.
+//
+// NOTE: This is part of the net.Conn interface.
+func (c *NoiseGrpcConn) Close() error {
+	c.proxyConnMtx.RLock()
+	defer c.proxyConnMtx.RUnlock()
+
+	return c.ProxyConn.Close()
+}
+
 // Clone makes a copy of this TransportCredentials.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
