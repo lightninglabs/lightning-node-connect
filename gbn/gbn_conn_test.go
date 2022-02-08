@@ -76,6 +76,117 @@ func TestNormal(t *testing.T) {
 	require.True(t, bytes.Equal(msg, payload2))
 }
 
+// TestServerHandshakeTimeout ensures that the SetRecvTimout properly exits out
+// of the Recv function if the timout has passed before receiving anything.
+// This is useful in the case of a handshake on the layer above GBN. The test
+// does the following: We kick off a handshake but we ensure that the clients
+// SYNACK message delays enough for the server to time out the handshake and
+// start again by waiting for SYN. The client, however, will think the handshake
+// has completed and so will go into normal message sending operation mode and
+// so will call Recv or Send which will hang indefinitely unless we set a
+// timeout.
+func TestServerHandshakeTimeout(t *testing.T) {
+	s1Chan := make(chan []byte, 10)
+	s2Chan := make(chan []byte, 10)
+
+	// Client Read
+	s1Read := func(ctx context.Context) ([]byte, error) {
+		select {
+		case val := <-s1Chan:
+			return val, nil
+		case <-ctx.Done():
+		}
+		return nil, nil
+	}
+
+	// Server write
+	s1Write := func(ctx context.Context, b []byte) error { //nolint:unparam
+		select {
+		case s1Chan <- b:
+			return nil
+		case <-ctx.Done():
+		}
+		return nil
+	}
+
+	// Server Read
+	var (
+		serverReadCount = 1
+		countMu         sync.Mutex
+	)
+	s2Read := func(ctx context.Context) ([]byte, error) { //nolint:unparam
+		countMu.Lock()
+		defer func() {
+			serverReadCount++
+			countMu.Unlock()
+		}()
+
+		select {
+		case val := <-s2Chan:
+			// Let the client SYNACK message delay for a bit in
+			// order to ensure that the server times it out.
+			if serverReadCount == 2 {
+				time.Sleep(defaultHandshakeTimeout * 2)
+			}
+
+			return val, nil
+		case <-ctx.Done():
+		}
+		return nil, nil
+	}
+
+	// Client write
+	s2Write := func(ctx context.Context, b []byte) error {
+		select {
+		case s2Chan <- b:
+			return nil
+		case <-ctx.Done():
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var (
+		server *GoBackNConn
+		wg     sync.WaitGroup
+	)
+	defer func() {
+		if server != nil {
+			server.Close()
+		}
+	}()
+
+	payload1 := []byte("payload 1")
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		var err error
+		server, err = NewServerConn(ctx, s1Write, s2Read)
+		require.NoError(t, err)
+
+		err = server.Send(payload1)
+		require.NoError(t, err)
+	}()
+
+	// Give the server time to be ready for the handshake
+	time.Sleep(time.Millisecond * 200)
+
+	client, err := NewClientConn(10, s2Write, s1Read)
+	require.NoError(t, err)
+	defer client.Close()
+
+	client.SetRecvTimeout(defaultHandshakeTimeout)
+
+	_, err = client.Recv()
+	require.ErrorIs(t, err, errRecvTimeout)
+
+	cancel()
+	wg.Wait()
+}
+
 func TestDroppedMessage(t *testing.T) {
 	s1Chan := make(chan []byte, 10)
 	s2Chan := make(chan []byte, 10)

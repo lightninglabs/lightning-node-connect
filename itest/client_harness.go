@@ -6,9 +6,8 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
-
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
@@ -19,6 +18,8 @@ type clientHarness struct {
 
 	grpcConn   *grpc.ClientConn
 	clientConn mockrpc.MockServiceClient
+
+	cancel func()
 }
 
 func newClientHarness(serverAddress string) *clientHarness {
@@ -33,8 +34,6 @@ func (c *clientHarness) setConn(words []string) error {
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
 	sid := sha512.Sum512(password[:])
-	receiveSID := mailbox.GetSID(sid, true)
-	sendSID := mailbox.GetSID(sid, false)
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
@@ -42,8 +41,13 @@ func (c *clientHarness) setConn(words []string) error {
 	}
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 
-	ctx := context.Background()
-	transportConn := mailbox.NewClientConn(ctx, receiveSID, sendSID)
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+	transportConn, err := mailbox.NewClient(ctx, sid)
+	if err != nil {
+		return err
+	}
+
 	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
 
 	dialOpts := []grpc.DialOption{
@@ -71,5 +75,6 @@ func (c *clientHarness) setConn(words []string) error {
 }
 
 func (c *clientHarness) cleanup() error {
+	c.cancel()
 	return c.grpcConn.Close()
 }

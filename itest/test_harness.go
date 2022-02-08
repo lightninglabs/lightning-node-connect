@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var interceptor *signal.Interceptor
+
 // testCase is a struct that holds a single test case.
 type testCase struct {
 	name string
@@ -98,14 +100,22 @@ func (h *harnessTest) Log(args ...interface{}) {
 // packages.
 func (h *harnessTest) setupLogging() {
 	logWriter := build.NewRotatingLogWriter()
-	interceptor, err := signal.Intercept()
+
+	if interceptor != nil {
+		return
+	}
+
+	ic, err := signal.Intercept()
 	require.NoError(h.t, err)
+	interceptor = &ic
 
-	aperture.SetupLoggers(logWriter, interceptor)
-	lnd.AddSubLogger(logWriter, mailbox.Subsystem, interceptor, mailbox.UseLogger)
-	lnd.AddSubLogger(logWriter, gbn.Subsystem, interceptor, gbn.UseLogger)
+	aperture.SetupLoggers(logWriter, *interceptor)
+	lnd.AddSubLogger(logWriter, mailbox.Subsystem, *interceptor, mailbox.UseLogger)
+	lnd.AddSubLogger(logWriter, gbn.Subsystem, *interceptor, gbn.UseLogger)
 
-	err = build.ParseAndSetDebugLevels("debug,PRXY=warn", logWriter)
+	err = build.ParseAndSetDebugLevels(
+		"debug,PRXY=warn,GOBN=trace", logWriter,
+	)
 	require.NoError(h.t, err)
 }
 
@@ -113,18 +123,19 @@ func (h *harnessTest) setupLogging() {
 func (h *harnessTest) shutdown() error {
 	var returnErr error
 
-	err := h.hmserver.stop()
-	if err != nil {
-		returnErr = err
+	if h.hmserver != nil {
+		err := h.hmserver.stop()
+		if err != nil {
+			returnErr = err
+		}
 	}
 
-	err = h.client.cleanup()
+	err := h.client.cleanup()
 	if err != nil {
 		returnErr = err
 	}
 
 	h.server.stop()
-
 	return returnErr
 }
 
@@ -137,24 +148,36 @@ func setupHarnesses(t *testing.T) (*clientHarness, *serverHarness,
 		t.Fatalf("could not start hashmail server: %v", err)
 	}
 
-	serverHarness := newServerHarness(hashmailHarness.apertureCfg.ListenAddr)
-	if err := serverHarness.start(); err != nil {
+	client, server := setupClientAndServerHarnesses(
+		t, hashmailHarness.apertureCfg.ListenAddr, true,
+	)
+
+	return client, server, hashmailHarness
+}
+
+func setupClientAndServerHarnesses(t *testing.T,
+	mailboxAddr string, insecure bool) (*clientHarness, *serverHarness) {
+
+	serverHarness := newServerHarness(mailboxAddr, insecure)
+	if err := serverHarness.start(true); err != nil {
 		t.Fatalf("could not start server: %v", err)
 	}
 
 	select {
 	case err := <-serverHarness.errChan:
-		t.Fatalf("could not start server: %v", err)
+		if err != nil {
+			t.Fatalf("could not start server: %v", err)
+		}
 	default:
 	}
 
 	// Give the server some time to set up the first mailbox
 	time.Sleep(1000 * time.Millisecond)
 
-	clientHarness := newClientHarness(hashmailHarness.apertureCfg.ListenAddr)
+	clientHarness := newClientHarness(mailboxAddr)
 	if err := clientHarness.setConn(serverHarness.password[:]); err != nil {
 		t.Fatalf("could not connect client: %v", err)
 	}
 
-	return clientHarness, serverHarness, hashmailHarness
+	return clientHarness, serverHarness
 }

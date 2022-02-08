@@ -3,7 +3,6 @@ package mailbox
 import (
 	"context"
 	"fmt"
-	"net"
 	"regexp"
 	"sync"
 	"time"
@@ -61,7 +60,7 @@ const (
 	// server a ping message if it has not received any packets from the
 	// server. The client will close the connection if it then does not
 	// receive an acknowledgement of the ping from the server.
-	gbnClientPingTimeout = 15 * time.Second
+	gbnClientPingTimeout = 7 * time.Second
 
 	// gbnServerTimeout is the time after with the server will send the
 	// client a ping message if it has not received any packets from the
@@ -69,7 +68,11 @@ const (
 	// receive an acknowledgement of the ping from the client. This timeout
 	// is slightly shorter than the gbnClientPingTimeout to prevent both
 	// sides from unnecessarily sending pings simultaneously.
-	gbnServerPingTimeout = 10 * time.Second
+	gbnServerPingTimeout = 5 * time.Second
+
+	// gbnPongTimout is the time after sending the pong message that we will
+	// timeout if we do not receive any message from our peer.
+	gbnPongTimeout = 3 * time.Second
 
 	// webSocketRecvLimit is used to set the websocket receive limit. The
 	// default value of 32KB is enough due to the fact that grpc has a
@@ -94,7 +97,8 @@ type ClientConn struct {
 	sendSocket   *websocket.Conn
 	sendStreamMu sync.Mutex
 
-	gbnConn *gbn.GoBackNConn
+	gbnConn    *gbn.GoBackNConn
+	gbnOptions []gbn.Option
 
 	closeOnce sync.Once
 
@@ -104,13 +108,23 @@ type ClientConn struct {
 // NewClientConn creates a new client connection with the given receive and send
 // session identifiers. The context given as the first parameter will be used
 // throughout the connection lifetime.
-func NewClientConn(ctx context.Context, receiveSID,
-	sendSID [64]byte) *ClientConn {
+func NewClientConn(ctx context.Context, sid [64]byte,
+	serverHost string) (*ClientConn, error) {
+
+	receiveSID := GetSID(sid, true)
+	sendSID := GetSID(sid, false)
 
 	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
 		receiveSID[:], sendSID[:])
 
 	c := &ClientConn{
+		gbnOptions: []gbn.Option{
+			gbn.WithTimeout(gbnTimeout),
+			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+			gbn.WithKeepalivePing(
+				gbnClientPingTimeout, gbnPongTimeout,
+			),
+		},
 		quit: make(chan struct{}),
 	}
 	c.connKit = &connKit{
@@ -118,8 +132,67 @@ func NewClientConn(ctx context.Context, receiveSID,
 		impl:       c,
 		receiveSID: receiveSID,
 		sendSID:    sendSID,
+		serverAddr: serverHost,
 	}
-	return c
+
+	gbnConn, err := gbn.NewClientConn(
+		gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
+	)
+	if err != nil {
+		return c, err
+	}
+	c.gbnConn = gbnConn
+
+	return c, nil
+}
+
+// RefreshClientConn creates a new ClientConn object with the same values as
+// the passed ClientConn but with a new quit channel, a new closeOnce var and
+// a new gbn connection.
+func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
+	error) {
+
+	c.sendStreamMu.Lock()
+	defer c.sendStreamMu.Unlock()
+
+	c.receiveStreamMu.Lock()
+	defer c.receiveStreamMu.Unlock()
+
+	log.Debugf("Refreshing client conn, read_stream=%x, write_stream=%x",
+		c.receiveSID[:], c.sendSID[:])
+
+	cc := &ClientConn{
+		receiveSocket: c.receiveSocket,
+		sendSocket:    c.sendSocket,
+		gbnOptions:    c.gbnOptions,
+		quit:          make(chan struct{}),
+	}
+	c.sendSocket = nil
+	c.receiveSocket = nil
+
+	cc.connKit = &connKit{
+		ctx:        ctx,
+		impl:       cc,
+		receiveSID: c.receiveSID,
+		sendSID:    c.sendSID,
+		serverAddr: c.serverAddr,
+	}
+
+	gbnConn, err := gbn.NewClientConn(
+		gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
+	)
+	if err != nil {
+		return cc, err
+	}
+	cc.gbnConn = gbnConn
+
+	return cc, nil
+}
+
+// Done returns the quit channel of the ClientConn and thus can be used
+// to determine if the current connection is closed or not.
+func (c *ClientConn) Done() <-chan struct{} {
+	return c.quit
 }
 
 // recvFromStream is used to receive a payload from the receive socket.
@@ -208,7 +281,7 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 		}
 
 		c.sendStreamMu.Lock()
-		ctxt, cancel := context.WithTimeout(c.ctx, sendSocketTimeout)
+		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
 		err = c.sendSocket.Write(
 			ctxt, websocket.MessageText, sendInitBytes,
 		)
@@ -272,9 +345,11 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 			continue
 		}
 
+		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
 		err = c.receiveSocket.Write(
-			ctx, websocket.MessageText, receiveInitBytes,
+			ctxt, websocket.MessageText, receiveInitBytes,
 		)
+		cancel()
 		if err != nil {
 			log.Debugf("Client: error creating receive stream "+
 				"%v", err)
@@ -305,6 +380,7 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		waiter.Wait()
 
+		log.Debugf("Client: Attempting to create send socket")
 		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
 		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
 		if err != nil {
@@ -314,30 +390,9 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		c.sendSocket = sendSocket
 
-		log.Debugf("Client: Send mailbox created")
+		log.Debugf("Client: Send socket created")
 		return
 	}
-}
-
-// Dial returns a net.Conn abstraction over the mailbox connection.
-func (c *ClientConn) Dial(_ context.Context, serverHost string) (net.Conn,
-	error) {
-
-	c.connKit.serverAddr = serverHost
-	c.quit = make(chan struct{})
-
-	gbnConn, err := gbn.NewClientConn(
-		gbnN, c.sendToStream, c.recvFromStream,
-		gbn.WithTimeout(gbnTimeout),
-		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-		gbn.WithKeepalivePing(gbnClientPingTimeout),
-	)
-	if err != nil {
-		return nil, err
-	}
-	c.gbnConn = gbnConn
-
-	return c, nil
 }
 
 // ReceiveControlMsg tries to receive a control message over the underlying
@@ -366,6 +421,16 @@ func (c *ClientConn) SendControlMsg(controlMsg ControlMsg) error {
 	return c.gbnConn.Send(payloadBytes)
 }
 
+// SetRecvTimeout sets the timeout to be used when attempting to receive data.
+func (c *ClientConn) SetRecvTimeout(timeout time.Duration) {
+	c.gbnConn.SetRecvTimeout(timeout)
+}
+
+// SetSendTimeout sets the timeout to be used when attempting to send data.
+func (c *ClientConn) SetSendTimeout(timeout time.Duration) {
+	c.gbnConn.SetSendTimeout(timeout)
+}
+
 // Close closes the underlying mailbox connection.
 //
 // NOTE: This is part of the net.Conn interface.
@@ -378,21 +443,25 @@ func (c *ClientConn) Close() error {
 			log.Debugf("Error closing gbn connection: %v", err)
 		}
 
-		close(c.quit)
-
+		c.receiveStreamMu.Lock()
 		if c.receiveSocket != nil {
 			log.Debugf("sending bye on receive socket")
 			returnErr = c.receiveSocket.Close(
 				websocket.StatusGoingAway, "bye",
 			)
 		}
+		c.receiveStreamMu.Unlock()
 
+		c.sendStreamMu.Lock()
 		if c.sendSocket != nil {
 			log.Debugf("sending bye on send socket")
 			returnErr = c.sendSocket.Close(
 				websocket.StatusGoingAway, "bye",
 			)
 		}
+		c.sendStreamMu.Unlock()
+
+		close(c.quit)
 	})
 
 	return returnErr

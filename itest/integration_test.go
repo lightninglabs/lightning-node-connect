@@ -4,6 +4,9 @@ import (
 	"testing"
 )
 
+const testnetMailbox = "mailbox.testnet.lightningcluster.com:443"
+
+// TestLightningNodeConnect runs the itests against a local mailbox instance.
 func TestLightningNodeConnect(t *testing.T) {
 	// If no tests are registered, then we can exit early.
 	if len(testCases) == 0 {
@@ -33,7 +36,54 @@ func TestLightningNodeConnect(t *testing.T) {
 			// to remove all state.
 			err := ht.shutdown()
 			if err != nil {
-				t1.Fatalf("error shutting down harness: %v", err)
+				t1.Fatalf("error shutting down harness: %v",
+					err)
+			}
+		})
+
+		// Close at the first failure. Mimic behavior of original test
+		// framework.
+		if !success {
+			break
+		}
+	}
+}
+
+// TestLightningNodeConnectTestnetMailbox runs the itests using the mailbox
+// running in the LL testnet environment.
+func TestLightningNodeConnectTestnetMailbox(t *testing.T) {
+	// If no tests are registered, then we can exit early.
+	if len(stagingMailboxTests) == 0 {
+		t.Skip("integration tests not selected")
+	}
+
+	ht := newHarnessTest(t, nil, nil, nil)
+	ht.setupLogging()
+
+	t.Logf("Running %v integration tests", len(stagingMailboxTests))
+	for _, testCase := range stagingMailboxTests {
+
+		testCase := testCase
+
+		success := t.Run(testCase.name, func(t1 *testing.T) {
+			clientHarness, serverHarness :=
+				setupClientAndServerHarnesses(
+					t1, testnetMailbox, false,
+				)
+
+			ht := newHarnessTest(
+				t1, clientHarness, serverHarness, nil,
+			)
+
+			// Now we have everything to run the test case.
+			ht.RunTestCase(testCase)
+
+			// Shut down both client, server and hashmail server
+			// to remove all state.
+			err := ht.shutdown()
+			if err != nil {
+				t1.Fatalf("error shutting down harness: %v",
+					err)
 			}
 		})
 

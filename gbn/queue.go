@@ -121,6 +121,14 @@ func (q *queue) resend(cb func(packet *PacketData) error) error {
 
 // processACK processes an incoming ACK of a given sequence number.
 func (q *queue) processACK(seq uint8) bool {
+
+	// If our queue is empty, an ACK should not have any effect.
+	if q.size() == 0 {
+		log.Tracef("Received ack %d, but queue is empty. Ignoring.",
+			seq)
+		return false
+	}
+
 	q.baseMtx.Lock()
 	defer q.baseMtx.Unlock()
 

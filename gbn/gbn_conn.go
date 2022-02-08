@@ -13,6 +13,8 @@ import (
 var (
 	errTransportClosing = errors.New("gbn transport is closing")
 	errKeepaliveTimeout = errors.New("no pong received")
+	errSendTimeout      = errors.New("send timeout")
+	errRecvTimeout      = errors.New("receive timeout")
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 	defaultHandshakeTimeout = 100 * time.Millisecond
 	defaultResendTimeout    = 100 * time.Millisecond
 	finSendTimeout          = 1000 * time.Millisecond
+	DefaultSendTimeout      = math.MaxInt64
+	DefaultRecvTimeout      = math.MaxInt64
 )
 
 type sendBytesFunc func(ctx context.Context, b []byte) error
@@ -65,6 +69,12 @@ type GoBackNConn struct {
 	recvDataChan chan *PacketData
 	sendDataChan chan *PacketData
 
+	sendTimeout   time.Duration
+	sendTimeoutMu sync.RWMutex
+
+	recvTimeout   time.Duration
+	recvTimeoutMu sync.RWMutex
+
 	isServer bool
 
 	// handshakeTimeout is the time after which the server or client
@@ -82,7 +92,9 @@ type GoBackNConn struct {
 	resendSignal chan struct{}
 
 	pingTime   time.Duration
+	pongTime   time.Duration
 	pingTicker *IntervalAwareForceTicker
+	pongTicker *IntervalAwareForceTicker
 	pongWait   chan struct{}
 
 	ctx    context.Context
@@ -94,11 +106,9 @@ type GoBackNConn struct {
 	// quit is used to stop the normal operations of the connection.
 	// Once closed, the send and receive streams will still be available
 	// for the FIN sequence.
-	quit chan struct{}
-
-	wg sync.WaitGroup
-
-	errChan chan error
+	quit      chan struct{}
+	closeOnce sync.Once
+	wg        sync.WaitGroup
 }
 
 // newGoBackNConn creates a GoBackNConn instance with all the members which
@@ -119,13 +129,14 @@ func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
 		isServer:          isServer,
 		sendQueue:         newQueue(n+1, defaultHandshakeTimeout),
 		handshakeTimeout:  defaultHandshakeTimeout,
+		recvTimeout:       DefaultRecvTimeout,
+		sendTimeout:       DefaultSendTimeout,
 		receivedACKSignal: make(chan struct{}),
 		resendSignal:      make(chan struct{}, 1),
 		remoteClosed:      make(chan struct{}),
 		ctx:               ctxc,
 		cancel:            cancel,
 		quit:              make(chan struct{}),
-		errChan:           make(chan error, 3),
 	}
 }
 
@@ -138,6 +149,22 @@ func (g *GoBackNConn) setN(n uint8) {
 	g.sendQueue = newQueue(n+1, defaultHandshakeTimeout)
 }
 
+// SetSendTimeout sets the timeout used in the Send function.
+func (g *GoBackNConn) SetSendTimeout(timeout time.Duration) {
+	g.sendTimeoutMu.Lock()
+	defer g.sendTimeoutMu.Unlock()
+
+	g.sendTimeout = timeout
+}
+
+// SetRecvTimeout sets the timeout used in the Recv function.
+func (g *GoBackNConn) SetRecvTimeout(timeout time.Duration) {
+	g.recvTimeoutMu.Lock()
+	defer g.recvTimeoutMu.Unlock()
+
+	g.recvTimeout = timeout
+}
+
 // Send blocks until an ack is received for the packet sent N packets before.
 func (g *GoBackNConn) Send(data []byte) error {
 	// Wait for handshake to complete before we can send data.
@@ -147,14 +174,19 @@ func (g *GoBackNConn) Send(data []byte) error {
 	default:
 	}
 
+	g.sendTimeoutMu.RLock()
+	ticker := time.NewTimer(g.sendTimeout)
+	g.sendTimeoutMu.RUnlock()
+	defer ticker.Stop()
+
 	sendPacket := func(packet *PacketData) error {
 		select {
 		case g.sendDataChan <- packet:
 			return nil
-		case err := <-g.errChan:
-			return fmt.Errorf("cannot send, gbn exited: %v", err)
+		case <-ticker.C:
+			return errSendTimeout
 		case <-g.quit:
-			return io.EOF
+			return fmt.Errorf("cannot send, gbn exited")
 		}
 	}
 
@@ -203,13 +235,17 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 		msg *PacketData
 	)
 
+	g.recvTimeoutMu.RLock()
+	ticker := time.NewTimer(g.recvTimeout)
+	g.recvTimeoutMu.RUnlock()
+	defer ticker.Stop()
+
 	for {
 		select {
-		case err := <-g.errChan:
-			return nil, fmt.Errorf("cannot receive, gbn exited: %v",
-				err)
 		case <-g.quit:
-			return nil, io.EOF
+			return nil, fmt.Errorf("cannot receive, gbn exited")
+		case <-ticker.C:
+			return nil, errRecvTimeout
 		case msg = <-g.recvDataChan:
 		}
 
@@ -232,20 +268,32 @@ func (g *GoBackNConn) start() {
 	if g.pingTime != 0 {
 		pingTime = g.pingTime
 	}
+
 	g.pingTicker = NewIntervalAwareForceTicker(pingTime)
 	g.pingTicker.Resume()
+
+	pongTime := time.Duration(math.MaxInt64)
+	if g.pongTime != 0 {
+		pongTime = g.pongTime
+	}
+
+	g.pongTicker = NewIntervalAwareForceTicker(pongTime)
 
 	g.resendTicker = time.NewTicker(g.resendTimeout)
 
 	g.wg.Add(1)
 	go func() {
-		defer g.wg.Done()
+		defer func() {
+			g.wg.Done()
+			if err := g.Close(); err != nil {
+				log.Errorf("error closing GoBackNConn: %v", err)
+			}
+		}()
 
 		err := g.receivePacketsForever()
 		if err != nil {
 			log.Debugf("Error in receivePacketsForever "+
 				"(isServer=%v): %v", g.isServer, err)
-			g.errChan <- err
 		}
 		log.Debugf("receivePacketsForever stopped (isServer=%v)",
 			g.isServer)
@@ -253,14 +301,18 @@ func (g *GoBackNConn) start() {
 
 	g.wg.Add(1)
 	go func() {
-		defer g.wg.Done()
+		defer func() {
+			g.wg.Done()
+			if err := g.Close(); err != nil {
+				log.Errorf("error closing GoBackNConn: %v", err)
+			}
+		}()
 
 		err := g.sendPacketsForever()
 		if err != nil {
 			log.Debugf("Error in sendPacketsForever "+
 				"(isServer=%v): %v", g.isServer, err)
 
-			g.errChan <- err
 		}
 		log.Debugf("sendPacketsForever stopped (isServer=%v)",
 			g.isServer)
@@ -269,36 +321,40 @@ func (g *GoBackNConn) start() {
 
 // Close attempts to cleanly close the connection by sending a FIN message.
 func (g *GoBackNConn) Close() error {
-	log.Debugf("Closing GoBackNConn, isServer=%v", g.isServer)
+	g.closeOnce.Do(func() {
+		log.Debugf("Closing GoBackNConn, isServer=%v", g.isServer)
 
-	// We close the quit channel to stop the usual operations of the
-	// server.
-	close(g.quit)
+		// We close the quit channel to stop the usual operations of the
+		// server.
+		close(g.quit)
 
-	// Try send a FIN message to the peer if they have not already done so.
-	select {
-	case <-g.remoteClosed:
-	default:
-		log.Tracef("Try sending FIN, isServer=%v", g.isServer)
-		ctxc, cancel := context.WithTimeout(
-			g.ctx, finSendTimeout,
-		)
-		defer cancel()
-		if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
-			log.Errorf("Error sending FIN: %v", err)
+		// Try send a FIN message to the peer if they have not already
+		// done so.
+		select {
+		case <-g.remoteClosed:
+		default:
+			log.Tracef("Try sending FIN, isServer=%v", g.isServer)
+			ctxc, cancel := context.WithTimeout(
+				g.ctx, finSendTimeout,
+			)
+			defer cancel()
+			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
+				log.Errorf("Error sending FIN: %v", err)
+			}
 		}
-	}
 
-	// Canceling the context will ensure that we are not hanging on the
-	// receive or send functions passed to the server on initialisation.
-	g.cancel()
+		// Canceling the context will ensure that we are not hanging on
+		// the receive or send functions passed to the server on
+		// initialisation.
+		g.cancel()
 
-	g.wg.Wait()
+		g.wg.Wait()
 
-	g.pingTicker.Stop()
-	g.resendTicker.Stop()
+		g.pingTicker.Stop()
+		g.resendTicker.Stop()
 
-	log.Debugf("GBN is closed, isServer=%v", g.isServer)
+		log.Debugf("GBN is closed, isServer=%v", g.isServer)
+	})
 
 	return nil
 }
@@ -355,13 +411,10 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			continue
 
 		case <-g.pingTicker.Ticks():
-			select {
-			case g.pongWait <- struct{}{}:
-			default:
-				// already waiting for pong. Timed
-				// out. close conn.
-				return errKeepaliveTimeout
-			}
+
+			// Start the pong timer.
+			g.pongTicker.Reset()
+			g.pongTicker.Resume()
 
 			log.Tracef("Sending a PING packet (isServer=%v)",
 				g.isServer)
@@ -369,6 +422,9 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			packet = &PacketData{
 				IsPing: true,
 			}
+
+		case <-g.pongTicker.Ticks():
+			return errKeepaliveTimeout
 
 		case packet = <-g.sendDataChan:
 		}
@@ -440,13 +496,11 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			return fmt.Errorf("deserialize error: %s", err)
 		}
 
-		// Reset the ping timer if any packet is received and remove
-		// any contents from the pongWait channel (if there are any).
+		// Reset the ping & pong timer if any packet is received.
 		// If ping/pong is disabled, this is a no-op.
 		g.pingTicker.Reset()
-		select {
-		case <-g.pongWait:
-		default:
+		if g.pongTicker.IsActive() {
+			g.pongTicker.Pause()
 		}
 
 		switch m := msg.(type) {
@@ -582,7 +636,7 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			return errTransportClosing
 
 		default:
-			return errors.New("received unexpected message")
+			return fmt.Errorf("received unexpected message: %T", msg)
 		}
 	}
 }

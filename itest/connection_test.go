@@ -3,7 +3,6 @@ package itest
 import (
 	"context"
 	"crypto/rand"
-	"time"
 
 	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 	"github.com/stretchr/testify/require"
@@ -41,12 +40,8 @@ func testHashmailServerReconnect(t *harnessTest) {
 	require.NoError(t.t, t.hmserver.stop())
 	t.t.Logf("")
 
-	time.Sleep(5000 * time.Millisecond)
-
 	// Restart hashmail server
 	require.NoError(t.t, t.hmserver.start())
-
-	time.Sleep(5000 * time.Millisecond)
 
 	resp, err = t.client.clientConn.MockServiceMethod(
 		ctx, &mockrpc.Request{Req: defaultMessage},
@@ -64,15 +59,49 @@ func testClientReconnect(t *harnessTest) {
 	require.NoError(t.t, err)
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 
+	// Stop the client.
 	require.NoError(t.t, t.client.cleanup())
-	time.Sleep(5000 * time.Millisecond)
 
+	// Restart the client.
 	require.NoError(t.t, t.client.setConn(t.server.password[:]))
-	time.Sleep(5000 * time.Millisecond)
 
 	resp, err = t.client.clientConn.MockServiceMethod(
 		ctx, &mockrpc.Request{Req: defaultMessage},
 	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
+}
+
+func testServerReconnect(t *harnessTest) {
+	ctx := context.Background()
+
+	resp, err := t.client.clientConn.MockServiceMethod(
+		ctx, &mockrpc.Request{Req: defaultMessage},
+	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
+
+	t.server.stop()
+	require.NoError(t.t, t.server.start(false))
+
+	select {
+	case err := <-t.server.errChan:
+		if err != nil {
+			t.Fatalf("could not start server: %v", err)
+		}
+	default:
+	}
+
+	// To replicate how the browser's behaviour, we retry this call a few
+	// times if an error is received.
+	for i := 0; i <= 3; i++ {
+		resp, err = t.client.clientConn.MockServiceMethod(
+			ctx, &mockrpc.Request{Req: defaultMessage},
+		)
+		if err == nil {
+			break
+		}
+	}
 	require.NoError(t.t, err)
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 }

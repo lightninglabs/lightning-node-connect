@@ -80,24 +80,48 @@ func (s *Server) Accept() (net.Conn, error) {
 
 	// If this is the first connection, we create a new ServerConn object.
 	// otherwise, we just refresh the ServerConn.
-	var err error
 	if s.mailboxConn == nil {
-		s.mailboxConn, err = NewServerConn(
+		mailboxConn, err := NewServerConn(
 			s.ctx, s.serverHost, s.client, receiveSID, sendSID,
 		)
 		if err != nil {
 			log.Errorf("couldn't create new server: %v", err)
-			return nil, err
+			if err := mailboxConn.Close(); err != nil {
+				return nil, &temporaryError{err}
+			}
+			return nil, &temporaryError{err}
 		}
+		s.mailboxConn = mailboxConn
+
 	} else {
-		s.mailboxConn, err = RefreshServerConn(s.mailboxConn)
+		mailboxConn, err := RefreshServerConn(s.mailboxConn)
 		if err != nil {
 			log.Errorf("couldn't refresh server: %v", err)
-			return nil, err
+			if err := mailboxConn.Stop(); err != nil {
+				return nil, &temporaryError{err}
+			}
+
+			s.mailboxConn = nil
+			return nil, &temporaryError{err}
 		}
+		s.mailboxConn = mailboxConn
 	}
 
 	return s.mailboxConn, nil
+}
+
+// temporaryError implements the Temporary interface that grpc uses to decide
+// if it should retry and reenter Accept instead of closing the server all
+// together.
+type temporaryError struct {
+	error
+}
+
+// Temporary ensures that temporaryError satisfies the Temporary interface that
+// grpc requires a returned error from the Accept function to implement so that
+// it can determine if it should try again or completely shutdown the server.
+func (e *temporaryError) Temporary() bool {
+	return true
 }
 
 func (s *Server) Close() error {
