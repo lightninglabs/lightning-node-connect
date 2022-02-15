@@ -3,7 +3,6 @@ package mailbox
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -39,18 +38,46 @@ type NoiseGrpcConn struct {
 	nextMsgMtx sync.Mutex
 
 	noise *Machine
+
+	minHandshakeVersion byte
+	maxHandshakeVersion byte
 }
 
 // NewNoiseGrpcConn creates a new noise connection using given local ECDH key.
 // The auth data can be set for server connections and is sent as the payload
 // to the client during the handshake.
 func NewNoiseGrpcConn(localKey keychain.SingleKeyECDH,
-	authData []byte, password []byte) *NoiseGrpcConn {
+	authData []byte, password []byte,
+	options ...func(conn *NoiseGrpcConn)) *NoiseGrpcConn {
 
-	return &NoiseGrpcConn{
-		localKey: localKey,
-		authData: authData,
-		password: password,
+	conn := &NoiseGrpcConn{
+		localKey:            localKey,
+		authData:            authData,
+		password:            password,
+		minHandshakeVersion: MinHandshakeVersion,
+		maxHandshakeVersion: MaxHandshakeVersion,
+	}
+
+	for _, opt := range options {
+		opt(conn)
+	}
+
+	return conn
+}
+
+// WithMinHandshakeVersion is a functional option used to set the minimum
+// handshake version supported.
+func WithMinHandshakeVersion(version byte) func(*NoiseGrpcConn) {
+	return func(conn *NoiseGrpcConn) {
+		conn.minHandshakeVersion = version
+	}
+}
+
+// WithMaxHandshakeVersion is a functional option used to set the maximum
+// handshake version supported.
+func WithMaxHandshakeVersion(version byte) func(*NoiseGrpcConn) {
+	return func(conn *NoiseGrpcConn) {
+		conn.maxHandshakeVersion = version
 	}
 }
 
@@ -167,7 +194,14 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	// First, initialize a new noise machine with our static long term, and
 	// password.
 	var err error
-	c.noise, err = NewBrontideMachine(true, c.localKey, c.password)
+	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
+		Initiator:           true,
+		HandshakePattern:    XXPattern,
+		LocalStaticKey:      c.localKey,
+		PAKEPassphrase:      c.password,
+		MinHandshakeVersion: c.minHandshakeVersion,
+		MaxHandshakeVersion: c.maxHandshakeVersion,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -175,16 +209,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	log.Debugf("Kicking off client handshake with client_key=%x",
 		c.localKey.PubKey().SerializeCompressed())
 
-	// Initiate the handshake by sending the first act to the receiver.
-	actOne, err := c.noise.GenActOne()
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := c.ProxyConn.Write(actOne[:]); err != nil {
-		return nil, nil, err
-	}
-
-	// We'll ensure that we get ActTwo from the remote peer in a timely
+	// We'll ensure that we get a response from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
 	err = c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
@@ -192,28 +217,14 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 		return nil, nil, err
 	}
 
-	// If the first act was successful (we know that address is actually
-	// remotePub), then read the second act after which we'll be able to
-	// send our static public key to the remote peer with strong forward
-	// secrecy.
-	var actTwo [ActTwoSize]byte
-	if _, err := io.ReadFull(c.ProxyConn, actTwo[:]); err != nil {
+	if err := c.noise.DoHandshake(c.ProxyConn); err != nil {
 		return nil, nil, err
 	}
 
-	if err := c.noise.RecvActTwo(actTwo); err != nil {
-		return nil, nil, err
-	}
-
-	// Finally, complete the handshake by sending over our encrypted static
-	// key and execute the final ECDH operation.
-	actThree, err := c.noise.GenActThree()
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := c.ProxyConn.Write(actThree[:]); err != nil {
-		return nil, nil, err
-	}
+	// At this point, we'll also extract the auth data and remote static
+	// key obtained during the handshake.
+	c.authData = c.noise.receivedPayload
+	c.remoteKey = c.noise.remoteStatic
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
@@ -224,10 +235,6 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 
 	log.Debugf("Completed client handshake with with server_key=%x",
 		c.noise.remoteStatic.SerializeCompressed())
-
-	// At this point, we'll also extract the auth data obtained during the
-	// second act of the handshake.
-	c.authData = c.noise.authData
 
 	log.Tracef("Client handshake completed")
 
@@ -251,17 +258,23 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	}
 	c.ProxyConn = transportConn
 
-	// First, we'll initialize a new borntide machine with our static key,
-	// passphrase, and also the macaroon authentication data.
+	// First, we'll initialize a new state machine with our static key,
+	// remote static key, passphrase, and also the authentication data.
 	var err error
-	c.noise, err = NewBrontideMachine(
-		false, c.localKey, c.password, AuthDataPayload(c.authData),
-	)
+	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
+		Initiator:           false,
+		HandshakePattern:    XXPattern,
+		MinHandshakeVersion: c.minHandshakeVersion,
+		MaxHandshakeVersion: c.maxHandshakeVersion,
+		LocalStaticKey:      c.localKey,
+		PAKEPassphrase:      c.password,
+		AuthData:            c.authData,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// We'll ensure that we get ActOne from the remote peer in a timely
+	// We'll ensure that we get a response from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
 	err = c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
@@ -269,45 +282,13 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 		return nil, nil, err
 	}
 
-	// Attempt to carry out the first act of the handshake protocol. If the
-	// connecting node doesn't know our long-term static public key, then
-	// this portion will fail with a non-nil error.
-	var actOne [ActOneSize]byte
-	if _, err := io.ReadFull(conn, actOne[:]); err != nil {
-		return nil, nil, err
-	}
-	if err := c.noise.RecvActOne(actOne); err != nil {
+	if err := c.noise.DoHandshake(c.ProxyConn); err != nil {
 		return nil, nil, err
 	}
 
-	// Next, progress the handshake processes by sending over our ephemeral
-	// key for the session along with an authenticating tag.
-	actTwo, err := c.noise.GenActTwo()
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err := conn.Write(actTwo[:]); err != nil {
-		return nil, nil, err
-	}
-
-	// We'll ensure that we get ActTwo from the remote peer in a timely
-	// manner. If they don't respond within 1 second, then we'll kill the
-	// connection.
-	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Finally, finish the handshake processes by reading and decrypting
-	// the connection peer's static public key. If this succeeds then both
-	// sides have mutually authenticated each other.
-	var actThree [ActThreeSize]byte
-	if _, err := io.ReadFull(conn, actThree[:]); err != nil {
-		return nil, nil, err
-	}
-	if err := c.noise.RecvActThree(actThree); err != nil {
-		return nil, nil, err
-	}
+	// At this point, we'll also extract the auth data and remote static
+	// key obtained during the handshake.
+	c.remoteKey = c.noise.remoteStatic
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.

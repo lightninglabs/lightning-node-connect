@@ -124,7 +124,8 @@ func TestConnectionCorrectness(t *testing.T) {
 	noiseConnLocal := localConn.(*NoiseConn)
 	noiseConnRemote := remoteConn.(*NoiseConn)
 	require.Equal(
-		t, noiseConnLocal.noise.authData, noiseConnRemote.noise.authData,
+		t, noiseConnLocal.noise.payloadToSend,
+		noiseConnRemote.noise.receivedPayload,
 	)
 
 	// Test out some message full-message reads.

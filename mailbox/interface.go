@@ -111,19 +111,25 @@ type connKit struct {
 
 	receiveSID [64]byte
 	sendSID    [64]byte
+
+	recvBuffer bytes.Buffer
 }
 
 // Read reads data from the underlying control connection.
 //
 // NOTE: This is part of the net.Conn interface.
 func (k *connKit) Read(b []byte) (int, error) {
-	data := NewMsgData(ProtocolVersion, nil)
-	if err := k.impl.ReceiveControlMsg(data); err != nil {
-		return 0, err
+	if k.recvBuffer.Len() == 0 {
+		data := NewMsgData(ProtocolVersion, nil)
+		if err := k.impl.ReceiveControlMsg(data); err != nil {
+			return 0, err
+		}
+		if _, err := k.recvBuffer.Write(data.Payload); err != nil {
+			return 0, err
+		}
 	}
 
-	copy(b, data.Payload)
-	return len(data.Payload), nil
+	return k.recvBuffer.Read(b)
 }
 
 // Write writes data to the underlying control connection.
