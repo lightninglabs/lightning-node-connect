@@ -473,7 +473,7 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 			// The total length of each message payload including
 			// the MAC size payload exceed the largest number
 			// encodable within a 32-bit unsigned integer.
-			if len(payload) > math.MaxUint32 {
+			if len(payload) >= math.MaxInt32 {
 				return ErrMaxMessageLengthExceeded
 			}
 
