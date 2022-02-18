@@ -139,7 +139,7 @@ func NewClientConn(ctx context.Context, sid [64]byte,
 		gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
 	)
 	if err != nil {
-		return c, err
+		return nil, err
 	}
 	c.gbnConn = gbnConn
 
@@ -149,9 +149,7 @@ func NewClientConn(ctx context.Context, sid [64]byte,
 // RefreshClientConn creates a new ClientConn object with the same values as
 // the passed ClientConn but with a new quit channel, a new closeOnce var and
 // a new gbn connection.
-func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
-	error) {
-
+func RefreshClientConn(c *ClientConn) (*ClientConn, error) {
 	c.sendStreamMu.Lock()
 	defer c.sendStreamMu.Unlock()
 
@@ -171,7 +169,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	c.receiveSocket = nil
 
 	cc.connKit = &connKit{
-		ctx:        ctx,
+		ctx:        c.ctx,
 		impl:       cc,
 		receiveSID: c.receiveSID,
 		sendSID:    c.sendSID,
@@ -182,7 +180,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 		gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
 	)
 	if err != nil {
-		return cc, err
+		return nil, err
 	}
 	cc.gbnConn = gbnConn
 

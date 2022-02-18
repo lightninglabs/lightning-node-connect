@@ -27,9 +27,7 @@ func NewClient(ctx context.Context, sid [64]byte) (*Client, error) {
 // called everytime grpc retries the connection. If this is the first
 // connection, a new ClientConn will be created. Otherwise, the existing
 // connection will just be refreshed.
-func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn,
-	error) {
-
+func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 	// If there is currently an active connection, block here until the
 	// previous connection as been closed.
 	if c.mailboxConn != nil {
@@ -42,18 +40,12 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn,
 	if c.mailboxConn == nil {
 		mailboxConn, err := NewClientConn(c.ctx, c.sid, serverHost)
 		if err != nil {
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		c.mailboxConn = mailboxConn
 	} else {
-		mailboxConn, err := RefreshClientConn(c.ctx, c.mailboxConn)
+		mailboxConn, err := RefreshClientConn(c.mailboxConn)
 		if err != nil {
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		c.mailboxConn = mailboxConn

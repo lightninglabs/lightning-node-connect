@@ -75,20 +75,13 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
-	receiveSID := GetSID(s.sid, false)
-	sendSID := GetSID(s.sid, true)
-
 	// If this is the first connection, we create a new ServerConn object.
 	// otherwise, we just refresh the ServerConn.
 	if s.mailboxConn == nil {
 		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, receiveSID, sendSID,
+			s.ctx, s.serverHost, s.client, s.sid,
 		)
 		if err != nil {
-			log.Errorf("couldn't create new server: %v", err)
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		s.mailboxConn = mailboxConn
@@ -97,10 +90,6 @@ func (s *Server) Accept() (net.Conn, error) {
 		mailboxConn, err := RefreshServerConn(s.mailboxConn)
 		if err != nil {
 			log.Errorf("couldn't refresh server: %v", err)
-			if err := mailboxConn.Stop(); err != nil {
-				return nil, &temporaryError{err}
-			}
-
 			s.mailboxConn = nil
 			return nil, &temporaryError{err}
 		}
