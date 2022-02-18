@@ -18,18 +18,32 @@ type serverHarness struct {
 	mockServer *grpc.Server
 	server     *mockrpc.Server
 	password   [mailbox.NumPasswordWords]string
+	localKey   keychain.SingleKeyECDH
+	remoteKey  *btcec.PublicKey
 
 	errChan chan error
 
 	wg sync.WaitGroup
 }
 
-func newServerHarness(serverHost string, insecure bool) *serverHarness {
+func newServerHarness(serverHost string, insecure bool) (*serverHarness, error) {
+	password, _, err := mailbox.NewPassword()
+	if err != nil {
+		return nil, err
+	}
+
+	privKey, err := btcec.NewPrivateKey(btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+
 	return &serverHarness{
 		serverHost: serverHost,
 		insecure:   insecure,
+		password:   password,
+		localKey:   &keychain.PrivKeyECDH{PrivKey: privKey},
 		errChan:    make(chan error, 1),
-	}
+	}, nil
 }
 
 func (s *serverHarness) stop() {
@@ -37,20 +51,7 @@ func (s *serverHarness) stop() {
 	s.wg.Wait()
 }
 
-func (s *serverHarness) start(newPassword bool) error {
-	if newPassword {
-		password, _, err := mailbox.NewPassword()
-		if err != nil {
-			return err
-		}
-		s.password = password
-	}
-
-	privKey, err := btcec.NewPrivateKey(btcec.S256())
-	if err != nil {
-		return err
-	}
-
+func (s *serverHarness) start() error {
 	tlsConfig := &tls.Config{}
 	if s.insecure {
 		tlsConfig = &tls.Config{
@@ -58,9 +59,8 @@ func (s *serverHarness) start(newPassword bool) error {
 		}
 	}
 
-	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 	pswdEntropy := mailbox.PasswordMnemonicToEntropy(s.password)
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, pswdEntropy[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(s.localKey, nil, pswdEntropy[:])
 
 	sid, err := noiseConn.SID()
 	if err != nil {

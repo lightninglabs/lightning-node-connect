@@ -158,8 +158,12 @@ func setupHarnesses(t *testing.T) (*clientHarness, *serverHarness,
 func setupClientAndServerHarnesses(t *testing.T,
 	mailboxAddr string, insecure bool) (*clientHarness, *serverHarness) {
 
-	serverHarness := newServerHarness(mailboxAddr, insecure)
-	if err := serverHarness.start(true); err != nil {
+	serverHarness, err := newServerHarness(mailboxAddr, insecure)
+	if err != nil {
+		t.Fatalf("could not create new server: %v", err)
+	}
+
+	if err := serverHarness.start(); err != nil {
 		t.Fatalf("could not start server: %v", err)
 	}
 
@@ -174,8 +178,14 @@ func setupClientAndServerHarnesses(t *testing.T,
 	// Give the server some time to set up the first mailbox
 	time.Sleep(1000 * time.Millisecond)
 
-	clientHarness := newClientHarness(mailboxAddr)
-	if err := clientHarness.setConn(serverHarness.password[:]); err != nil {
+	clientHarness, err := newClientHarness(
+		mailboxAddr, serverHarness.password,
+	)
+	if err != nil {
+		t.Fatalf("could not create new client harness: %v", err)
+	}
+
+	if err := clientHarness.start(); err != nil {
 		t.Fatalf("could not connect client: %v", err)
 	}
 
