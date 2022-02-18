@@ -234,8 +234,8 @@ func TestKKHandshake(t *testing.T) {
 	quit := make(chan struct{})
 	go func() {
 		clientConn := &NoiseGrpcConn{
-			noise:     client,
-			ProxyConn: conn2,
+			noise:      client,
+			SwitchConn: conn2,
 		}
 		var payload []byte
 		for {
@@ -251,8 +251,8 @@ func TestKKHandshake(t *testing.T) {
 	}()
 
 	serverConn := &NoiseGrpcConn{
-		noise:     server,
-		ProxyConn: conn1,
+		noise:      server,
+		SwitchConn: conn1,
 	}
 	for i := 0; i < 10; i++ {
 		testMessage := []byte(fmt.Sprintf("test message %d", i))
@@ -315,15 +315,22 @@ func TestHandshake(t *testing.T) {
 		},
 	}
 
-	pk1, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(t, err)
-
-	pk2, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(t, err)
-
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
+			// First, generate static keys for each party.
+			pk1, err := btcec.NewPrivateKey(btcec.S256())
+			require.NoError(t, err)
+
+			pk2, err := btcec.NewPrivateKey(btcec.S256())
+			require.NoError(t, err)
+
+			conn1, conn2 := newMockProxyConns()
+			defer func() {
+				conn1.Close()
+				conn2.Close()
+			}()
+
 			server := NewNoiseGrpcConn(
 				&keychain.PrivKeyECDH{PrivKey: pk1},
 				test.authData, pass,
@@ -336,12 +343,6 @@ func TestHandshake(t *testing.T) {
 				WithMinHandshakeVersion(test.clientMinVersion),
 				WithMaxHandshakeVersion(test.clientMaxVersion),
 			)
-
-			conn1, conn2 := newMockProxyConns()
-			defer func() {
-				conn1.Close()
-				conn2.Close()
-			}()
 
 			var (
 				serverConn net.Conn
@@ -412,7 +413,25 @@ func (m *mockProxyConn) SendControlMsg(_ ControlMsg) error {
 	return nil
 }
 
-func newMockProxyConns() (*mockProxyConn, *mockProxyConn) {
+func newMockProxyConns() (*SwitchConn, *SwitchConn) {
 	c1, c2 := net.Pipe()
-	return &mockProxyConn{c1}, &mockProxyConn{c2}
+
+	switchConn1, _ := newSwitchConn(&SwitchConfig{
+		NewProxyConn: func(sid [64]byte) (ProxyConn, error) {
+			return &mockProxyConn{c1}, nil
+		},
+		StopProxyConn: func(conn ProxyConn) error {
+			return nil
+		},
+	})
+
+	switchConn2, _ := newSwitchConn(&SwitchConfig{
+		NewProxyConn: func(sid [64]byte) (ProxyConn, error) {
+			return &mockProxyConn{c2}, nil
+		},
+		StopProxyConn: func(conn ProxyConn) error {
+			return nil
+		},
+	})
+	return switchConn1, switchConn2
 }

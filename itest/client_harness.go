@@ -43,7 +43,7 @@ func (c *clientHarness) setConn(words []string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	transportConn, err := mailbox.NewClient(ctx, sid)
+	transportConn, err := mailbox.NewClient(ctx, c.serverAddr, sid)
 	if err != nil {
 		return err
 	}

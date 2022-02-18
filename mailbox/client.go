@@ -2,24 +2,51 @@ package mailbox
 
 import (
 	"context"
+	"fmt"
 	"net"
 )
 
-// Client manages the mailboxConn it holds and refreshes it on connection
+// Client manages the switchConn it holds and refreshes it on connection
 // retries.
 type Client struct {
-	mailboxConn *ClientConn
+	switchConfig *SwitchConfig
+	switchConn   *SwitchConn
 
 	ctx context.Context
-	sid [64]byte
 }
 
 // NewClient creates a new Client object which will handle the mailbox
 // connection.
-func NewClient(ctx context.Context, sid [64]byte) (*Client, error) {
+func NewClient(ctx context.Context, serverHost string, sid [64]byte) (*Client,
+	error) {
+
 	return &Client{
 		ctx: ctx,
-		sid: sid,
+		switchConfig: &SwitchConfig{
+			ServerHost: serverHost,
+			SID:        sid,
+			NewProxyConn: func(sid [64]byte) (ProxyConn, error) {
+				return NewClientConn(ctx, sid, serverHost)
+			},
+			RefreshProxyConn: func(conn ProxyConn) (ProxyConn, error) {
+				clientConn, ok := conn.(*ClientConn)
+				if !ok {
+					return nil, fmt.Errorf("conn not of type " +
+						"ClientConn")
+				}
+
+				return RefreshClientConn(clientConn)
+			},
+			StopProxyConn: func(conn ProxyConn) error {
+				clientConn, ok := conn.(*ClientConn)
+				if !ok {
+					return fmt.Errorf("conn not of type " +
+						"ClientConn")
+				}
+
+				return clientConn.Close()
+			},
+		},
 	}, nil
 }
 
@@ -27,35 +54,23 @@ func NewClient(ctx context.Context, sid [64]byte) (*Client, error) {
 // called everytime grpc retries the connection. If this is the first
 // connection, a new ClientConn will be created. Otherwise, the existing
 // connection will just be refreshed.
-func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
+func (c *Client) Dial(_ context.Context, _ string) (net.Conn, error) {
 	// If there is currently an active connection, block here until the
 	// previous connection as been closed.
-	if c.mailboxConn != nil {
+	if c.switchConn != nil {
 		log.Debugf("Dial: have existing mailbox connection, waiting")
-		<-c.mailboxConn.Done()
+		<-c.switchConn.Done()
 		log.Debugf("Dial: done with existing conn")
 	}
 
 	log.Debugf("Client: Dialing...")
-	if c.mailboxConn == nil {
-		mailboxConn, err := NewClientConn(c.ctx, c.sid, serverHost)
-		if err != nil {
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
-			return nil, &temporaryError{err}
-		}
-		c.mailboxConn = mailboxConn
-	} else {
-		mailboxConn, err := RefreshClientConn(c.mailboxConn)
-		if err != nil {
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
-			return nil, &temporaryError{err}
-		}
-		c.mailboxConn = mailboxConn
+
+	switchConn, err := NextSwitchConn(c.switchConn, c.switchConfig)
+	if err != nil {
+		return nil, &temporaryError{err}
 	}
 
-	return c.mailboxConn, nil
+	c.switchConn = switchConn
+
+	return c.switchConn, nil
 }

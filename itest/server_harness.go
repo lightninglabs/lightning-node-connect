@@ -58,18 +58,23 @@ func (s *serverHarness) start(newPassword bool) error {
 		}
 	}
 
+	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 	pswdEntropy := mailbox.PasswordMnemonicToEntropy(s.password)
+	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, pswdEntropy[:])
+
+	sid, err := noiseConn.SID()
+	if err != nil {
+		return err
+	}
+
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, pswdEntropy[:], grpc.WithTransportCredentials(
+		s.serverHost, sid, grpc.WithTransportCredentials(
 			credentials.NewTLS(tlsConfig),
 		),
 	)
 	if err != nil {
 		return err
 	}
-
-	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, pswdEntropy[:])
 
 	s.mockServer = grpc.NewServer(
 		grpc.Creds(noiseConn),

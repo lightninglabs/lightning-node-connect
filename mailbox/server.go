@@ -2,7 +2,6 @@ package mailbox
 
 import (
 	"context"
-	"crypto/sha512"
 	"fmt"
 	"io"
 	"net"
@@ -14,20 +13,16 @@ import (
 var _ net.Listener = (*Server)(nil)
 
 type Server struct {
-	serverHost string
+	switchConfig *SwitchConfig
+	switchConn   *SwitchConn
 
-	client hashmailrpc.HashMailClient
-
-	mailboxConn *ServerConn
-
-	sid [64]byte
-	ctx context.Context
-
-	quit   chan struct{}
+	ctx    context.Context
 	cancel func()
+
+	quit chan struct{}
 }
 
-func NewServer(serverHost string, password []byte,
+func NewServer(serverHost string, sid [64]byte,
 	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
@@ -37,15 +32,37 @@ func NewServer(serverHost string, password []byte,
 	}
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Server{
-		serverHost: serverHost,
-		client:     clientConn,
-		sid:        sha512.Sum512(password),
-		quit:       make(chan struct{}),
-	}
+		quit:   make(chan struct{}),
+		ctx:    ctx,
+		cancel: cancel,
+		switchConfig: &SwitchConfig{
+			SID:        sid,
+			ServerHost: serverHost,
+			NewProxyConn: func(sid [64]byte) (ProxyConn, error) {
+				return NewServerConn(ctx, serverHost, clientConn, sid)
+			},
+			RefreshProxyConn: func(conn ProxyConn) (ProxyConn, error) {
+				serverConn, ok := conn.(*ServerConn)
+				if !ok {
+					return nil, fmt.Errorf("conn not of type " +
+						"ServerConn")
+				}
 
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+				return RefreshServerConn(serverConn)
+			},
+			StopProxyConn: func(conn ProxyConn) error {
+				serverConn, ok := conn.(*ServerConn)
+				if !ok {
+					return fmt.Errorf("conn not of type ServerConn")
+				}
+
+				return serverConn.Stop()
+			},
+		},
+	}
 
 	return s, nil
 }
@@ -55,7 +72,7 @@ func NewServer(serverHost string, password []byte,
 // also call this function each time it returns in order to facilitate multiple
 // concurrent grpc connections. In our use case, we require that only one
 // connection is active at a time. Therefore we block on a select function until
-// the previous mailboxConn has completed.
+// the previous switchConn has completed.
 func (s *Server) Accept() (net.Conn, error) {
 	select {
 	case <-s.ctx.Done():
@@ -65,42 +82,26 @@ func (s *Server) Accept() (net.Conn, error) {
 
 	// If there is currently an active connection, block here until the
 	// previous connection as been closed.
-	if s.mailboxConn != nil {
+	if s.switchConn != nil {
 		log.Debugf("Accept: have existing mailbox connection, waiting")
 		select {
 		case <-s.quit:
 			return nil, io.EOF
-		case <-s.mailboxConn.Done():
+		case <-s.switchConn.Done():
 			log.Debugf("Accept: done with existing conn")
 		}
 	}
 
-	// If this is the first connection, we create a new ServerConn object.
-	// otherwise, we just refresh the ServerConn.
-	if s.mailboxConn == nil {
-		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, s.sid,
-		)
-		if err != nil {
-			return nil, &temporaryError{err}
-		}
-		s.mailboxConn = mailboxConn
-
-	} else {
-		mailboxConn, err := RefreshServerConn(s.mailboxConn)
-		if err != nil {
-			log.Errorf("couldn't refresh server: %v", err)
-			if err := mailboxConn.Stop(); err != nil {
-				return nil, &temporaryError{err}
-			}
-
-			s.mailboxConn = nil
-			return nil, &temporaryError{err}
-		}
-		s.mailboxConn = mailboxConn
+	// If this is the first connection, we create a new SwitchConn object.
+	// otherwise, we just refresh the SwitchConn.
+	switchConn, err := NextSwitchConn(s.switchConn, s.switchConfig)
+	if err != nil {
+		return nil, &temporaryError{err}
 	}
 
-	return s.mailboxConn, nil
+	s.switchConn = switchConn
+
+	return s.switchConn, nil
 }
 
 // temporaryError implements the Temporary interface that grpc uses to decide
@@ -122,17 +123,25 @@ func (s *Server) Close() error {
 
 	close(s.quit)
 
-	if s.mailboxConn != nil {
-		if err := s.mailboxConn.Stop(); err != nil {
-			log.Errorf("error closing mailboxConn %v", err)
+	if s.switchConn != nil {
+		if err := s.switchConn.Close(); err != nil {
+			log.Errorf("error closing switchConn %v", err)
 		}
 	}
+
 	s.cancel()
 	return nil
 }
 
 func (s *Server) Addr() net.Addr {
-	return &Addr{SID: s.sid, Server: s.serverHost}
+	if s.switchConn != nil {
+		return s.switchConn.Addr()
+	}
+
+	return &Addr{
+		SID:    [64]byte{},
+		Server: "",
+	}
 }
 
 func GetSID(sid [64]byte, serverToClient bool) [64]byte {
