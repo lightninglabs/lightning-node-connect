@@ -31,12 +31,15 @@ func mailboxRPCConnection(mailboxServer,
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 
 	ctx := context.Background()
-	transportConn, err := mailbox.NewClient(ctx, sid)
+	transportConn, err := mailbox.NewClient(ctx, mailboxServer, sid)
 	if err != nil {
 		return nil, err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(
+		ecdh, nil, nil, password[:], func(remoteKey *btcec.PublicKey) {
+
+		})
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),

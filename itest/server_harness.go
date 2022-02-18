@@ -60,7 +60,12 @@ func (s *serverHarness) start() error {
 	}
 
 	pswdEntropy := mailbox.PasswordMnemonicToEntropy(s.password)
-	noiseConn := mailbox.NewNoiseGrpcConn(s.localKey, nil, pswdEntropy[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(
+		s.localKey, s.remoteKey, nil, pswdEntropy[:],
+		func(remoteKey *btcec.PublicKey) {
+			s.remoteKey = remoteKey
+		},
+	)
 
 	sid, err := noiseConn.SID()
 	if err != nil {

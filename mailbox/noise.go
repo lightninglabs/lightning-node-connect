@@ -61,6 +61,10 @@ const (
 	// is sent in a dynamically sized, length-prefixed payload in act 2.
 	HandshakeVersion1 = byte(1)
 
+	// HandshakeVersion2 signals that a move to the long term mailbox
+	// should be made and that future handshakes should use the KK pattern.
+	HandshakeVersion2 = byte(2)
+
 	// MinHandshakeVersion is the minimum handshake version that is
 	// currently supported.
 	MinHandshakeVersion = HandshakeVersion0
@@ -69,7 +73,7 @@ const (
 	// support. Any messages that carry a version not between
 	// MinHandshakeVersion and MaxHandshakeVersion will cause the handshake
 	// to abort immediately.
-	MaxHandshakeVersion = HandshakeVersion1
+	MaxHandshakeVersion = HandshakeVersion2
 
 	// ActTwoPayloadSize is the size of the fixed sized payload that can be
 	// sent from the responder to the Initiator in act two.
@@ -463,7 +467,7 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 			return err
 		}
 
-	case HandshakeVersion1:
+	case HandshakeVersion1, HandshakeVersion2:
 		var payload []byte
 		switch mp.ActNum {
 		case act1, act3:
@@ -594,7 +598,7 @@ func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 
 		h.receivedPayload = authData
 
-	case HandshakeVersion1:
+	case HandshakeVersion1, HandshakeVersion2:
 		var payloadSize uint32
 		switch mp.ActNum {
 		case act1, act3:
@@ -952,12 +956,21 @@ type BrontideMachineConfig struct {
 
 // NewBrontideMachine creates a new instance of the brontide state-machine.
 func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
-	// We always stretch the passphrase here in order to partially thwart
-	// brute force attempts, and also ensure we obtain a high entropy
-	// blinding point.
-	password, err := stretchPassword(cfg.PAKEPassphrase)
-	if err != nil {
-		return nil, err
+	var (
+		password []byte
+		err      error
+	)
+	// Since the password is only used during the initial XX pattern, we
+	// only stretch the password during that handshake inorder to avoid
+	// the slow stretching process.
+	if cfg.HandshakePattern.Name == XX {
+		// We always stretch the passphrase here in order to partially
+		// thwart brute force attempts, and also ensure we obtain a
+		// high entropy blinding point.
+		password, err = stretchPassword(cfg.PAKEPassphrase)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if cfg.EphemeralGen == nil {

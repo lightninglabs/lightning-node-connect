@@ -41,21 +41,26 @@ type NoiseGrpcConn struct {
 
 	minHandshakeVersion byte
 	maxHandshakeVersion byte
+
+	onRemoteKey func(remoteKey *btcec.PublicKey)
 }
 
 // NewNoiseGrpcConn creates a new noise connection using given local ECDH key.
 // The auth data can be set for server connections and is sent as the payload
 // to the client during the handshake.
 func NewNoiseGrpcConn(localKey keychain.SingleKeyECDH,
-	authData []byte, password []byte,
+	remoteKey *btcec.PublicKey, authData []byte, password []byte,
+	onRemoteKey func(remoteKey *btcec.PublicKey),
 	options ...func(conn *NoiseGrpcConn)) *NoiseGrpcConn {
 
 	conn := &NoiseGrpcConn{
 		localKey:            localKey,
+		remoteKey:           remoteKey,
 		authData:            authData,
 		password:            password,
 		minHandshakeVersion: MinHandshakeVersion,
 		maxHandshakeVersion: MaxHandshakeVersion,
+		onRemoteKey:         onRemoteKey,
 	}
 
 	for _, opt := range options {
@@ -79,30 +84,6 @@ func WithMaxHandshakeVersion(version byte) func(*NoiseGrpcConn) {
 	return func(conn *NoiseGrpcConn) {
 		conn.maxHandshakeVersion = version
 	}
-}
-
-// SID returns the current SID of the NoiseGrpcConn.
-func (c *NoiseGrpcConn) SID() ([64]byte, error) {
-	return deriveSID(c.password, c.remoteKey, c.localKey)
-}
-
-// deriveSID uses the password, remote and local static key to determine what
-// the SID should be.
-func deriveSID(password []byte, remoteKey *btcec.PublicKey,
-	localKey keychain.SingleKeyECDH) ([64]byte, error) {
-
-	var (
-		entropy = password
-		err     error
-	)
-	if remoteKey != nil {
-		entropy, err = ecdh(remoteKey, localKey)
-		if err != nil {
-			return [64]byte{}, err
-		}
-	}
-
-	return sha512.Sum512(entropy), nil
 }
 
 // Read tries to read an encrypted data message from the underlying control
@@ -197,6 +178,27 @@ func (c *NoiseGrpcConn) RemoteAddr() net.Addr {
 	}
 }
 
+func (c *NoiseGrpcConn) SID() ([64]byte, error) {
+	return deriveSID(c.password, c.remoteKey, c.localKey)
+}
+
+func deriveSID(password []byte, remoteKey *btcec.PublicKey,
+	localKey keychain.SingleKeyECDH) ([64]byte, error) {
+
+	var (
+		entropy = password
+		err     error
+	)
+	if remoteKey != nil {
+		entropy, err = ecdh(remoteKey, localKey)
+		if err != nil {
+			return [64]byte{}, err
+		}
+	}
+
+	return sha512.Sum512(entropy), nil
+}
+
 // ClientHandshake implements the client side part of the noise connection
 // handshake.
 //
@@ -215,40 +217,148 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	}
 	c.SwitchConn = transportConn
 
-	// First, initialize a new noise machine with our static long term, and
-	// password.
-	var err error
-	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
-		Initiator:           true,
-		HandshakePattern:    XXPattern,
-		LocalStaticKey:      c.localKey,
-		PAKEPassphrase:      c.password,
-		MinHandshakeVersion: c.minHandshakeVersion,
-		MaxHandshakeVersion: c.maxHandshakeVersion,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
 	log.Debugf("Kicking off client handshake with client_key=%x",
 		c.localKey.PubKey().SerializeCompressed())
 
 	// We'll ensure that we get a response from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
-	err = c.SwitchConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	err := c.SwitchConn.SetReadDeadline(
+		time.Now().Add(handshakeReadTimeout),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if err := c.noise.DoHandshake(c.SwitchConn); err != nil {
-		return nil, nil, err
+	if c.remoteKey == nil {
+		// If we don't yet know the remote key of our peer, then we
+		// will start off with the NoiseXX pattern handshake using our
+		// static long term key and password.
+		var err error
+		c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
+			Initiator:           true,
+			HandshakePattern:    XXPattern,
+			LocalStaticKey:      c.localKey,
+			PAKEPassphrase:      c.password,
+			MinHandshakeVersion: c.minHandshakeVersion,
+			MaxHandshakeVersion: c.maxHandshakeVersion,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := c.noise.DoHandshake(c.SwitchConn); err != nil {
+			return nil, nil, err
+		}
+
+		// After the XX pattern is complete, we check what version we
+		// negotiated with the peer. If the version is above version 2
+		// then it means that we need to now switch to the long term
+		// mailbox and do the KK pattern there.
+		if c.noise.version >= HandshakeVersion2 {
+			// Before we terminate the existing connection, we
+			// first establish a connection and complete a
+			// handshake on the new long term mailbox.
+			newSID, err := deriveSID(
+				nil, c.noise.remoteStatic, c.localKey,
+			)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// We create a new connection using the new SID derived
+			// with our local static key and the remote static key.
+			conn2, err := c.SwitchConn.NewProxyConn(newSID)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			c.noise, err = NewBrontideMachine(
+				&BrontideMachineConfig{
+					Initiator:           true,
+					HandshakePattern:    KKPattern,
+					LocalStaticKey:      c.localKey,
+					RemoteStaticKey:     c.noise.remoteStatic,
+					MinHandshakeVersion: c.noise.version,
+					MaxHandshakeVersion: c.maxHandshakeVersion,
+				})
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// Perform the new KK pattern on the new connection.
+			if err := c.noise.DoHandshake(conn2); err != nil {
+				return nil, nil, err
+			}
+
+			// At this point, we'll extract the remote static key
+			// obtained during the handshake to ensure that future
+			// connections or reconnections use the remote key.
+			c.remoteKey = c.noise.remoteStatic
+
+			// We also bump our min handshake version now for the
+			// sake of future connections.
+			c.minHandshakeVersion = c.noise.version
+
+			// We now call the call-back function which must be
+			// used by the caller to persist the remote static key
+			// so that future connections can use the long term
+			// mailbox immediately.
+			c.onRemoteKey(c.remoteKey)
+
+			// Now that we are sure that we are done with the
+			// initial mailbox connection (since we have
+			// successfully completed a handshake using the long
+			// term mailbox conn), we can switch out the underlying
+			// connection with our new conn and close the old one.
+			err = c.SwitchConn.Switch(conn2, newSID)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+
+	} else {
+		// If we do have the remote static key, then we have already at
+		// some point in the past completed the XX pattern handshake.
+		// So now we use the KK pattern directly.
+
+		// We must at least support HandshakeVersion2 if we want to
+		// use the KK pattern.
+		if c.maxHandshakeVersion < HandshakeVersion2 {
+			return nil, nil, fmt.Errorf("handshake version of at " +
+				"least 2 is required when a remote key is " +
+				"provided")
+		}
+
+		// Since we have moved on to the long term mailbox, we know
+		// that the initial handshake must have been at least version 2
+		// since this is the first version that meant a switch to the
+		// long term mailbox along with persisting the remote key.
+		if c.minHandshakeVersion < HandshakeVersion2 {
+			c.minHandshakeVersion = HandshakeVersion2
+		}
+
+		c.noise, err = NewBrontideMachine(
+			&BrontideMachineConfig{
+				Initiator:           true,
+				HandshakePattern:    KKPattern,
+				LocalStaticKey:      c.localKey,
+				RemoteStaticKey:     c.remoteKey,
+				MinHandshakeVersion: c.minHandshakeVersion,
+				MaxHandshakeVersion: c.maxHandshakeVersion,
+			})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := c.noise.DoHandshake(c.SwitchConn); err != nil {
+			return nil, nil, err
+		}
 	}
 
-	// At this point, we'll also extract the auth data and remote static
-	// key obtained during the handshake.
+	// At this point, we'll also extract the auth data obtained during the
+	// handshake.
 	c.authData = c.noise.receivedPayload
-	c.remoteKey = c.noise.remoteStatic
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
@@ -274,7 +384,7 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	c.switchConnMtx.Lock()
 	defer c.switchConnMtx.Unlock()
 
-	log.Tracef("Starting server handshake")
+	log.Debugf("Starting server handshake")
 
 	transportConn, ok := conn.(*SwitchConn)
 	if !ok {
@@ -282,37 +392,140 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	}
 	c.SwitchConn = transportConn
 
-	// First, we'll initialize a new state machine with our static key,
-	// remote static key, passphrase, and also the authentication data.
-	var err error
-	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
-		Initiator:           false,
-		HandshakePattern:    XXPattern,
-		MinHandshakeVersion: c.minHandshakeVersion,
-		MaxHandshakeVersion: c.maxHandshakeVersion,
-		LocalStaticKey:      c.localKey,
-		PAKEPassphrase:      c.password,
-		AuthData:            c.authData,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// We'll ensure that we get a response from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
 	// connection.
-	err = c.SwitchConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
+	err := c.SwitchConn.SetReadDeadline(
+		time.Now().Add(handshakeReadTimeout),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if err := c.noise.DoHandshake(c.SwitchConn); err != nil {
-		return nil, nil, err
-	}
+	if c.remoteKey == nil {
+		// If we don't yet know the remote key of our peer, then we
+		// will start off with the NoiseXX pattern handshake using our
+		// static long term key and password.
+		c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
+			Initiator:           false,
+			HandshakePattern:    XXPattern,
+			MinHandshakeVersion: c.minHandshakeVersion,
+			MaxHandshakeVersion: c.maxHandshakeVersion,
+			LocalStaticKey:      c.localKey,
+			PAKEPassphrase:      c.password,
+			AuthData:            c.authData,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
 
-	// At this point, we'll also extract the auth data and remote static
-	// key obtained during the handshake.
-	c.remoteKey = c.noise.remoteStatic
+		if err := c.noise.DoHandshake(c.SwitchConn); err != nil {
+			return nil, nil, err
+		}
+
+		// After the XX pattern is complete, we check what version we
+		// negotiated with the peer. If the version is above version 2
+		// then it means that we need to now switch to the long term
+		// mailbox and do the KK pattern there.
+		if c.noise.version >= HandshakeVersion2 {
+			// Before we terminate the existing connection, we
+			// first establish a connection and complete a
+			// handshake on the new long term mailbox.
+			newSID, err := deriveSID(
+				nil, c.noise.remoteStatic, c.localKey,
+			)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// We create a new connection using the new SID derived
+			// with our local static key and the remote static key.
+			conn2, err := c.SwitchConn.NewProxyConn(newSID)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
+				Initiator:           false,
+				HandshakePattern:    KKPattern,
+				MinHandshakeVersion: c.noise.version,
+				MaxHandshakeVersion: c.maxHandshakeVersion,
+				LocalStaticKey:      c.localKey,
+				RemoteStaticKey:     c.noise.remoteStatic,
+				AuthData:            c.authData,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// Perform the new KK pattern on the new connection.
+			if err := c.noise.DoHandshake(conn2); err != nil {
+				return nil, nil, err
+			}
+
+			// At this point, we'll extract the remote static key
+			// obtained during the handshake to ensure that future
+			// connections or reconnections use the remote key.
+			c.remoteKey = c.noise.remoteStatic
+
+			// We also bump our min handshake version now for the
+			// sake of future connections.
+			c.minHandshakeVersion = c.noise.version
+
+			// We now call the call-back function which must be
+			// used by the caller to persist the remote static key
+			// so that future connections can use the long term
+			// mailbox immediately.
+			c.onRemoteKey(c.remoteKey)
+
+			// Now that we are sure that we are done with the
+			// initial mailbox connection (since we have
+			// successfully completed a handshake using the long
+			// term mailbox conn), we can switch out the underlying
+			// connection with our new conn and close the old one.
+			if err := c.SwitchConn.Switch(conn2, newSID); err != nil {
+				return nil, nil, err
+			}
+		}
+
+	} else {
+		// If we do have the remote static key, then we have already at
+		// some point in the past completed the XX pattern handshake.
+		// So now we use the KK pattern directly.
+
+		// We must at least support HandshakeVersion2 if we want to
+		// use the KK pattern.
+		if c.maxHandshakeVersion < HandshakeVersion2 {
+			return nil, nil, fmt.Errorf("handshake version of at " +
+				"least 2 is required when a remote key is " +
+				"provided")
+		}
+
+		// Since we have moved on to the long term mailbox, we know
+		// that the initial handshake must have been at least version 2
+		// since this is the first version that meant a switch to the
+		// long term mailbox along with persisting the remote key.
+		if c.minHandshakeVersion < HandshakeVersion2 {
+			c.minHandshakeVersion = HandshakeVersion2
+		}
+
+		c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
+			Initiator:           false,
+			HandshakePattern:    KKPattern,
+			MinHandshakeVersion: c.minHandshakeVersion,
+			MaxHandshakeVersion: c.maxHandshakeVersion,
+			LocalStaticKey:      c.localKey,
+			RemoteStaticKey:     c.remoteKey,
+			AuthData:            c.authData,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err := c.noise.DoHandshake(c.SwitchConn); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.

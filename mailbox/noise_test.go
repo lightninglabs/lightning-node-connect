@@ -64,7 +64,8 @@ func TestXXHandshake(t *testing.T) {
 
 	// Create a server.
 	server := NewNoiseGrpcConn(
-		&keychain.PrivKeyECDH{PrivKey: pk1}, authData, passHash[:],
+		&keychain.PrivKeyECDH{PrivKey: pk1}, nil, authData, passHash[:],
+		func(remoteKey *btcec.PublicKey) {},
 	)
 
 	// Spin off the server's handshake process.
@@ -80,7 +81,8 @@ func TestXXHandshake(t *testing.T) {
 
 	// Create a client.
 	client := NewNoiseGrpcConn(
-		&keychain.PrivKeyECDH{PrivKey: pk2}, nil, passHash[:],
+		&keychain.PrivKeyECDH{PrivKey: pk2}, nil, nil, passHash[:],
+		func(remoteKey *btcec.PublicKey) {},
 	)
 
 	// Start the client's handshake process.
@@ -279,6 +281,7 @@ func TestHandshake(t *testing.T) {
 		serverMaxVersion byte
 		clientMinVersion byte
 		clientMaxVersion byte
+		expectedVersion  byte
 		authData         []byte
 	}{
 		{
@@ -287,6 +290,7 @@ func TestHandshake(t *testing.T) {
 			serverMaxVersion: HandshakeVersion0,
 			clientMinVersion: HandshakeVersion0,
 			clientMaxVersion: HandshakeVersion0,
+			expectedVersion:  HandshakeVersion0,
 			authData:         []byte{0, 1, 2, 3},
 		},
 		{
@@ -295,6 +299,7 @@ func TestHandshake(t *testing.T) {
 			serverMaxVersion: HandshakeVersion1,
 			clientMinVersion: HandshakeVersion1,
 			clientMaxVersion: HandshakeVersion1,
+			expectedVersion:  HandshakeVersion1,
 			authData:         largeAuthData,
 		},
 		{
@@ -303,6 +308,7 @@ func TestHandshake(t *testing.T) {
 			serverMaxVersion: HandshakeVersion0,
 			clientMinVersion: HandshakeVersion0,
 			clientMaxVersion: HandshakeVersion1,
+			expectedVersion:  HandshakeVersion0,
 			authData:         []byte{0, 1, 2, 3},
 		},
 		{
@@ -311,7 +317,26 @@ func TestHandshake(t *testing.T) {
 			serverMaxVersion: HandshakeVersion1,
 			clientMinVersion: HandshakeVersion0,
 			clientMaxVersion: HandshakeVersion1,
+			expectedVersion:  HandshakeVersion1,
 			authData:         largeAuthData,
+		},
+		{
+			name:             "server v2 and client [v0, v2]",
+			serverMinVersion: HandshakeVersion0,
+			serverMaxVersion: HandshakeVersion2,
+			clientMinVersion: HandshakeVersion0,
+			clientMaxVersion: HandshakeVersion2,
+			expectedVersion:  HandshakeVersion2,
+			authData:         []byte{0, 1, 2, 3},
+		},
+		{
+			name:             "server v1 and client [v0, v2]",
+			serverMinVersion: HandshakeVersion0,
+			serverMaxVersion: HandshakeVersion1,
+			clientMinVersion: HandshakeVersion0,
+			clientMaxVersion: HandshakeVersion2,
+			expectedVersion:  HandshakeVersion1,
+			authData:         []byte{0, 1, 2, 3},
 		},
 	}
 
@@ -332,14 +357,16 @@ func TestHandshake(t *testing.T) {
 			}()
 
 			server := NewNoiseGrpcConn(
-				&keychain.PrivKeyECDH{PrivKey: pk1},
+				&keychain.PrivKeyECDH{PrivKey: pk1}, nil,
 				test.authData, pass,
+				func(remoteKey *btcec.PublicKey) {},
 				WithMinHandshakeVersion(test.serverMinVersion),
 				WithMaxHandshakeVersion(test.serverMaxVersion),
 			)
 
 			client := NewNoiseGrpcConn(
-				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, pass,
+				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, nil,
+				pass, func(remoteKey *btcec.PublicKey) {},
 				WithMinHandshakeVersion(test.clientMinVersion),
 				WithMaxHandshakeVersion(test.clientMaxVersion),
 			)
@@ -379,6 +406,25 @@ func TestHandshake(t *testing.T) {
 				t, bytes.Equal(client.authData, test.authData),
 			)
 
+			// Ensure that the negotiated version is as expected.
+			require.Equal(
+				t, test.expectedVersion, client.noise.version,
+			)
+			require.Equal(
+				t, test.expectedVersion, server.noise.version,
+			)
+
+			// For handshake versions above v2, we expect each peer
+			// to have stored the others static key. Otherwise,
+			// we expect the remote key to be nil.
+			if test.expectedVersion >= HandshakeVersion2 {
+				require.True(t, client.remoteKey.IsEqual(server.localKey.PubKey()))
+				require.True(t, server.remoteKey.IsEqual(client.localKey.PubKey()))
+			} else {
+				require.Nil(t, client.remoteKey)
+				require.Nil(t, server.remoteKey)
+			}
+
 			// Check that messages can be sent between client and
 			// server normally now.
 			testMessage := []byte("test message")
@@ -415,10 +461,18 @@ func (m *mockProxyConn) SendControlMsg(_ ControlMsg) error {
 
 func newMockProxyConns() (*SwitchConn, *SwitchConn) {
 	c1, c2 := net.Pipe()
+	c3, c4 := net.Pipe()
+
+	var switchCount1, switchCount2 int
 
 	switchConn1, _ := newSwitchConn(&SwitchConfig{
 		NewProxyConn: func(sid [64]byte) (ProxyConn, error) {
-			return &mockProxyConn{c1}, nil
+			if switchCount1 == 0 {
+				switchCount1++
+				return &mockProxyConn{c1}, nil
+			}
+
+			return &mockProxyConn{c3}, nil
 		},
 		StopProxyConn: func(conn ProxyConn) error {
 			return nil
@@ -427,7 +481,11 @@ func newMockProxyConns() (*SwitchConn, *SwitchConn) {
 
 	switchConn2, _ := newSwitchConn(&SwitchConfig{
 		NewProxyConn: func(sid [64]byte) (ProxyConn, error) {
-			return &mockProxyConn{c2}, nil
+			if switchCount2 == 0 {
+				switchCount2++
+				return &mockProxyConn{c2}, nil
+			}
+			return &mockProxyConn{c4}, nil
 		},
 		StopProxyConn: func(conn ProxyConn) error {
 			return nil

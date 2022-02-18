@@ -47,7 +47,10 @@ func (c *clientHarness) start() error {
 	c.cancel = cancel
 
 	noiseConn := mailbox.NewNoiseGrpcConn(
-		c.localStaticKey, nil, c.password[:],
+		c.localStaticKey, c.remoteStaticKey, nil, c.password[:],
+		func(remoteKey *btcec.PublicKey) {
+			c.remoteStaticKey = remoteKey
+		},
 	)
 
 	sid, err := noiseConn.SID()
