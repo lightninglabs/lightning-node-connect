@@ -2,7 +2,10 @@ package mailbox
 
 import (
 	"context"
+	"crypto/sha512"
 	"net"
+
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // Client manages the mailboxConn it holds and refreshes it on connection
@@ -10,16 +13,24 @@ import (
 type Client struct {
 	mailboxConn *ClientConn
 
+	noiseConn *NoiseGrpcConn
+
 	ctx context.Context
 	sid [64]byte
 }
 
 // NewClient creates a new Client object which will handle the mailbox
 // connection.
-func NewClient(ctx context.Context, sid [64]byte) (*Client, error) {
+func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
+	password []byte) (*Client, error) {
+
+	sid := sha512.Sum512(password[:])
+	noiseConn := NewNoiseGrpcConn(localKey, nil, password[:])
+
 	return &Client{
-		ctx: ctx,
-		sid: sid,
+		ctx:       ctx,
+		noiseConn: noiseConn,
+		sid:       sid,
 	}, nil
 }
 
@@ -51,5 +62,26 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 		c.mailboxConn = mailboxConn
 	}
 
-	return c.mailboxConn, nil
+	if err := c.noiseConn.ClientHandshake(c.mailboxConn); err != nil {
+		return nil, &temporaryError{err}
+	}
+
+	return c.noiseConn, nil
+}
+
+// RequireTransportSecurity returns true if this connection type requires
+// transport security.
+//
+// NOTE: This is part of the credentials.PerRPCCredentials interface.
+func (c *Client) RequireTransportSecurity() bool {
+	return true
+}
+
+// GetRequestMetadata returns the per RPC credentials encoded as gRPC metadata.
+//
+// NOTE: This is part of the credentials.PerRPCCredentials interface.
+func (c *Client) GetRequestMetadata(ctx context.Context,
+	uri ...string) (map[string]string, error) {
+
+	return c.noiseConn.GetRequestMetadata(ctx, uri...)
 }

@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
+	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 )
 
@@ -20,6 +21,8 @@ type Server struct {
 
 	mailboxConn *ServerConn
 
+	noiseConn *NoiseGrpcConn
+
 	sid [64]byte
 	ctx context.Context
 
@@ -27,7 +30,8 @@ type Server struct {
 	cancel func()
 }
 
-func NewServer(serverHost string, password []byte,
+func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
+	password, authData []byte,
 	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
@@ -38,9 +42,12 @@ func NewServer(serverHost string, password []byte,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
+	noiseConn := NewNoiseGrpcConn(localKey, authData, password[:])
+
 	s := &Server{
 		serverHost: serverHost,
 		client:     clientConn,
+		noiseConn:  noiseConn,
 		sid:        sha512.Sum512(password),
 		quit:       make(chan struct{}),
 	}
@@ -96,7 +103,11 @@ func (s *Server) Accept() (net.Conn, error) {
 		s.mailboxConn = mailboxConn
 	}
 
-	return s.mailboxConn, nil
+	if err := s.noiseConn.ServerHandshake(s.mailboxConn); err != nil {
+		return nil, &temporaryError{err}
+	}
+
+	return s.noiseConn, nil
 }
 
 // temporaryError implements the Temporary interface that grpc uses to decide

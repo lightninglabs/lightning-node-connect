@@ -2,7 +2,6 @@ package itest
 
 import (
 	"context"
-	"crypto/sha512"
 	"crypto/tls"
 	"net/http"
 
@@ -33,8 +32,6 @@ func (c *clientHarness) setConn(words []string) error {
 	copy(mnemonicWords[:], words)
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
-	sid := sha512.Sum512(password[:])
-
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
 		return err
@@ -43,17 +40,16 @@ func (c *clientHarness) setConn(words []string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	transportConn, err := mailbox.NewClient(ctx, sid)
+
+	clientConn, err := mailbox.NewClient(ctx, ecdh, password[:])
 	if err != nil {
 		return err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
-
 	dialOpts := []grpc.DialOption{
-		grpc.WithContextDialer(transportConn.Dial),
-		grpc.WithTransportCredentials(noiseConn),
-		grpc.WithPerRPCCredentials(noiseConn),
+		grpc.WithContextDialer(clientConn.Dial),
+		grpc.WithTransportCredentials(&mailbox.FakeCredentials{}),
+		grpc.WithPerRPCCredentials(clientConn),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
 		),

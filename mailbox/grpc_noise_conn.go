@@ -13,9 +13,6 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-var _ credentials.TransportCredentials = (*NoiseGrpcConn)(nil)
-var _ credentials.PerRPCCredentials = (*NoiseGrpcConn)(nil)
-
 const (
 	defaultGrpcWriteBufSize = 32 * 1024
 )
@@ -177,9 +174,7 @@ func (c *NoiseGrpcConn) RemoteAddr() net.Addr {
 // handshake.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
-	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
-
+func (c *NoiseGrpcConn) ClientHandshake(conn net.Conn) error {
 	c.proxyConnMtx.Lock()
 	defer c.proxyConnMtx.Unlock()
 
@@ -187,7 +182,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 
 	transportConn, ok := conn.(ProxyConn)
 	if !ok {
-		return nil, nil, fmt.Errorf("invalid connection type")
+		return fmt.Errorf("invalid connection type")
 	}
 	c.ProxyConn = transportConn
 
@@ -203,7 +198,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 		MaxHandshakeVersion: c.maxHandshakeVersion,
 	})
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	log.Debugf("Kicking off client handshake with client_key=%x",
@@ -214,11 +209,11 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	// connection.
 	err = c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	if err := c.noise.DoHandshake(c.ProxyConn); err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	// At this point, we'll also extract the auth data and remote static
@@ -230,7 +225,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	// initial handshake.
 	err = c.ProxyConn.SetReadDeadline(time.Time{})
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	log.Debugf("Completed client handshake with with server_key=%x",
@@ -238,15 +233,13 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 
 	log.Tracef("Client handshake completed")
 
-	return c, NewAuthInfo(), nil
+	return nil
 }
 
 // ServerHandshake implements the server part of the noise connection handshake.
 //
 // NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
-	credentials.AuthInfo, error) {
-
+func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) error {
 	c.proxyConnMtx.Lock()
 	defer c.proxyConnMtx.Unlock()
 
@@ -254,7 +247,7 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 
 	transportConn, ok := conn.(ProxyConn)
 	if !ok {
-		return nil, nil, fmt.Errorf("invalid connection type")
+		return fmt.Errorf("invalid connection type")
 	}
 	c.ProxyConn = transportConn
 
@@ -271,7 +264,7 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 		AuthData:            c.authData,
 	})
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	// We'll ensure that we get a response from the remote peer in a timely
@@ -279,11 +272,11 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	// connection.
 	err = c.ProxyConn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	if err := c.noise.DoHandshake(c.ProxyConn); err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	// At this point, we'll also extract the auth data and remote static
@@ -294,25 +287,13 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	// initial handshake.
 	err = conn.SetReadDeadline(time.Time{})
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	log.Debugf("Finished server handshake, client_key=%x",
 		c.noise.remoteStatic.SerializeCompressed())
 
-	return c, NewAuthInfo(), nil
-}
-
-// Info returns general information about the protocol that's being used for
-// this connection.
-//
-// NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseGrpcConn) Info() credentials.ProtocolInfo {
-	return credentials.ProtocolInfo{
-		ProtocolVersion:  fmt.Sprintf("%d", ProtocolVersion),
-		SecurityProtocol: ProtocolName,
-		ServerName:       "lnd",
-	}
+	return nil
 }
 
 // Close ensures that we hold a lock on the ProxyConn before calling close on
@@ -325,37 +306,6 @@ func (c *NoiseGrpcConn) Close() error {
 	defer c.proxyConnMtx.RUnlock()
 
 	return c.ProxyConn.Close()
-}
-
-// Clone makes a copy of this TransportCredentials.
-//
-// NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseGrpcConn) Clone() credentials.TransportCredentials {
-	c.proxyConnMtx.RLock()
-	defer c.proxyConnMtx.RUnlock()
-
-	return &NoiseGrpcConn{
-		ProxyConn: c.ProxyConn,
-		authData:  c.authData,
-		localKey:  c.localKey,
-		remoteKey: c.remoteKey,
-	}
-}
-
-// OverrideServerName overrides the server name used to verify the hostname on
-// the returned certificates from the server.
-//
-// NOTE: This is part of the credentials.TransportCredentials interface.
-func (c *NoiseGrpcConn) OverrideServerName(_ string) error {
-	return nil
-}
-
-// RequireTransportSecurity returns true if this connection type requires
-// transport security.
-//
-// NOTE: This is part of the credentials.PerRPCCredentials interface.
-func (c *NoiseGrpcConn) RequireTransportSecurity() bool {
-	return true
 }
 
 // GetRequestMetadata returns the per RPC credentials encoded as gRPC metadata.
@@ -379,4 +329,40 @@ func (c *NoiseGrpcConn) GetRequestMetadata(_ context.Context,
 		md[parts[0]] = parts[1]
 	}
 	return md, nil
+}
+
+var _ credentials.TransportCredentials = (*FakeCredentials)(nil)
+
+type FakeCredentials struct{}
+
+func (f *FakeCredentials) ClientHandshake(_ context.Context, _ string,
+	conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+
+	return conn, NewAuthInfo(), nil
+}
+
+func (f *FakeCredentials) ServerHandshake(conn net.Conn) (net.Conn,
+	credentials.AuthInfo, error) {
+
+	return conn, NewAuthInfo(), nil
+}
+
+// Info returns general information about the protocol that's being used for
+// this connection.
+//
+// NOTE: This is part of the credentials.TransportCredentials interface.
+func (f *FakeCredentials) Info() credentials.ProtocolInfo {
+	return credentials.ProtocolInfo{
+		ProtocolVersion:  fmt.Sprintf("%d", ProtocolVersion),
+		SecurityProtocol: ProtocolName,
+		ServerName:       "lnd",
+	}
+}
+
+func (f *FakeCredentials) Clone() credentials.TransportCredentials {
+	return &FakeCredentials{}
+}
+
+func (f *FakeCredentials) OverrideServerName(_ string) error {
+	return nil
 }
