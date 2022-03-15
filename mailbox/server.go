@@ -32,8 +32,9 @@ type Server struct {
 }
 
 func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
-	password, authData []byte, dialOpts ...grpc.DialOption) (*Server,
-	error) {
+	remoteKey *btcec.PublicKey, password, authData []byte,
+	onRemoteStatic func(key *btcec.PublicKey),
+	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
 	if err != nil {
@@ -43,9 +44,66 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
+	sid, err := deriveSID(password, remoteKey, localKey)
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Server{
+		serverHost: serverHost,
+		client:     clientConn,
+		sid:        sid,
+		quit:       make(chan struct{}),
+	}
+
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+
 	hs := NewHandshakeController(
-		false, localKey, nil, authData, password, nil, nil,
-		func(conn net.Conn) error {
+		false, localKey, remoteKey, authData, password, onRemoteStatic,
+		func(localStatic keychain.SingleKeyECDH,
+			remoteStatic *btcec.PublicKey,
+			password []byte) (net.Conn, error) {
+
+			sid, err := deriveSID(
+				password, remoteStatic, localStatic,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if !bytes.Equal(sid[:], s.sid[:]) {
+				s.mailboxConn = nil
+			}
+
+			s.sid = sid
+
+			// If this is the first connection, we create a new
+			// ServerConn object. otherwise, we just refresh the
+			// ServerConn.
+			if s.mailboxConn == nil {
+				mailboxConn, err := NewServerConn(
+					s.ctx, s.serverHost, s.client, s.sid,
+				)
+				if err != nil {
+					return nil, err
+				}
+				s.mailboxConn = mailboxConn
+			} else {
+				mailboxConn, err := RefreshServerConn(
+					s.mailboxConn,
+				)
+				if err != nil {
+					log.Errorf("couldn't refresh "+
+						"server: %v", err)
+
+					s.mailboxConn = nil
+					return nil, err
+				}
+				s.mailboxConn = mailboxConn
+			}
+
+			return s.mailboxConn, nil
+		}, func(conn net.Conn) error {
 			serverConn, ok := conn.(*ServerConn)
 			if !ok {
 				return fmt.Errorf("conn not of type ServerConn")
@@ -55,20 +113,7 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 		},
 	)
 
-	sid, err := deriveSID(password, nil, localKey)
-	if err != nil {
-		return nil, err
-	}
-
-	s := &Server{
-		serverHost: serverHost,
-		client:     clientConn,
-		hc:         hs,
-		sid:        sid,
-		quit:       make(chan struct{}),
-	}
-
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s.hc = hs
 
 	return s, nil
 }
@@ -97,47 +142,6 @@ func (s *Server) Accept() (net.Conn, error) {
 			log.Debugf("Accept: done with existing conn")
 		}
 	}
-
-	s.hc.getConn = func(localStatic keychain.SingleKeyECDH,
-		remoteStatic *btcec.PublicKey, password []byte) (net.Conn,
-		error) {
-
-		sid, err := deriveSID(password, remoteStatic, localStatic)
-		if err != nil {
-			return nil, err
-		}
-
-		if !bytes.Equal(sid[:], s.sid[:]) {
-			s.mailboxConn = nil
-		}
-
-		s.sid = sid
-
-		// If this is the first connection, we create a new ServerConn
-		// object. otherwise, we just refresh the ServerConn.
-		if s.mailboxConn == nil {
-			mailboxConn, err := NewServerConn(
-				s.ctx, s.serverHost, s.client, s.sid,
-			)
-			if err != nil {
-				return nil, err
-			}
-			s.mailboxConn = mailboxConn
-
-		} else {
-			mailboxConn, err := RefreshServerConn(s.mailboxConn)
-			if err != nil {
-				log.Errorf("couldn't refresh server: %v", err)
-				s.mailboxConn = nil
-				return nil, err
-			}
-			s.mailboxConn = mailboxConn
-		}
-
-		return s.mailboxConn, nil
-	}
-
-	s.hc.onRemoteStatic = func(key *btcec.PublicKey) {}
 
 	noise, _, err := s.hc.doHandshake()
 	if err != nil {

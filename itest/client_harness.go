@@ -15,33 +15,47 @@ import (
 type clientHarness struct {
 	serverAddr string
 
+	localStatic  keychain.SingleKeyECDH
+	remoteStatic *btcec.PublicKey
+
+	password []byte
+
 	grpcConn   *grpc.ClientConn
 	clientConn mockrpc.MockServiceClient
 
 	cancel func()
 }
 
-func newClientHarness(serverAddress string) *clientHarness {
-	return &clientHarness{
-		serverAddr: serverAddress,
-	}
-}
+func newClientHarness(serverAddress string, words [10]string) (*clientHarness,
+	error) {
 
-func (c *clientHarness) setConn(words []string) error {
 	var mnemonicWords [mailbox.NumPasswordWords]string
-	copy(mnemonicWords[:], words)
+	copy(mnemonicWords[:], words[:])
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 
+	return &clientHarness{
+		localStatic: ecdh,
+		serverAddr:  serverAddress,
+		password:    password[:],
+	}, nil
+}
+
+func (c *clientHarness) start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 
-	clientConn, err := mailbox.NewClient(ctx, ecdh, password[:])
+	clientConn, err := mailbox.NewClient(
+		ctx, c.serverAddr, c.localStatic, c.remoteStatic, c.password,
+		func(key *btcec.PublicKey) {
+			c.remoteStatic = key
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -59,7 +73,7 @@ func (c *clientHarness) setConn(words []string) error {
 		InsecureSkipVerify: true,
 	}
 
-	client, err := grpc.DialContext(ctx, c.serverAddr, dialOpts...)
+	client, err := grpc.DialContext(ctx, "", dialOpts...)
 	if err != nil {
 		return err
 	}

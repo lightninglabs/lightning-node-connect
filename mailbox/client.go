@@ -14,6 +14,8 @@ import (
 // Client manages the mailboxConn it holds and refreshes it on connection
 // retries.
 type Client struct {
+	serverAddr string
+
 	mailboxConn *ClientConn
 
 	noiseConn *NoiseGrpcConn
@@ -26,17 +28,61 @@ type Client struct {
 
 // NewClient creates a new Client object which will handle the mailbox
 // connection.
-func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
-	password []byte) (*Client, error) {
+func NewClient(ctx context.Context, serverAddr string,
+	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
+	password []byte, onRemoteStatic func(key *btcec.PublicKey)) (*Client,
+	error) {
 
-	sid, err := deriveSID(password, nil, localKey)
+	sid, err := deriveSID(password, remoteStatic, localStatic)
 	if err != nil {
 		return nil, err
 	}
 
+	c := &Client{
+		ctx:        ctx,
+		sid:        sid,
+		serverAddr: serverAddr,
+	}
+
 	hs := NewHandshakeController(
-		true, localKey, nil, nil, password, nil, nil,
-		func(conn net.Conn) error {
+		true, localStatic, remoteStatic, nil, password, onRemoteStatic,
+		func(localStatic keychain.SingleKeyECDH,
+			remoteStatic *btcec.PublicKey,
+			password []byte) (net.Conn, error) {
+
+			sid, err := deriveSID(
+				password, remoteStatic, localStatic,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if !bytes.Equal(sid[:], c.sid[:]) {
+				c.mailboxConn = nil
+			}
+
+			c.sid = sid
+
+			if c.mailboxConn == nil {
+				mailboxConn, err := NewClientConn(
+					c.ctx, c.sid, c.serverAddr,
+				)
+				if err != nil {
+					return nil, err
+				}
+				c.mailboxConn = mailboxConn
+			} else {
+				mailboxConn, err := RefreshClientConn(
+					c.mailboxConn,
+				)
+				if err != nil {
+					return nil, err
+				}
+				c.mailboxConn = mailboxConn
+			}
+
+			return c.mailboxConn, nil
+		}, func(conn net.Conn) error {
 			clientConn, ok := conn.(*ClientConn)
 			if !ok {
 				return fmt.Errorf("conn not of type ClientConn")
@@ -46,18 +92,15 @@ func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
 		},
 	)
 
-	return &Client{
-		ctx: ctx,
-		sid: sid,
-		hc:  hs,
-	}, nil
+	c.hc = hs
+	return c, nil
 }
 
 // Dial returns a net.Conn abstraction over the mailbox connection. Dial is
 // called everytime grpc retries the connection. If this is the first
 // connection, a new ClientConn will be created. Otherwise, the existing
 // connection will just be refreshed.
-func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
+func (c *Client) Dial(_ context.Context, _ string) (net.Conn, error) {
 	// If there is currently an active connection, block here until the
 	// previous connection as been closed.
 	if c.mailboxConn != nil {
@@ -67,42 +110,6 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 	}
 
 	log.Debugf("Client: Dialing...")
-
-	c.hc.getConn = func(localStatic keychain.SingleKeyECDH,
-		remoteStatic *btcec.PublicKey, password []byte) (net.Conn,
-		error) {
-
-		sid, err := deriveSID(password, remoteStatic, localStatic)
-		if err != nil {
-			return nil, err
-		}
-
-		if !bytes.Equal(sid[:], c.sid[:]) {
-			c.mailboxConn = nil
-		}
-
-		c.sid = sid
-
-		if c.mailboxConn == nil {
-			mailboxConn, err := NewClientConn(
-				c.ctx, c.sid, serverHost,
-			)
-			if err != nil {
-				return nil, err
-			}
-			c.mailboxConn = mailboxConn
-		} else {
-			mailboxConn, err := RefreshClientConn(c.mailboxConn)
-			if err != nil {
-				return nil, err
-			}
-			c.mailboxConn = mailboxConn
-		}
-
-		return c.mailboxConn, nil
-	}
-
-	c.hc.onRemoteStatic = func(key *btcec.PublicKey) {}
 
 	noise, _, err := c.hc.doHandshake()
 	if err != nil {
