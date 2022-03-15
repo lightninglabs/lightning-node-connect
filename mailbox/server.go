@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
@@ -21,7 +22,7 @@ type Server struct {
 
 	mailboxConn *ServerConn
 
-	noiseConn *NoiseGrpcConn
+	hc *HandshakeController
 
 	sid [64]byte
 	ctx context.Context
@@ -31,8 +32,8 @@ type Server struct {
 }
 
 func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
-	password, authData []byte,
-	dialOpts ...grpc.DialOption) (*Server, error) {
+	password, authData []byte, dialOpts ...grpc.DialOption) (*Server,
+	error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
 	if err != nil {
@@ -42,12 +43,23 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
-	noiseConn := NewNoiseGrpcConn(localKey, authData, password[:])
+	hs := &HandshakeController{
+		initiator:      false,
+		minVersion:     MinHandshakeVersion,
+		version:        MaxHandshakeVersion,
+		localStatic:    localKey,
+		remoteStatic:   nil,
+		authData:       authData,
+		passphrase:     password,
+		onRemoteStatic: nil,
+		getConn:        nil,
+		closeConn:      nil,
+	}
 
 	s := &Server{
 		serverHost: serverHost,
 		client:     clientConn,
-		noiseConn:  noiseConn,
+		hc:         hs,
 		sid:        sha512.Sum512(password),
 		quit:       make(chan struct{}),
 	}
@@ -103,11 +115,21 @@ func (s *Server) Accept() (net.Conn, error) {
 		s.mailboxConn = mailboxConn
 	}
 
-	if err := s.noiseConn.ServerHandshake(s.mailboxConn); err != nil {
+	s.hc.getConn = func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
+		_ []byte) net.Conn {
+
+		return s.mailboxConn
+	}
+
+	noise, _, err := s.hc.doHandshake()
+	if err != nil {
 		return nil, &temporaryError{err}
 	}
 
-	return s.noiseConn, nil
+	return &NoiseGrpcConn{
+		ProxyConn: s.mailboxConn,
+		noise:     noise,
+	}, nil
 }
 
 // temporaryError implements the Temporary interface that grpc uses to decide

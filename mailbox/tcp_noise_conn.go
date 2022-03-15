@@ -60,13 +60,16 @@ func Dial(localPriv keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey, //nol
 		},
 	}
 
-	brontideConn, err := hc.doHandshake()
+	noise, newConn, err := hc.doHandshake()
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
 
-	return brontideConn, nil
+	return &NoiseConn{
+		conn:  newConn,
+		noise: noise,
+	}, nil
 }
 
 // ReadNextMessage uses the connection in a message-oriented manner, instructing

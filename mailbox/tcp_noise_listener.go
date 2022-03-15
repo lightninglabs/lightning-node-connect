@@ -126,7 +126,7 @@ func (l *Listener) doHandshake(conn net.Conn) {
 		return conn
 	}
 
-	brontideConn, err := l.hsController.doHandshake()
+	noise, newConn, err := l.hsController.doHandshake()
 	if err != nil {
 		conn.Close()
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
@@ -139,7 +139,10 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	default:
 	}
 
-	l.acceptConn(brontideConn)
+	l.acceptConn(&NoiseConn{
+		conn:  newConn,
+		noise: noise,
+	})
 }
 
 // maybeConn holds either a brontide connection or an error returned from the

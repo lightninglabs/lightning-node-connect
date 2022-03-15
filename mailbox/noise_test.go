@@ -61,27 +61,53 @@ func TestXXHandshake(t *testing.T) {
 		conn2.Close()
 	}()
 
-	// Create a server.
-	server := NewNoiseGrpcConn(
-		&keychain.PrivKeyECDH{PrivKey: pk1}, authData, passHash[:],
-	)
+	serverHS := &HandshakeController{
+		initiator:   false,
+		minVersion:  MinHandshakeVersion,
+		version:     MaxHandshakeVersion,
+		localStatic: &keychain.PrivKeyECDH{PrivKey: pk1},
+		authData:    authData,
+		passphrase:  passHash[:],
+		getConn: func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
+			password []byte) net.Conn {
+
+			return conn1
+		},
+	}
 
 	// Spin off the server's handshake process.
-	var serverErrChan = make(chan error)
+	var (
+		server        *NoiseGrpcConn
+		serverErrChan = make(chan error)
+	)
 	go func() {
-		serverErrChan <- server.ServerHandshake(conn1)
+		noise, _, err := serverHS.doHandshake()
+		serverErrChan <- err
+
+		server = NewNoiseGrpcConn(conn1, noise)
 	}()
 
 	// Create a client.
-	client := NewNoiseGrpcConn(
-		&keychain.PrivKeyECDH{PrivKey: pk2}, nil, passHash[:],
-	)
+	clientHs := &HandshakeController{
+		initiator:   true,
+		minVersion:  MinHandshakeVersion,
+		version:     MaxHandshakeVersion,
+		localStatic: &keychain.PrivKeyECDH{PrivKey: pk2},
+		passphrase:  passHash[:],
+		getConn: func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
+			password []byte) net.Conn {
+
+			return conn2
+		},
+	}
 
 	// Start the client's handshake process.
-	err = client.ClientHandshake(conn2)
+	clientNoise, _, err := clientHs.doHandshake()
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	client := NewNoiseGrpcConn(conn2, clientNoise)
 
 	// Wait for the server's handshake to complete or timeout.
 	select {
@@ -95,11 +121,11 @@ func TestXXHandshake(t *testing.T) {
 	}
 
 	// Ensure that any auth data was successfully received by the client.
-	require.True(t, bytes.Equal(client.authData, authData))
+	require.True(t, bytes.Equal(client.noise.receivedPayload, authData))
 
 	// Also check that both parties now have the other parties static key.
-	require.True(t, client.remoteKey.IsEqual(pk1.PubKey()))
-	require.True(t, server.remoteKey.IsEqual(pk2.PubKey()))
+	require.True(t, client.noise.remoteStatic.IsEqual(pk1.PubKey()))
+	require.True(t, server.noise.remoteStatic.IsEqual(pk2.PubKey()))
 
 	// Check that messages can be sent between client and server normally
 	// now.
@@ -316,36 +342,59 @@ func TestHandshake(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			server := NewNoiseGrpcConn(
-				&keychain.PrivKeyECDH{PrivKey: pk1},
-				test.authData, pass,
-				WithMinHandshakeVersion(test.serverMinVersion),
-				WithMaxHandshakeVersion(test.serverMaxVersion),
-			)
-
-			client := NewNoiseGrpcConn(
-				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, pass,
-				WithMinHandshakeVersion(test.clientMinVersion),
-				WithMaxHandshakeVersion(test.clientMaxVersion),
-			)
-
 			conn1, conn2 := newMockProxyConns()
 			defer func() {
 				conn1.Close()
 				conn2.Close()
 			}()
 
+			serverHc := NewHandshakeController(
+				false,
+				&keychain.PrivKeyECDH{PrivKey: pk1}, nil,
+				test.authData, pass, nil,
+				func(s keychain.SingleKeyECDH,
+					rs *btcec.PublicKey,
+					password []byte) net.Conn {
+
+					return conn1
+				}, nil,
+				WithMinVersion(test.serverMinVersion),
+				WithMaxVersion(test.serverMaxVersion),
+			)
+
+			clientHc := NewHandshakeController(
+				true,
+				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, nil,
+				pass, nil, func(s keychain.SingleKeyECDH,
+					rs *btcec.PublicKey,
+					password []byte) net.Conn {
+
+					return conn2
+				}, nil,
+				WithMinVersion(test.clientMinVersion),
+				WithMaxVersion(test.clientMaxVersion),
+			)
+
 			var (
 				serverConn net.Conn
 			)
 			serverErrChan := make(chan error)
 			go func() {
-				serverErrChan <- server.ServerHandshake(conn1)
+				noise, _, err := serverHc.doHandshake()
+				serverErrChan <- err
+				serverConn = &NoiseGrpcConn{
+					ProxyConn: conn1,
+					noise:     noise,
+				}
 			}()
 
-			err := client.ClientHandshake(conn2)
+			noise, _, err := clientHc.doHandshake()
 			if err != nil {
 				t.Fatal(err)
+			}
+			clientConn := &NoiseGrpcConn{
+				ProxyConn: conn2,
+				noise:     noise,
 			}
 
 			select {
@@ -361,14 +410,14 @@ func TestHandshake(t *testing.T) {
 			// Ensure that any auth data was successfully received
 			// by the client.
 			require.True(
-				t, bytes.Equal(client.authData, test.authData),
+				t, bytes.Equal(clientHc.authData, test.authData),
 			)
 
 			// Check that messages can be sent between client and
 			// server normally now.
 			testMessage := []byte("test message")
 			go func() {
-				_, err := client.Write(testMessage)
+				_, err := clientConn.Write(testMessage)
 				require.NoError(t, err)
 			}()
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha512"
 	"net"
+	"strings"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -14,6 +16,8 @@ type Client struct {
 	mailboxConn *ClientConn
 
 	noiseConn *NoiseGrpcConn
+
+	hc *HandshakeController
 
 	ctx context.Context
 	sid [64]byte
@@ -25,12 +29,23 @@ func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
 	password []byte) (*Client, error) {
 
 	sid := sha512.Sum512(password[:])
-	noiseConn := NewNoiseGrpcConn(localKey, nil, password[:])
+
+	hs := &HandshakeController{
+		initiator:      true,
+		minVersion:     MinHandshakeVersion,
+		version:        MaxHandshakeVersion,
+		localStatic:    localKey,
+		remoteStatic:   nil,
+		passphrase:     password,
+		onRemoteStatic: nil,
+		getConn:        nil,
+		closeConn:      nil,
+	}
 
 	return &Client{
-		ctx:       ctx,
-		noiseConn: noiseConn,
-		sid:       sid,
+		ctx: ctx,
+		sid: sid,
+		hc:  hs,
 	}, nil
 }
 
@@ -62,11 +77,21 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 		c.mailboxConn = mailboxConn
 	}
 
-	if err := c.noiseConn.ClientHandshake(c.mailboxConn); err != nil {
+	c.hc.getConn = func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
+		_ []byte) net.Conn {
+
+		return c.mailboxConn
+	}
+
+	noise, _, err := c.hc.doHandshake()
+	if err != nil {
 		return nil, &temporaryError{err}
 	}
 
-	return c.noiseConn, nil
+	return &NoiseGrpcConn{
+		ProxyConn: c.mailboxConn,
+		noise:     noise,
+	}, nil
 }
 
 // RequireTransportSecurity returns true if this connection type requires
@@ -80,8 +105,22 @@ func (c *Client) RequireTransportSecurity() bool {
 // GetRequestMetadata returns the per RPC credentials encoded as gRPC metadata.
 //
 // NOTE: This is part of the credentials.PerRPCCredentials interface.
-func (c *Client) GetRequestMetadata(ctx context.Context,
-	uri ...string) (map[string]string, error) {
+func (c *Client) GetRequestMetadata(_ context.Context,
+	_ ...string) (map[string]string, error) {
 
-	return c.noiseConn.GetRequestMetadata(ctx, uri...)
+	md := make(map[string]string)
+
+	// The authentication data is just a string encoded representation of
+	// HTTP header fields. So we can split by '\r\n' to get individual lines
+	// and then by ': ' to get field name and field value.
+	lines := strings.Split(string(c.hc.authData), "\r\n")
+	for _, line := range lines {
+		parts := strings.Split(line, ": ")
+		if len(parts) != 2 {
+			continue
+		}
+
+		md[parts[0]] = parts[1]
+	}
+	return md, nil
 }

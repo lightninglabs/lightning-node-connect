@@ -25,7 +25,46 @@ type HandshakeController struct {
 	mu sync.Mutex
 }
 
-func (h *HandshakeController) doHandshake() (*NoiseConn, error) {
+func NewHandshakeController(initiator bool, localStatic keychain.SingleKeyECDH,
+	remoteStatic *btcec.PublicKey, authData, password []byte,
+	onRemote func(key *btcec.PublicKey),
+	getConn func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
+		password []byte) net.Conn, closeConn func(conn net.Conn) error,
+	opts ...func(hc *HandshakeController)) *HandshakeController {
+
+	hc := &HandshakeController{
+		initiator:      initiator,
+		minVersion:     MinHandshakeVersion,
+		version:        MaxHandshakeVersion,
+		localStatic:    localStatic,
+		remoteStatic:   remoteStatic,
+		authData:       authData,
+		passphrase:     password,
+		onRemoteStatic: onRemote,
+		getConn:        getConn,
+		closeConn:      closeConn,
+	}
+
+	for _, o := range opts {
+		o(hc)
+	}
+
+	return hc
+}
+
+func WithMinVersion(version byte) func(hc *HandshakeController) {
+	return func(hc *HandshakeController) {
+		hc.minVersion = version
+	}
+}
+
+func WithMaxVersion(version byte) func(hc *HandshakeController) {
+	return func(hc *HandshakeController) {
+		hc.version = version
+	}
+}
+
+func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -48,12 +87,12 @@ func (h *HandshakeController) doHandshake() (*NoiseConn, error) {
 			AuthData:            h.authData,
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		conn1 = h.getConn(h.localStatic, h.remoteStatic, h.passphrase)
 		if err := performHandshake(conn1, noise); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// At this point, we can now extract the negotiated version and
@@ -69,10 +108,7 @@ func (h *HandshakeController) doHandshake() (*NoiseConn, error) {
 		// If the negotiated version is below 2, the handshake is
 		// complete at this point.
 		if h.version < HandshakeVersion2 {
-			return &NoiseConn{
-				conn:  conn1,
-				noise: noise,
-			}, nil
+			return noise, conn1, nil
 		}
 
 		// Otherwise, we have just completed the first handshake in the
@@ -100,12 +136,12 @@ func (h *HandshakeController) doHandshake() (*NoiseConn, error) {
 		AuthData:            h.authData,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	conn := h.getConn(h.localStatic, h.remoteStatic, h.passphrase)
 	if err := performHandshake(conn, noise); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Once the KK handshake has completed successfully, we call the
@@ -126,10 +162,7 @@ func (h *HandshakeController) doHandshake() (*NoiseConn, error) {
 		h.authData = noise.receivedPayload
 	}
 
-	return &NoiseConn{
-		conn:  conn,
-		noise: noise,
-	}, nil
+	return noise, conn, nil
 }
 
 func performHandshake(conn net.Conn, noise *Machine) error {
