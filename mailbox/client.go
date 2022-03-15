@@ -1,8 +1,9 @@
 package mailbox
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha512"
+	"fmt"
 	"net"
 	"strings"
 
@@ -28,9 +29,22 @@ type Client struct {
 func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
 	password []byte) (*Client, error) {
 
-	sid := sha512.Sum512(password[:])
+	sid, err := deriveSID(password, nil, localKey)
+	if err != nil {
+		return nil, err
+	}
 
-	hs := NewHandshakeController(true, localKey, nil, nil, password, nil, nil, nil)
+	hs := NewHandshakeController(
+		true, localKey, nil, nil, password, nil, nil,
+		func(conn net.Conn) error {
+			clientConn, ok := conn.(*ClientConn)
+			if !ok {
+				return fmt.Errorf("conn not of type ClientConn")
+			}
+
+			return clientConn.Close()
+		},
+	)
 
 	return &Client{
 		ctx: ctx,
@@ -53,24 +67,39 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 	}
 
 	log.Debugf("Client: Dialing...")
-	if c.mailboxConn == nil {
-		mailboxConn, err := NewClientConn(c.ctx, c.sid, serverHost)
-		if err != nil {
-			return nil, &temporaryError{err}
-		}
-		c.mailboxConn = mailboxConn
-	} else {
-		mailboxConn, err := RefreshClientConn(c.mailboxConn)
-		if err != nil {
-			return nil, &temporaryError{err}
-		}
-		c.mailboxConn = mailboxConn
-	}
 
-	c.hc.getConn = func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
-		_ []byte) net.Conn {
+	c.hc.getConn = func(localStatic keychain.SingleKeyECDH,
+		remoteStatic *btcec.PublicKey, password []byte) (net.Conn,
+		error) {
 
-		return c.mailboxConn
+		sid, err := deriveSID(password, remoteStatic, localStatic)
+		if err != nil {
+			return nil, err
+		}
+
+		if !bytes.Equal(sid[:], c.sid[:]) {
+			c.mailboxConn = nil
+		}
+
+		c.sid = sid
+
+		if c.mailboxConn == nil {
+			mailboxConn, err := NewClientConn(
+				c.ctx, c.sid, serverHost,
+			)
+			if err != nil {
+				return nil, err
+			}
+			c.mailboxConn = mailboxConn
+		} else {
+			mailboxConn, err := RefreshClientConn(c.mailboxConn)
+			if err != nil {
+				return nil, err
+			}
+			c.mailboxConn = mailboxConn
+		}
+
+		return c.mailboxConn, nil
 	}
 
 	c.hc.onRemoteStatic = func(key *btcec.PublicKey) {}

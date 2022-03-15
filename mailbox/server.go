@@ -1,8 +1,8 @@
 package mailbox
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha512"
 	"fmt"
 	"io"
 	"net"
@@ -43,13 +43,28 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
-	hs := NewHandshakeController(false, localKey, nil, authData, password, nil, nil, nil)
+	hs := NewHandshakeController(
+		false, localKey, nil, authData, password, nil, nil,
+		func(conn net.Conn) error {
+			serverConn, ok := conn.(*ServerConn)
+			if !ok {
+				return fmt.Errorf("conn not of type ServerConn")
+			}
+
+			return serverConn.Stop()
+		},
+	)
+
+	sid, err := deriveSID(password, nil, localKey)
+	if err != nil {
+		return nil, err
+	}
 
 	s := &Server{
 		serverHost: serverHost,
 		client:     clientConn,
 		hc:         hs,
-		sid:        sha512.Sum512(password),
+		sid:        sid,
 		quit:       make(chan struct{}),
 	}
 
@@ -83,31 +98,43 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
-	// If this is the first connection, we create a new ServerConn object.
-	// otherwise, we just refresh the ServerConn.
-	if s.mailboxConn == nil {
-		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, s.sid,
-		)
-		if err != nil {
-			return nil, &temporaryError{err}
-		}
-		s.mailboxConn = mailboxConn
+	s.hc.getConn = func(localStatic keychain.SingleKeyECDH,
+		remoteStatic *btcec.PublicKey, password []byte) (net.Conn,
+		error) {
 
-	} else {
-		mailboxConn, err := RefreshServerConn(s.mailboxConn)
+		sid, err := deriveSID(password, remoteStatic, localStatic)
 		if err != nil {
-			log.Errorf("couldn't refresh server: %v", err)
+			return nil, err
+		}
+
+		if !bytes.Equal(sid[:], s.sid[:]) {
 			s.mailboxConn = nil
-			return nil, &temporaryError{err}
 		}
-		s.mailboxConn = mailboxConn
-	}
 
-	s.hc.getConn = func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
-		_ []byte) net.Conn {
+		s.sid = sid
 
-		return s.mailboxConn
+		// If this is the first connection, we create a new ServerConn
+		// object. otherwise, we just refresh the ServerConn.
+		if s.mailboxConn == nil {
+			mailboxConn, err := NewServerConn(
+				s.ctx, s.serverHost, s.client, s.sid,
+			)
+			if err != nil {
+				return nil, err
+			}
+			s.mailboxConn = mailboxConn
+
+		} else {
+			mailboxConn, err := RefreshServerConn(s.mailboxConn)
+			if err != nil {
+				log.Errorf("couldn't refresh server: %v", err)
+				s.mailboxConn = nil
+				return nil, err
+			}
+			s.mailboxConn = mailboxConn
+		}
+
+		return s.mailboxConn, nil
 	}
 
 	s.hc.onRemoteStatic = func(key *btcec.PublicKey) {}

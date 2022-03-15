@@ -121,9 +121,9 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	}
 
 	l.hsController.getConn = func(_ keychain.SingleKeyECDH,
-		_ *btcec.PublicKey, _ []byte) net.Conn {
+		_ *btcec.PublicKey, _ []byte) (net.Conn, error) {
 
-		return conn
+		return conn, nil
 	}
 
 	noise, newConn, err := l.hsController.doHandshake()

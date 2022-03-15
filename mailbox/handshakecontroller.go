@@ -1,6 +1,7 @@
 package mailbox
 
 import (
+	"crypto/sha512"
 	"net"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ type HandshakeController struct {
 	passphrase     []byte
 	onRemoteStatic func(key *btcec.PublicKey)
 	getConn        func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
-		password []byte) net.Conn
+		password []byte) (net.Conn, error)
 	closeConn func(conn net.Conn) error
 
 	mu sync.Mutex
@@ -29,7 +30,8 @@ func NewHandshakeController(initiator bool, localStatic keychain.SingleKeyECDH,
 	remoteStatic *btcec.PublicKey, authData, password []byte,
 	onRemote func(key *btcec.PublicKey),
 	getConn func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
-		password []byte) net.Conn, closeConn func(conn net.Conn) error,
+		password []byte) (net.Conn, error),
+	closeConn func(conn net.Conn) error,
 	opts ...func(hc *HandshakeController)) *HandshakeController {
 
 	hc := &HandshakeController{
@@ -90,7 +92,13 @@ func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 			return nil, nil, err
 		}
 
-		conn1 = h.getConn(h.localStatic, h.remoteStatic, h.passphrase)
+		conn1, err = h.getConn(
+			h.localStatic, h.remoteStatic, h.passphrase,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		if err := performHandshake(conn1, noise); err != nil {
 			return nil, nil, err
 		}
@@ -139,7 +147,11 @@ func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 		return nil, nil, err
 	}
 
-	conn := h.getConn(h.localStatic, h.remoteStatic, h.passphrase)
+	conn, err := h.getConn(h.localStatic, h.remoteStatic, h.passphrase)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	if err := performHandshake(conn, noise); err != nil {
 		return nil, nil, err
 	}
@@ -181,4 +193,21 @@ func performHandshake(conn net.Conn, noise *Machine) error {
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
 	return conn.SetReadDeadline(time.Time{})
+}
+
+func deriveSID(password []byte, remoteKey *btcec.PublicKey,
+	localKey keychain.SingleKeyECDH) ([64]byte, error) {
+
+	var (
+		entropy = password
+		err     error
+	)
+	if remoteKey != nil {
+		entropy, err = ecdh(remoteKey, localKey)
+		if err != nil {
+			return [64]byte{}, err
+		}
+	}
+
+	return sha512.Sum512(entropy), nil
 }

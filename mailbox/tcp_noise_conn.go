@@ -54,9 +54,9 @@ func Dial(localPriv keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey, //nol
 		passphrase:     passphrase,
 		onRemoteStatic: onRemoteStatic,
 		getConn: func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
-			_ []byte) net.Conn {
+			_ []byte) (net.Conn, error) {
 
-			return conn
+			return conn, nil
 		},
 	}
 
