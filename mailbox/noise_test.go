@@ -2,7 +2,6 @@ package mailbox
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
@@ -68,14 +67,9 @@ func TestXXHandshake(t *testing.T) {
 	)
 
 	// Spin off the server's handshake process.
-	var (
-		serverConn    net.Conn
-		serverErrChan = make(chan error)
-	)
+	var serverErrChan = make(chan error)
 	go func() {
-		var err error
-		serverConn, _, err = server.ServerHandshake(conn1)
-		serverErrChan <- err
+		serverErrChan <- server.ServerHandshake(conn1)
 	}()
 
 	// Create a client.
@@ -84,9 +78,7 @@ func TestXXHandshake(t *testing.T) {
 	)
 
 	// Start the client's handshake process.
-	clientConn, _, err := client.ClientHandshake(
-		context.Background(), "", conn2,
-	)
+	err = client.ClientHandshake(conn2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +114,7 @@ func TestXXHandshake(t *testing.T) {
 			case <-quit:
 				return
 			}
-			_, err := clientConn.Write(payload)
+			_, err := client.Write(payload)
 			require.NoError(t, err)
 		}
 	}()
@@ -133,7 +125,7 @@ func TestXXHandshake(t *testing.T) {
 		msg <- testMessage
 
 		recvBuffer := make([]byte, len(testMessage))
-		_, err = serverConn.Read(recvBuffer)
+		_, err = server.Read(recvBuffer)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(recvBuffer, testMessage))
 	}
@@ -348,16 +340,10 @@ func TestHandshake(t *testing.T) {
 			)
 			serverErrChan := make(chan error)
 			go func() {
-				var err error
-				serverConn, _, err = server.ServerHandshake(
-					conn1,
-				)
-				serverErrChan <- err
+				serverErrChan <- server.ServerHandshake(conn1)
 			}()
 
-			clientConn, _, err := client.ClientHandshake(
-				context.Background(), "", conn2,
-			)
+			err := client.ClientHandshake(conn2)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -382,7 +368,7 @@ func TestHandshake(t *testing.T) {
 			// server normally now.
 			testMessage := []byte("test message")
 			go func() {
-				_, err := clientConn.Write(testMessage)
+				_, err := client.Write(testMessage)
 				require.NoError(t, err)
 			}()
 

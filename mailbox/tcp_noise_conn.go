@@ -32,8 +32,10 @@ var _ net.Conn = (*NoiseConn)(nil)
 // remote peer located at address which has remotePub as its long-term static
 // public key. In the case of a handshake failure, the connection is closed and
 // a non-nil error is returned.
-func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte, //nolint:interfacer
-	timeout time.Duration, dialer tor.DialFunc) (*NoiseConn, error) {
+func Dial(localPriv keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey, //nolint:interfacer
+	netAddr net.Addr, passphrase []byte, timeout time.Duration,
+	dialer tor.DialFunc,
+	onRemoteStatic func(key *btcec.PublicKey)) (*NoiseConn, error) {
 
 	ipAddr := netAddr.String()
 	var conn net.Conn
@@ -43,46 +45,28 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		return nil, err
 	}
 
-	noise, err := NewBrontideMachine(&BrontideMachineConfig{
-		Initiator:           true,
-		HandshakePattern:    XXPattern,
-		MinHandshakeVersion: MinHandshakeVersion,
-		MaxHandshakeVersion: MaxHandshakeVersion,
-		LocalStaticKey:      localPriv,
-		PAKEPassphrase:      passphrase,
-	})
+	hc := &HandshakeController{
+		initiator:      true,
+		minVersion:     MinHandshakeVersion,
+		version:        HandshakeVersion2,
+		localStatic:    localPriv,
+		remoteStatic:   remoteStatic,
+		passphrase:     passphrase,
+		onRemoteStatic: onRemoteStatic,
+		getConn: func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
+			_ []byte) net.Conn {
+
+			return conn
+		},
+	}
+
+	brontideConn, err := hc.doHandshake()
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 
-	b := &NoiseConn{
-		conn:  conn,
-		noise: noise,
-	}
-
-	// We'll ensure that we get a response from the remote peer in a timely
-	// manner. If they don't respond within 1s, then we'll kill the
-	// connection.
-	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
-	if err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-
-	if err := b.noise.DoHandshake(conn); err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-
-	// We'll reset the deadline as it's no longer critical beyond the
-	// initial handshake.
-	err = conn.SetReadDeadline(time.Time{})
-	if err != nil {
-		b.conn.Close()
-		return nil, err
-	}
-
-	return b, nil
+	return brontideConn, nil
 }
 
 // ReadNextMessage uses the connection in a message-oriented manner, instructing

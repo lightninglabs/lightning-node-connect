@@ -61,6 +61,8 @@ const (
 	// is sent in a dynamically sized, length-prefixed payload in act 2.
 	HandshakeVersion1 = byte(1)
 
+	HandshakeVersion2 = byte(2)
+
 	// MinHandshakeVersion is the minimum handshake version that is
 	// currently supported.
 	MinHandshakeVersion = HandshakeVersion0
@@ -463,7 +465,7 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 			return err
 		}
 
-	case HandshakeVersion1:
+	case HandshakeVersion1, HandshakeVersion2:
 		var payload []byte
 		switch mp.ActNum {
 		case act1, act3:
@@ -594,7 +596,7 @@ func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 
 		h.receivedPayload = authData
 
-	case HandshakeVersion1:
+	case HandshakeVersion1, HandshakeVersion2:
 		var payloadSize uint32
 		switch mp.ActNum {
 		case act1, act3:
@@ -952,12 +954,21 @@ type BrontideMachineConfig struct {
 
 // NewBrontideMachine creates a new instance of the brontide state-machine.
 func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
-	// We always stretch the passphrase here in order to partially thwart
-	// brute force attempts, and also ensure we obtain a high entropy
-	// blinding point.
-	password, err := stretchPassword(cfg.PAKEPassphrase)
-	if err != nil {
-		return nil, err
+	// Since the password is only used for the XX handshake, we only
+	// stretch it if the XX handshake will be used since the stretching
+	// operation is computationally expensive.
+	var (
+		password []byte
+		err      error
+	)
+	if cfg.HandshakePattern.Name == XX {
+		// We stretch the passphrase here in order to partially thwart
+		// brute force attempts, and also ensure we obtain a high
+		// entropy blinding point.
+		password, err = stretchPassword(cfg.PAKEPassphrase)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if cfg.EphemeralGen == nil {

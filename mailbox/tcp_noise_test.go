@@ -39,7 +39,10 @@ func makeListener(passphrase, authData []byte) (*Listener, net.Addr, error) {
 	addr := "localhost:0"
 
 	// Our listener will be local, and the connection remote.
-	listener, err := NewListener(passphrase, localKeyECDH, addr, authData)
+	listener, err := NewListener(
+		passphrase, localKeyECDH, nil, addr, authData,
+		func(key *btcec.PublicKey) {},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -75,8 +78,9 @@ func establishTestConnection(clientPass, serverPass,
 	remoteConnChan := make(chan maybeNetConn, 1)
 	go func() {
 		remoteConn, err := Dial(
-			remoteKeyECDH, netAddr, clientPass,
+			remoteKeyECDH, nil, netAddr, clientPass,
 			tor.DefaultConnTimeout, net.DialTimeout,
+			func(key *btcec.PublicKey) {},
 		)
 		remoteConnChan <- maybeNetConn{remoteConn, err}
 	}()
@@ -238,8 +242,9 @@ func TestConcurrentHandshakes(t *testing.T) {
 
 	go func() {
 		remoteConn, err := Dial(
-			remoteKeyECDH, netAddr, passHash[:],
+			remoteKeyECDH, nil, netAddr, passHash[:],
 			tor.DefaultConnTimeout, net.DialTimeout,
+			func(key *btcec.PublicKey) {},
 		)
 		connChan <- maybeNetConn{remoteConn, err}
 	}()

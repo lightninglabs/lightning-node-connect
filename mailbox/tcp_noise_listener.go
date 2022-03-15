@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -19,12 +19,9 @@ const defaultHandshakes = 1000
 // details w.r.t the handshake and encryption scheme used within the
 // connection.
 type Listener struct {
-	localStatic keychain.SingleKeyECDH
+	hsController *HandshakeController
 
 	tcp *net.TCPListener
-
-	passphrase []byte
-	authData   []byte
 
 	handshakeSema chan struct{}
 	conns         chan maybeConn
@@ -37,7 +34,8 @@ var _ net.Listener = (*Listener)(nil)
 // NewListener returns a new net.Listener which enforces the Brontide scheme
 // during both initial connection establishment and data transfer.
 func NewListener(passphrase []byte, localStatic keychain.SingleKeyECDH,
-	listenAddr string, authData []byte) (*Listener, error) {
+	remoteStatic *btcec.PublicKey, listenAddr string, authData []byte,
+	onRemoteStatic func(key *btcec.PublicKey)) (*Listener, error) {
 
 	addr, err := net.ResolveTCPAddr("tcp", listenAddr)
 	if err != nil {
@@ -49,14 +47,23 @@ func NewListener(passphrase []byte, localStatic keychain.SingleKeyECDH,
 		return nil, err
 	}
 
+	hc := &HandshakeController{
+		initiator:      false,
+		minVersion:     MinHandshakeVersion,
+		version:        HandshakeVersion2,
+		localStatic:    localStatic,
+		remoteStatic:   remoteStatic,
+		onRemoteStatic: onRemoteStatic,
+		passphrase:     passphrase,
+		authData:       authData,
+	}
+
 	brontideListener := &Listener{
-		localStatic:   localStatic,
+		hsController:  hc,
 		tcp:           l,
 		handshakeSema: make(chan struct{}, defaultHandshakes),
 		conns:         make(chan maybeConn),
 		quit:          make(chan struct{}),
-		passphrase:    passphrase,
-		authData:      authData,
 	}
 
 	for i := 0; i < defaultHandshakes; i++ {
@@ -105,44 +112,23 @@ func rejectedConnErr(err error, remoteAddr string) error {
 func (l *Listener) doHandshake(conn net.Conn) {
 	defer func() { l.handshakeSema <- struct{}{} }()
 
-	select {
-	case <-l.quit:
-		return
-	default:
-	}
-
 	remoteAddr := conn.RemoteAddr().String()
 
-	noise, err := NewBrontideMachine(&BrontideMachineConfig{
-		Initiator:           false,
-		HandshakePattern:    XXPattern,
-		MinHandshakeVersion: MinHandshakeVersion,
-		MaxHandshakeVersion: MaxHandshakeVersion,
-		LocalStaticKey:      l.localStatic,
-		PAKEPassphrase:      l.passphrase,
-		AuthData:            l.authData,
-	})
-	if err != nil {
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
+	select {
+	case <-l.quit:
 		return
-	}
-	brontideConn := &NoiseConn{
-		conn:  conn,
-		noise: noise,
+	default:
 	}
 
-	// We'll ensure that we get ActOne from the remote peer in a timely
-	// manner. If they don't respond within 1s, then we'll kill the
-	// connection.
-	err = conn.SetReadDeadline(time.Now().Add(handshakeReadTimeout))
-	if err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
+	l.hsController.getConn = func(_ keychain.SingleKeyECDH,
+		_ *btcec.PublicKey, _ []byte) net.Conn {
+
+		return conn
 	}
 
-	if err := brontideConn.noise.DoHandshake(conn); err != nil {
-		brontideConn.conn.Close()
+	brontideConn, err := l.hsController.doHandshake()
+	if err != nil {
+		conn.Close()
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
 		return
 	}
@@ -151,15 +137,6 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	case <-l.quit:
 		return
 	default:
-	}
-
-	// We'll reset the deadline as it's no longer critical beyond the
-	// initial handshake.
-	err = conn.SetReadDeadline(time.Time{})
-	if err != nil {
-		brontideConn.conn.Close()
-		l.rejectConn(rejectedConnErr(err, remoteAddr))
-		return
 	}
 
 	l.acceptConn(brontideConn)
