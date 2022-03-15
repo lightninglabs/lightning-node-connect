@@ -71,7 +71,7 @@ const (
 	// support. Any messages that carry a version not between
 	// MinHandshakeVersion and MaxHandshakeVersion will cause the handshake
 	// to abort immediately.
-	MaxHandshakeVersion = HandshakeVersion1
+	MaxHandshakeVersion = HandshakeVersion2
 
 	// ActTwoPayloadSize is the size of the fixed sized payload that can be
 	// sent from the responder to the Initiator in act two.
@@ -996,7 +996,6 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 func (b *Machine) DoHandshake(rw io.ReadWriter) error {
 	for i := 0; i < len(b.pattern.Pattern); i++ {
 		mp := b.pattern.Pattern[i]
-
 		if mp.Initiator == b.initiator {
 			if err := b.writeMsgPattern(rw, mp); err != nil {
 				return err

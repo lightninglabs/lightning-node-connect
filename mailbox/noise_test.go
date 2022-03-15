@@ -331,6 +331,14 @@ func TestHandshake(t *testing.T) {
 			clientMaxVersion: HandshakeVersion1,
 			authData:         largeAuthData,
 		},
+		{
+			name:             "server v2 and client [v0, v2]",
+			serverMinVersion: HandshakeVersion0,
+			serverMaxVersion: HandshakeVersion2,
+			clientMinVersion: HandshakeVersion0,
+			clientMaxVersion: HandshakeVersion2,
+			authData:         []byte{0, 1, 2, 3},
+		},
 	}
 
 	pk1, err := btcec.NewPrivateKey(btcec.S256())
@@ -351,7 +359,8 @@ func TestHandshake(t *testing.T) {
 			serverHc := NewHandshakeController(
 				false,
 				&keychain.PrivKeyECDH{PrivKey: pk1}, nil,
-				test.authData, pass, nil,
+				test.authData, pass,
+				func(key *btcec.PublicKey) {},
 				func(s keychain.SingleKeyECDH,
 					rs *btcec.PublicKey,
 					password []byte) net.Conn {
@@ -365,7 +374,8 @@ func TestHandshake(t *testing.T) {
 			clientHc := NewHandshakeController(
 				true,
 				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, nil,
-				pass, nil, func(s keychain.SingleKeyECDH,
+				pass, func(key *btcec.PublicKey) {},
+				func(s keychain.SingleKeyECDH,
 					rs *btcec.PublicKey,
 					password []byte) net.Conn {
 
@@ -381,11 +391,11 @@ func TestHandshake(t *testing.T) {
 			serverErrChan := make(chan error)
 			go func() {
 				noise, _, err := serverHc.doHandshake()
-				serverErrChan <- err
 				serverConn = &NoiseGrpcConn{
 					ProxyConn: conn1,
 					noise:     noise,
 				}
+				serverErrChan <- err
 			}()
 
 			noise, _, err := clientHc.doHandshake()

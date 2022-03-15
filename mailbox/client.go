@@ -30,17 +30,7 @@ func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
 
 	sid := sha512.Sum512(password[:])
 
-	hs := &HandshakeController{
-		initiator:      true,
-		minVersion:     MinHandshakeVersion,
-		version:        MaxHandshakeVersion,
-		localStatic:    localKey,
-		remoteStatic:   nil,
-		passphrase:     password,
-		onRemoteStatic: nil,
-		getConn:        nil,
-		closeConn:      nil,
-	}
+	hs := NewHandshakeController(true, localKey, nil, nil, password, nil, nil, nil)
 
 	return &Client{
 		ctx: ctx,
@@ -82,6 +72,8 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 
 		return c.mailboxConn
 	}
+
+	c.hc.onRemoteStatic = func(key *btcec.PublicKey) {}
 
 	noise, _, err := c.hc.doHandshake()
 	if err != nil {

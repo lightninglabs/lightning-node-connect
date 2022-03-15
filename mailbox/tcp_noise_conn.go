@@ -48,7 +48,7 @@ func Dial(localPriv keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey, //nol
 	hc := &HandshakeController{
 		initiator:      true,
 		minVersion:     MinHandshakeVersion,
-		version:        HandshakeVersion2,
+		version:        MaxHandshakeVersion,
 		localStatic:    localPriv,
 		remoteStatic:   remoteStatic,
 		passphrase:     passphrase,

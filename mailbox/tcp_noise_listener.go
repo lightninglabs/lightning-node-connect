@@ -50,7 +50,7 @@ func NewListener(passphrase []byte, localStatic keychain.SingleKeyECDH,
 	hc := &HandshakeController{
 		initiator:      false,
 		minVersion:     MinHandshakeVersion,
-		version:        HandshakeVersion2,
+		version:        MaxHandshakeVersion,
 		localStatic:    localStatic,
 		remoteStatic:   remoteStatic,
 		onRemoteStatic: onRemoteStatic,

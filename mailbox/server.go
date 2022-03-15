@@ -43,18 +43,7 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
-	hs := &HandshakeController{
-		initiator:      false,
-		minVersion:     MinHandshakeVersion,
-		version:        MaxHandshakeVersion,
-		localStatic:    localKey,
-		remoteStatic:   nil,
-		authData:       authData,
-		passphrase:     password,
-		onRemoteStatic: nil,
-		getConn:        nil,
-		closeConn:      nil,
-	}
+	hs := NewHandshakeController(false, localKey, nil, authData, password, nil, nil, nil)
 
 	s := &Server{
 		serverHost: serverHost,
@@ -120,6 +109,8 @@ func (s *Server) Accept() (net.Conn, error) {
 
 		return s.mailboxConn
 	}
+
+	s.hc.onRemoteStatic = func(key *btcec.PublicKey) {}
 
 	noise, _, err := s.hc.doHandshake()
 	if err != nil {
