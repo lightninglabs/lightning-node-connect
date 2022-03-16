@@ -952,12 +952,22 @@ type BrontideMachineConfig struct {
 
 // NewBrontideMachine creates a new instance of the brontide state-machine.
 func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
-	// We always stretch the passphrase here in order to partially thwart
-	// brute force attempts, and also ensure we obtain a high entropy
-	// blinding point.
-	password, err := stretchPassword(cfg.PAKEPassphrase)
-	if err != nil {
-		return nil, err
+	var (
+		password []byte
+		err      error
+	)
+
+	// Since the password is only used in the XX handshake pattern, we only
+	// need to do the computationally expensive stretching operation if the
+	// XX pattern is being used.
+	if cfg.HandshakePattern.Name == XX {
+		// We stretch the passphrase here in order to partially thwart
+		// brute force attempts, and also ensure we obtain a high
+		// entropy blinding point.
+		password, err = stretchPassword(cfg.PAKEPassphrase)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if cfg.EphemeralGen == nil {

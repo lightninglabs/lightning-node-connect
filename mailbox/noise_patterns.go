@@ -1,5 +1,14 @@
 package mailbox
 
+const (
+	// XX is the name of the Noise XX Handshake pattern that uses SPAKE2
+	// to mask the ephemeral key sent in the first act.
+	XX = "XXeke+SPAKE2"
+
+	// KK is the name of the Noise KK Handshake pattern.
+	KK = "KK"
+)
+
 var (
 	// XXPattern represents the XX Noise pattern using SPAKE2 to mask
 	// the ephemeral key of the first message.
@@ -7,7 +16,7 @@ var (
 	// <- e, ee, s, es
 	// -> s, se
 	XXPattern = HandshakePattern{
-		Name: "XXeke+SPAKE2",
+		Name: XX,
 		Pattern: []MessagePattern{
 			{
 				Tokens:    []Token{me},
@@ -35,7 +44,7 @@ var (
 	// <- e, es, ss
 	// -> e, ee, se
 	KKPattern = HandshakePattern{
-		Name: "KK",
+		Name: KK,
 		PreMessages: []MessagePattern{
 			{
 				Tokens:    []Token{s},
