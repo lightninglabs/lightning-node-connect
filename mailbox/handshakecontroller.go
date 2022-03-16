@@ -10,63 +10,80 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
-type HandshakeController struct {
-	initiator      bool
-	minVersion     byte
-	version        byte
-	localStatic    keychain.SingleKeyECDH
-	remoteStatic   *btcec.PublicKey
-	authData       []byte
-	passphrase     []byte
-	onRemoteStatic func(key *btcec.PublicKey)
-	getConn        func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
-		password []byte) (net.Conn, error)
-	closeConn func(conn net.Conn) error
+type HandshakeMgr struct {
+	cfg *HandshakeMgrConfig
+
+	minVersion byte
+	version    byte
+
+	remoteStatic *btcec.PublicKey
+	authData     []byte
 
 	mu sync.Mutex
 }
 
-func NewHandshakeController(initiator bool, localStatic keychain.SingleKeyECDH,
-	remoteStatic *btcec.PublicKey, authData, password []byte,
-	onRemote func(key *btcec.PublicKey),
-	getConn func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
-		password []byte) (net.Conn, error),
-	closeConn func(conn net.Conn) error,
-	opts ...func(hc *HandshakeController)) *HandshakeController {
+type HandshakeMgrConfig struct {
+	Initiator    bool
+	LocalStatic  keychain.SingleKeyECDH
+	RemoteStatic *btcec.PublicKey
+	AuthData     []byte
+	Passphrase   []byte
 
-	hc := &HandshakeController{
-		initiator:      initiator,
-		minVersion:     MinHandshakeVersion,
-		version:        MaxHandshakeVersion,
-		localStatic:    localStatic,
-		remoteStatic:   remoteStatic,
-		authData:       authData,
-		passphrase:     password,
-		onRemoteStatic: onRemote,
-		getConn:        getConn,
-		closeConn:      closeConn,
+	OnRemoteStatic func(key *btcec.PublicKey)
+
+	GetConn func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
+		password []byte) (net.Conn, error)
+
+	CloseConn func(conn net.Conn) error
+}
+
+func NewHandshakeMgr(cfg *HandshakeMgrConfig,
+	opts ...func(mgr *HandshakeMgr)) *HandshakeMgr {
+
+	mgr := &HandshakeMgr{
+		cfg:        cfg,
+		minVersion: MinHandshakeVersion,
+		version:    MaxHandshakeVersion,
 	}
 
 	for _, o := range opts {
-		o(hc)
+		o(mgr)
 	}
 
-	return hc
+	return mgr
 }
 
-func WithMinVersion(version byte) func(hc *HandshakeController) {
-	return func(hc *HandshakeController) {
+// WithMinVersion is a functional option that can be used to set the min
+// handshake version of the HandshakeMgr if it should differ from the default.
+func WithMinVersion(version byte) func(hc *HandshakeMgr) {
+	return func(hc *HandshakeMgr) {
 		hc.minVersion = version
 	}
 }
 
-func WithMaxVersion(version byte) func(hc *HandshakeController) {
-	return func(hc *HandshakeController) {
+// WithMaxVersion is a functional option that can be used to set the max
+// handshake version of the HandshakeMgr if it should differ from the default.
+func WithMaxVersion(version byte) func(hc *HandshakeMgr) {
+	return func(hc *HandshakeMgr) {
 		hc.version = version
 	}
 }
 
-func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
+func (h *HandshakeMgr) GetAuthData() []byte {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.authData
+}
+
+func (h *HandshakeMgr) GetRemoteStatic() *btcec.PublicKey {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.remoteStatic
+}
+
+func (h *HandshakeMgr) doHandshake() (*Machine, net.Conn, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -78,22 +95,27 @@ func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 		conn1 net.Conn
 		err   error
 	)
+
+	if h.remoteStatic == nil {
+		h.remoteStatic = h.cfg.RemoteStatic
+	}
+
 	if h.remoteStatic == nil || h.version < HandshakeVersion2 {
 		noise, err = NewBrontideMachine(&BrontideMachineConfig{
-			Initiator:           h.initiator,
+			Initiator:           h.cfg.Initiator,
 			HandshakePattern:    XXPattern,
+			LocalStaticKey:      h.cfg.LocalStatic,
+			PAKEPassphrase:      h.cfg.Passphrase,
+			AuthData:            h.cfg.AuthData,
 			MinHandshakeVersion: h.minVersion,
 			MaxHandshakeVersion: h.version,
-			LocalStaticKey:      h.localStatic,
-			PAKEPassphrase:      h.passphrase,
-			AuthData:            h.authData,
 		})
 		if err != nil {
 			return nil, nil, err
 		}
 
-		conn1, err = h.getConn(
-			h.localStatic, h.remoteStatic, h.passphrase,
+		conn1, err = h.cfg.GetConn(
+			h.cfg.LocalStatic, h.remoteStatic, h.cfg.Passphrase,
 		)
 		if err != nil {
 			return nil, nil, err
@@ -109,7 +131,7 @@ func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 
 		// The initiator can now also extract the auth data received
 		// from the responder.
-		if h.initiator {
+		if h.cfg.Initiator {
 			h.authData = noise.receivedPayload
 		}
 
@@ -135,19 +157,21 @@ func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 	// The remote static key is available to us, and so we now perform the
 	// KK handshake.
 	noise, err = NewBrontideMachine(&BrontideMachineConfig{
-		Initiator:           h.initiator,
+		Initiator:           h.cfg.Initiator,
 		HandshakePattern:    KKPattern,
+		LocalStaticKey:      h.cfg.LocalStatic,
+		RemoteStaticKey:     h.remoteStatic,
+		AuthData:            h.cfg.AuthData,
 		MinHandshakeVersion: h.minVersion,
 		MaxHandshakeVersion: h.version,
-		LocalStaticKey:      h.localStatic,
-		RemoteStaticKey:     h.remoteStatic,
-		AuthData:            h.authData,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	conn, err := h.getConn(h.localStatic, h.remoteStatic, h.passphrase)
+	conn, err := h.cfg.GetConn(
+		h.cfg.LocalStatic, h.remoteStatic, h.cfg.Passphrase,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -159,18 +183,18 @@ func (h *HandshakeController) doHandshake() (*Machine, net.Conn, error) {
 	// Once the KK handshake has completed successfully, we call the
 	// callback function that will be used to persist the remote static key
 	// so that any future handshake will jump directly to the KK step.
-	h.onRemoteStatic(h.remoteStatic)
+	h.cfg.OnRemoteStatic(h.remoteStatic)
 
 	// Once we have persisted the remote static key, we can close conn1 if
 	// this handshake switched from one conn to another.
-	if conn1 != nil && h.closeConn != nil {
-		err := h.closeConn(conn1)
+	if conn1 != nil && h.cfg.CloseConn != nil {
+		err := h.cfg.CloseConn(conn1)
 		if err != nil {
 			log.Errorf("error closing conn1: %v", err)
 		}
 	}
 
-	if h.initiator {
+	if h.cfg.Initiator {
 		h.authData = noise.receivedPayload
 	}
 

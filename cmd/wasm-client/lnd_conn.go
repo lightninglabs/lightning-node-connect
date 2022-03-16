@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha512"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -22,8 +21,6 @@ func mailboxRPCConnection(mailboxServer,
 	copy(mnemonicWords[:], words)
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
-	sid := sha512.Sum512(password[:])
-
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
 		return nil, err
@@ -31,17 +28,17 @@ func mailboxRPCConnection(mailboxServer,
 	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 
 	ctx := context.Background()
-	transportConn, err := mailbox.NewClient(ctx, sid)
+	transportConn, err := mailbox.NewClient(ctx, mailboxServer, ecdh, nil,
+		password[:], func(key *btcec.PublicKey) {},
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
-
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),
-		grpc.WithTransportCredentials(noiseConn),
-		grpc.WithPerRPCCredentials(noiseConn),
+		grpc.WithTransportCredentials(&mailbox.FakeCredentials{}),
+		grpc.WithPerRPCCredentials(transportConn),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
 		),

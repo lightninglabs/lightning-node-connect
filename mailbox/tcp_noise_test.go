@@ -78,9 +78,9 @@ func establishTestConnection(clientPass, serverPass,
 	remoteConnChan := make(chan maybeNetConn, 1)
 	go func() {
 		remoteConn, err := Dial(
-			remoteKeyECDH, nil, netAddr, clientPass,
-			tor.DefaultConnTimeout, net.DialTimeout,
-			func(key *btcec.PublicKey) {},
+			netAddr, remoteKeyECDH, nil, clientPass,
+			func(key *btcec.PublicKey) {}, tor.DefaultConnTimeout,
+			net.DialTimeout,
 		)
 		remoteConnChan <- maybeNetConn{remoteConn, err}
 	}()
@@ -242,9 +242,9 @@ func TestConcurrentHandshakes(t *testing.T) {
 
 	go func() {
 		remoteConn, err := Dial(
-			remoteKeyECDH, nil, netAddr, passHash[:],
-			tor.DefaultConnTimeout, net.DialTimeout,
+			netAddr, remoteKeyECDH, nil, passHash[:],
 			func(key *btcec.PublicKey) {},
+			tor.DefaultConnTimeout, net.DialTimeout,
 		)
 		connChan <- maybeNetConn{remoteConn, err}
 	}()

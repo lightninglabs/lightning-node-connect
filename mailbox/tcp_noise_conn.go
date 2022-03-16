@@ -32,10 +32,10 @@ var _ net.Conn = (*NoiseConn)(nil)
 // remote peer located at address which has remotePub as its long-term static
 // public key. In the case of a handshake failure, the connection is closed and
 // a non-nil error is returned.
-func Dial(localPriv keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey, //nolint:interfacer
-	netAddr net.Addr, passphrase []byte, timeout time.Duration,
-	dialer tor.DialFunc,
-	onRemoteStatic func(key *btcec.PublicKey)) (*NoiseConn, error) {
+func Dial(netAddr net.Addr, localPriv keychain.SingleKeyECDH, //nolint:interfacer
+	remoteStatic *btcec.PublicKey, passphrase []byte,
+	onRemoteStatic func(key *btcec.PublicKey), timeout time.Duration,
+	dialer tor.DialFunc) (*NoiseConn, error) {
 
 	ipAddr := netAddr.String()
 	var conn net.Conn
@@ -45,20 +45,18 @@ func Dial(localPriv keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey, //nol
 		return nil, err
 	}
 
-	hc := &HandshakeController{
-		initiator:      true,
-		minVersion:     MinHandshakeVersion,
-		version:        MaxHandshakeVersion,
-		localStatic:    localPriv,
-		remoteStatic:   remoteStatic,
-		passphrase:     passphrase,
-		onRemoteStatic: onRemoteStatic,
-		getConn: func(_ keychain.SingleKeyECDH, _ *btcec.PublicKey,
-			_ []byte) (net.Conn, error) {
+	hc := NewHandshakeMgr(&HandshakeMgrConfig{
+		Initiator:      true,
+		LocalStatic:    localPriv,
+		RemoteStatic:   remoteStatic,
+		Passphrase:     passphrase,
+		OnRemoteStatic: onRemoteStatic,
+		GetConn: func(_ keychain.SingleKeyECDH,
+			_ *btcec.PublicKey, _ []byte) (net.Conn, error) {
 
 			return conn, nil
 		},
-	}
+	})
 
 	noise, newConn, err := hc.doHandshake()
 	if err != nil {

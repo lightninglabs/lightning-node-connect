@@ -61,19 +61,18 @@ func TestXXHandshake(t *testing.T) {
 		conn2.Close()
 	}()
 
-	serverHS := &HandshakeController{
-		initiator:   false,
-		minVersion:  MinHandshakeVersion,
-		version:     MaxHandshakeVersion,
-		localStatic: &keychain.PrivKeyECDH{PrivKey: pk1},
-		authData:    authData,
-		passphrase:  passHash[:],
-		getConn: func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
-			password []byte) net.Conn {
+	serverHS := NewHandshakeMgr(&HandshakeMgrConfig{
+		Initiator:   false,
+		LocalStatic: &keychain.PrivKeyECDH{PrivKey: pk1},
+		AuthData:    authData,
+		Passphrase:  passHash[:],
+		GetConn: func(_ keychain.SingleKeyECDH,
+			_ *btcec.PublicKey, _ []byte) (net.Conn, error) {
 
-			return conn1
+			return conn1, nil
 		},
-	}
+		OnRemoteStatic: func(key *btcec.PublicKey) {},
+	})
 
 	// Spin off the server's handshake process.
 	var (
@@ -82,24 +81,22 @@ func TestXXHandshake(t *testing.T) {
 	)
 	go func() {
 		noise, _, err := serverHS.doHandshake()
-		serverErrChan <- err
-
 		server = NewNoiseGrpcConn(conn1, noise)
+		serverErrChan <- err
 	}()
 
 	// Create a client.
-	clientHs := &HandshakeController{
-		initiator:   true,
-		minVersion:  MinHandshakeVersion,
-		version:     MaxHandshakeVersion,
-		localStatic: &keychain.PrivKeyECDH{PrivKey: pk2},
-		passphrase:  passHash[:],
-		getConn: func(s keychain.SingleKeyECDH, rs *btcec.PublicKey,
-			password []byte) net.Conn {
+	clientHs := NewHandshakeMgr(&HandshakeMgrConfig{
+		Initiator:   true,
+		LocalStatic: &keychain.PrivKeyECDH{PrivKey: pk2},
+		Passphrase:  passHash[:],
+		GetConn: func(_ keychain.SingleKeyECDH,
+			_ *btcec.PublicKey, _ []byte) (net.Conn, error) {
 
-			return conn2
+			return conn2, nil
 		},
-	}
+		OnRemoteStatic: func(key *btcec.PublicKey) {},
+	})
 
 	// Start the client's handshake process.
 	clientNoise, _, err := clientHs.doHandshake()
@@ -356,31 +353,36 @@ func TestHandshake(t *testing.T) {
 				conn2.Close()
 			}()
 
-			serverHc := NewHandshakeController(
-				false,
-				&keychain.PrivKeyECDH{PrivKey: pk1}, nil,
-				test.authData, pass,
-				func(key *btcec.PublicKey) {},
-				func(s keychain.SingleKeyECDH,
+			serverHc := NewHandshakeMgr(&HandshakeMgrConfig{
+				LocalStatic: &keychain.PrivKeyECDH{
+					PrivKey: pk1,
+				},
+				AuthData:       test.authData,
+				Passphrase:     pass,
+				OnRemoteStatic: func(key *btcec.PublicKey) {},
+				GetConn: func(s keychain.SingleKeyECDH,
 					rs *btcec.PublicKey,
-					password []byte) net.Conn {
+					password []byte) (net.Conn, error) {
 
-					return conn1
-				}, nil,
+					return conn1, nil
+				}},
 				WithMinVersion(test.serverMinVersion),
 				WithMaxVersion(test.serverMaxVersion),
 			)
 
-			clientHc := NewHandshakeController(
-				true,
-				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, nil,
-				pass, func(key *btcec.PublicKey) {},
-				func(s keychain.SingleKeyECDH,
+			clientHc := NewHandshakeMgr(&HandshakeMgrConfig{
+				Initiator: true,
+				LocalStatic: &keychain.PrivKeyECDH{
+					PrivKey: pk2,
+				},
+				Passphrase:     pass,
+				OnRemoteStatic: func(key *btcec.PublicKey) {},
+				GetConn: func(s keychain.SingleKeyECDH,
 					rs *btcec.PublicKey,
-					password []byte) net.Conn {
+					password []byte) (net.Conn, error) {
 
-					return conn2
-				}, nil,
+					return conn2, nil
+				}},
 				WithMinVersion(test.clientMinVersion),
 				WithMaxVersion(test.clientMaxVersion),
 			)

@@ -19,7 +19,7 @@ const defaultHandshakes = 1000
 // details w.r.t the handshake and encryption scheme used within the
 // connection.
 type Listener struct {
-	hsController *HandshakeController
+	hsController *HandshakeMgr
 
 	tcp *net.TCPListener
 
@@ -47,16 +47,13 @@ func NewListener(passphrase []byte, localStatic keychain.SingleKeyECDH,
 		return nil, err
 	}
 
-	hc := &HandshakeController{
-		initiator:      false,
-		minVersion:     MinHandshakeVersion,
-		version:        MaxHandshakeVersion,
-		localStatic:    localStatic,
-		remoteStatic:   remoteStatic,
-		onRemoteStatic: onRemoteStatic,
-		passphrase:     passphrase,
-		authData:       authData,
-	}
+	hc := NewHandshakeMgr(&HandshakeMgrConfig{
+		LocalStatic:    localStatic,
+		RemoteStatic:   remoteStatic,
+		AuthData:       authData,
+		Passphrase:     passphrase,
+		OnRemoteStatic: onRemoteStatic,
+	})
 
 	brontideListener := &Listener{
 		hsController:  hc,
@@ -120,7 +117,7 @@ func (l *Listener) doHandshake(conn net.Conn) {
 	default:
 	}
 
-	l.hsController.getConn = func(_ keychain.SingleKeyECDH,
+	l.hsController.cfg.GetConn = func(_ keychain.SingleKeyECDH,
 		_ *btcec.PublicKey, _ []byte) (net.Conn, error) {
 
 		return conn, nil

@@ -18,9 +18,7 @@ type Client struct {
 
 	mailboxConn *ClientConn
 
-	noiseConn *NoiseGrpcConn
-
-	hc *HandshakeController
+	hc *HandshakeMgr
 
 	ctx context.Context
 	sid [64]byte
@@ -44,9 +42,13 @@ func NewClient(ctx context.Context, serverAddr string,
 		serverAddr: serverAddr,
 	}
 
-	hs := NewHandshakeController(
-		true, localStatic, remoteStatic, nil, password, onRemoteStatic,
-		func(localStatic keychain.SingleKeyECDH,
+	hs := NewHandshakeMgr(&HandshakeMgrConfig{
+		Initiator:      true,
+		LocalStatic:    localStatic,
+		RemoteStatic:   remoteStatic,
+		Passphrase:     password,
+		OnRemoteStatic: onRemoteStatic,
+		GetConn: func(localStatic keychain.SingleKeyECDH,
 			remoteStatic *btcec.PublicKey,
 			password []byte) (net.Conn, error) {
 
@@ -82,7 +84,8 @@ func NewClient(ctx context.Context, serverAddr string,
 			}
 
 			return c.mailboxConn, nil
-		}, func(conn net.Conn) error {
+		},
+		CloseConn: func(conn net.Conn) error {
 			clientConn, ok := conn.(*ClientConn)
 			if !ok {
 				return fmt.Errorf("conn not of type ClientConn")
@@ -90,7 +93,7 @@ func NewClient(ctx context.Context, serverAddr string,
 
 			return clientConn.Close()
 		},
-	)
+	})
 
 	c.hc = hs
 	return c, nil

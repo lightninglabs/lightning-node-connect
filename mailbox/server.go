@@ -18,11 +18,9 @@ var _ net.Listener = (*Server)(nil)
 type Server struct {
 	serverHost string
 
-	client hashmailrpc.HashMailClient
-
 	mailboxConn *ServerConn
 
-	hc *HandshakeController
+	hc *HandshakeMgr
 
 	sid [64]byte
 	ctx context.Context
@@ -51,16 +49,19 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 	s := &Server{
 		serverHost: serverHost,
-		client:     clientConn,
 		sid:        sid,
 		quit:       make(chan struct{}),
 	}
 
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
-	hs := NewHandshakeController(
-		false, localKey, remoteKey, authData, password, onRemoteStatic,
-		func(localStatic keychain.SingleKeyECDH,
+	hs := NewHandshakeMgr(&HandshakeMgrConfig{
+		LocalStatic:    localKey,
+		RemoteStatic:   remoteKey,
+		AuthData:       authData,
+		Passphrase:     password,
+		OnRemoteStatic: onRemoteStatic,
+		GetConn: func(localStatic keychain.SingleKeyECDH,
 			remoteStatic *btcec.PublicKey,
 			password []byte) (net.Conn, error) {
 
@@ -73,16 +74,15 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 			if !bytes.Equal(sid[:], s.sid[:]) {
 				s.mailboxConn = nil
+				s.sid = sid
 			}
-
-			s.sid = sid
 
 			// If this is the first connection, we create a new
 			// ServerConn object. otherwise, we just refresh the
 			// ServerConn.
 			if s.mailboxConn == nil {
 				mailboxConn, err := NewServerConn(
-					s.ctx, s.serverHost, s.client, s.sid,
+					s.ctx, s.serverHost, clientConn, s.sid,
 				)
 				if err != nil {
 					return nil, err
@@ -103,7 +103,8 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 			}
 
 			return s.mailboxConn, nil
-		}, func(conn net.Conn) error {
+		},
+		CloseConn: func(conn net.Conn) error {
 			serverConn, ok := conn.(*ServerConn)
 			if !ok {
 				return fmt.Errorf("conn not of type ServerConn")
@@ -111,7 +112,7 @@ func NewServer(serverHost string, localKey keychain.SingleKeyECDH,
 
 			return serverConn.Stop()
 		},
-	)
+	})
 
 	s.hc = hs
 
