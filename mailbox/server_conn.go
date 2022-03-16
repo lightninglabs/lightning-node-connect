@@ -42,10 +42,12 @@ type ServerConn struct {
 // NewServerConn creates a new net.Conn compatible server connection that uses
 // a gRPC based connection to tunnel traffic over a mailbox server.
 func NewServerConn(ctx context.Context, serverHost string,
-	client hashmailrpc.HashMailClient, receiveSID,
-	sendSID [64]byte) (*ServerConn, error) {
+	client hashmailrpc.HashMailClient, sid [64]byte) (*ServerConn, error) {
 
 	ctxc, cancel := context.WithCancel(ctx)
+
+	receiveSID := GetSID(sid, false)
+	sendSID := GetSID(sid, true)
 
 	c := &ServerConn{
 		client: client,

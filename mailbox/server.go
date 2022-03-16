@@ -75,14 +75,11 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
-	receiveSID := GetSID(s.sid, false)
-	sendSID := GetSID(s.sid, true)
-
 	// If this is the first connection, we create a new ServerConn object.
 	// otherwise, we just refresh the ServerConn.
 	if s.mailboxConn == nil {
 		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, receiveSID, sendSID,
+			s.ctx, s.serverHost, s.client, s.sid,
 		)
 		if err != nil {
 			return nil, &temporaryError{err}
