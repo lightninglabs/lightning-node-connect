@@ -1,13 +1,15 @@
 package mailbox
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha512"
 	"fmt"
 	"io"
 	"net"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
+	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 )
 
@@ -20,7 +22,12 @@ type Server struct {
 
 	mailboxConn *ServerConn
 
+	password  []byte
+	localKey  keychain.SingleKeyECDH
+	remoteKey *btcec.PublicKey
+
 	sid [64]byte
+
 	ctx context.Context
 
 	quit   chan struct{}
@@ -28,6 +35,7 @@ type Server struct {
 }
 
 func NewServer(serverHost string, password []byte,
+	localKey keychain.SingleKeyECDH, remoteKey *btcec.PublicKey,
 	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
@@ -38,10 +46,18 @@ func NewServer(serverHost string, password []byte,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
+	sid, err := deriveSID(localKey, remoteKey, password)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Server{
 		serverHost: serverHost,
 		client:     clientConn,
-		sid:        sha512.Sum512(password),
+		password:   password,
+		localKey:   localKey,
+		remoteKey:  remoteKey,
+		sid:        sid,
 		quit:       make(chan struct{}),
 	}
 
@@ -75,11 +91,29 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
+	sid, err := deriveSID(s.localKey, s.remoteKey, s.password)
+	if err != nil {
+		return nil, err
+	}
+
+	// If the SID has changed from what it was previously, then we close any
+	// previous connection we had.
+	if !bytes.Equal(s.sid[:], sid[:]) && s.mailboxConn != nil {
+		err := s.mailboxConn.Stop()
+		if err != nil {
+			log.Errorf("could not close mailbox conn: %v", err)
+		}
+
+		s.mailboxConn = nil
+	}
+
+	s.sid = sid
+
 	// If this is the first connection, we create a new ServerConn object.
 	// otherwise, we just refresh the ServerConn.
 	if s.mailboxConn == nil {
 		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, s.sid,
+			s.ctx, s.serverHost, s.client, sid,
 		)
 		if err != nil {
 			return nil, &temporaryError{err}

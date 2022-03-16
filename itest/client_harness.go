@@ -2,7 +2,6 @@ package itest
 
 import (
 	"context"
-	"crypto/sha512"
 	"crypto/tls"
 	"net/http"
 
@@ -45,8 +44,9 @@ func (c *clientHarness) start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 
-	sid := sha512.Sum512(c.password)
-	transportConn, err := mailbox.NewClient(ctx, sid)
+	transportConn, err := mailbox.NewClient(
+		ctx, c.localStatic, c.remoteStatic, c.password,
+	)
 	if err != nil {
 		return err
 	}

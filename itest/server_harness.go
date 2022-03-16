@@ -64,7 +64,8 @@ func (s *serverHarness) stop() {
 
 func (s *serverHarness) start() error {
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, s.password[:], grpc.WithTransportCredentials(
+		s.serverHost, s.password[:], s.localStatic, s.remoteStatic,
+		grpc.WithTransportCredentials(
 			credentials.NewTLS(s.tlsConfig),
 		),
 	)

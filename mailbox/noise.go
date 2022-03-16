@@ -3,6 +3,7 @@ package mailbox
 import (
 	"bytes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -1018,6 +1019,17 @@ func (b *Machine) DoHandshake(rw io.ReadWriter) error {
 func ecdh(pub *btcec.PublicKey, priv keychain.SingleKeyECDH) ([]byte, error) {
 	hash, err := priv.ECDH(pub)
 	return hash[:], err
+}
+
+// hmac256 computes the HMAC-SHA256 of a key and message.
+func hmac256(key, message []byte) ([]byte, error) {
+	mac := hmac.New(sha256.New, key)
+	_, err := mac.Write(message)
+	if err != nil {
+		return nil, err
+	}
+
+	return mac.Sum(nil), nil
 }
 
 // ekeMask masks the passed ephemeral key with the stored pass phrase, using
