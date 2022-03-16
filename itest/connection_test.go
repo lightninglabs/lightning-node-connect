@@ -63,7 +63,7 @@ func testClientReconnect(t *harnessTest) {
 	require.NoError(t.t, t.client.cleanup())
 
 	// Restart the client.
-	require.NoError(t.t, t.client.setConn(t.server.password[:]))
+	require.NoError(t.t, t.client.start())
 
 	resp, err = t.client.clientConn.MockServiceMethod(
 		ctx, &mockrpc.Request{Req: defaultMessage},
@@ -82,7 +82,7 @@ func testServerReconnect(t *harnessTest) {
 	require.Equal(t.t, len(defaultMessage)*10, len(resp.Resp))
 
 	t.server.stop()
-	require.NoError(t.t, t.server.start(false))
+	require.NoError(t.t, t.server.start())
 
 	select {
 	case err := <-t.server.errChan:

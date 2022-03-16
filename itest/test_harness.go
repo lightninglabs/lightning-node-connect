@@ -158,10 +158,12 @@ func setupHarnesses(t *testing.T) (*clientHarness, *serverHarness,
 func setupClientAndServerHarnesses(t *testing.T,
 	mailboxAddr string, insecure bool) (*clientHarness, *serverHarness) {
 
-	serverHarness := newServerHarness(mailboxAddr, insecure)
-	if err := serverHarness.start(true); err != nil {
-		t.Fatalf("could not start server: %v", err)
-	}
+	serverHarness, err := newServerHarness(mailboxAddr, insecure)
+	require.NoError(t, err)
+	require.NoError(t, serverHarness.start())
+	t.Cleanup(func() {
+		serverHarness.stop()
+	})
 
 	select {
 	case err := <-serverHarness.errChan:
@@ -174,10 +176,15 @@ func setupClientAndServerHarnesses(t *testing.T,
 	// Give the server some time to set up the first mailbox
 	time.Sleep(1000 * time.Millisecond)
 
-	clientHarness := newClientHarness(mailboxAddr)
-	if err := clientHarness.setConn(serverHarness.password[:]); err != nil {
-		t.Fatalf("could not connect client: %v", err)
-	}
+	clientHarness, err := newClientHarness(
+		mailboxAddr, serverHarness.password,
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, clientHarness.start())
+	t.Cleanup(func() {
+		_ = clientHarness.cleanup()
+	})
 
 	return clientHarness, serverHarness
 }

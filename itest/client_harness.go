@@ -19,36 +19,39 @@ type clientHarness struct {
 	grpcConn   *grpc.ClientConn
 	clientConn mockrpc.MockServiceClient
 
+	password     []byte
+	localStatic  keychain.SingleKeyECDH
+	remoteStatic *btcec.PublicKey
+
 	cancel func()
 }
 
-func newClientHarness(serverAddress string) *clientHarness {
-	return &clientHarness{
-		serverAddr: serverAddress,
-	}
-}
-
-func (c *clientHarness) setConn(words []string) error {
-	var mnemonicWords [mailbox.NumPasswordWords]string
-	copy(mnemonicWords[:], words)
-	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
-
-	sid := sha512.Sum512(password[:])
+func newClientHarness(serverAddress string, password []byte) (*clientHarness,
+	error) {
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
 
+	return &clientHarness{
+		serverAddr:  serverAddress,
+		password:    password,
+		localStatic: &keychain.PrivKeyECDH{PrivKey: privKey},
+	}, nil
+}
+
+func (c *clientHarness) start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
+
+	sid := sha512.Sum512(c.password)
 	transportConn, err := mailbox.NewClient(ctx, sid)
 	if err != nil {
 		return err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(c.localStatic, nil, c.password[:])
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),
