@@ -71,7 +71,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 		ctxc, c.sendToStream, c.recvFromStream, c.gbnOptions...,
 	)
 	if err != nil {
-		return c, err
+		return nil, err
 	}
 	log.Debugf("ServerConn: done creating gbn")
 
@@ -112,7 +112,7 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 		sc.ctx, sc.sendToStream, sc.recvFromStream, sc.gbnOptions...,
 	)
 	if err != nil {
-		return sc, err
+		return nil, err
 	}
 
 	log.Debugf("ServerConn: done creating gbn")

@@ -42,18 +42,12 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn,
 	if c.mailboxConn == nil {
 		mailboxConn, err := NewClientConn(c.ctx, c.sid, serverHost)
 		if err != nil {
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		c.mailboxConn = mailboxConn
 	} else {
 		mailboxConn, err := RefreshClientConn(c.ctx, c.mailboxConn)
 		if err != nil {
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		c.mailboxConn = mailboxConn

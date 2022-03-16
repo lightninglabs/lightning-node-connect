@@ -31,6 +31,9 @@ func NewClientConn(n uint8, sendFunc sendBytesFunc, receiveFunc recvBytesFunc,
 	}
 
 	if err := conn.clientHandshake(); err != nil {
+		if err := conn.Close(); err != nil {
+			log.Errorf("error closing gbn ClientConn: %v", err)
+		}
 		return nil, err
 	}
 	conn.start()

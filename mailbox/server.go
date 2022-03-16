@@ -85,10 +85,6 @@ func (s *Server) Accept() (net.Conn, error) {
 			s.ctx, s.serverHost, s.client, receiveSID, sendSID,
 		)
 		if err != nil {
-			log.Errorf("couldn't create new server: %v", err)
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		s.mailboxConn = mailboxConn
@@ -96,12 +92,6 @@ func (s *Server) Accept() (net.Conn, error) {
 	} else {
 		mailboxConn, err := RefreshServerConn(s.mailboxConn)
 		if err != nil {
-			log.Errorf("couldn't refresh server: %v", err)
-			if err := mailboxConn.Stop(); err != nil {
-				return nil, &temporaryError{err}
-			}
-
-			s.mailboxConn = nil
 			return nil, &temporaryError{err}
 		}
 		s.mailboxConn = mailboxConn
