@@ -35,10 +35,11 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         go.argv = [
             'wasm-client',
             '--debuglevel=trace',
+            '--namespace=example',
         ];
         let readyTicker = null;
         let isReady = function () {
-            let result = wasmClientIsReady();
+            let result = example.wasmClientIsReady();
             console.log('Is WASM client ready? Result: ' + result);
             if (result === true) {
                 clearInterval(readyTicker);
@@ -55,29 +56,29 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         let password = $('#password').val();
         let connectedTicker = null;
         let isConnected = function () {
-            let result = wasmClientIsConnected();
+            let result = example.wasmClientIsConnected();
             console.log('Is WASM client connected? Result: ' + result);
             if (result === true) {
                 clearInterval(connectedTicker);
                 $('#ready').show();
                 document.getElementById('runButton').disabled = true;
-                window.onunload = wasmClientDisconnect;
+                window.onunload = example.wasmClientDisconnect;
             }
         }
         connectedTicker = setInterval(isConnected, 200);
-        wasmClientConnectServer(server, true, password);
+        example.wasmClientConnectServer(server, true, password);
     }
 
     async function callWASM(rpcName, req) {
-        wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
+        example.wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
     }
 
     async function callWASMLoop(rpcName, req) {
-        wasmClientInvokeRPC('looprpc.SwapClient.' + rpcName, req, setResult);
+        example.wasmClientInvokeRPC('looprpc.SwapClient.' + rpcName, req, setResult);
     }
 
     async function callWASMPool(rpcName, req) {
-        wasmClientInvokeRPC('poolrpc.Trader.' + rpcName, req, setResult);
+        example.wasmClientInvokeRPC('poolrpc.Trader.' + rpcName, req, setResult);
     }
 
     function setResult(result) {

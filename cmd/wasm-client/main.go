@@ -84,14 +84,19 @@ func main() {
 		exit(err)
 	}
 
-	wc := newWasmClient(&cfg)
+	wc, err := newWasmClient(&cfg)
+	if err != nil {
+		exit(err)
+	}
 
 	// Setup JS callbacks.
-	js.Global().Set("wasmClientIsReady", js.FuncOf(wc.IsReady))
-	js.Global().Set("wasmClientConnectServer", js.FuncOf(wc.ConnectServer))
-	js.Global().Set("wasmClientIsConnected", js.FuncOf(wc.IsConnected))
-	js.Global().Set("wasmClientDisconnect", js.FuncOf(wc.Disconnect))
-	js.Global().Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
+	callbacks := js.ValueOf(make(map[string]interface{}))
+	callbacks.Set("wasmClientIsReady", js.FuncOf(wc.IsReady))
+	callbacks.Set("wasmClientConnectServer", js.FuncOf(wc.ConnectServer))
+	callbacks.Set("wasmClientIsConnected", js.FuncOf(wc.IsConnected))
+	callbacks.Set("wasmClientDisconnect", js.FuncOf(wc.Disconnect))
+	callbacks.Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
+	js.Global().Set(cfg.NameSpace, callbacks)
 
 	for _, registration := range registrations {
 		registration(wc.registry)
@@ -116,13 +121,17 @@ type wasmClient struct {
 		string, func(string, error))
 }
 
-func newWasmClient(cfg *config) *wasmClient {
+func newWasmClient(cfg *config) (*wasmClient, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("config validation error: %v", err)
+	}
+
 	return &wasmClient{
 		cfg:     cfg,
 		lndConn: nil,
 		registry: make(map[string]func(context.Context,
 			*grpc.ClientConn, string, func(string, error))),
-	}
+	}, nil
 }
 
 func (w *wasmClient) IsReady(_ js.Value, _ []js.Value) interface{} {
