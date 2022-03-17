@@ -31,11 +31,27 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     });
 
     async function startInstance(module, instance) {
+        let localKey = ""
+        let remoteKey = ""
+
+        if (localStorage.getItem("localKey")) {
+            localKey = localStorage.getItem("localKey")
+        }
+
+        if (localStorage.getItem("remoteKey")) {
+            remoteKey = localStorage.getItem("remoteKey")
+        }
+
         console.clear();
         go.argv = [
             'wasm-client',
             '--debuglevel=trace',
             '--namespace=example',
+            '--localprivate='+localKey,
+            '--remotepublic='+remoteKey,
+            '--onlocalprivcreate=onLocalKeyCreate',
+            '--onremotekeyreceive=onRemoteKeyReceive',
+            '--onauthdata=onAuthData',
         ];
         let readyTicker = null;
         let isReady = function () {
@@ -83,6 +99,29 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
     function setResult(result) {
         $('#output').text(result);
+    }
+
+    function onLocalKeyCreate(keyHex) {
+        console.log("local private key created: "+keyHex)
+        localStorage.setItem("localKey", keyHex)
+        return {}
+        // In case of an error, return an object with the following structure:
+        //      `return {err:"this totally failed"}`
+    }
+
+    function onRemoteKeyReceive(keyHex) {
+        console.log("remote key received: "+keyHex)
+        localStorage.setItem("remoteKey", keyHex)
+        return {}
+        // In case of an error, return an object with the following structure:
+        //      `return {err:"this totally failed"}`
+    }
+
+    function onAuthData(data) {
+        console.log("auth data received: "+data)
+        return {}
+        // In case of an error, return an object with the following structure:
+        //      `return {err:"this totally failed"}`
     }
 </script>
 

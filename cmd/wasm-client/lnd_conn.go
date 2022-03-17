@@ -13,21 +13,20 @@ import (
 	"google.golang.org/grpc"
 )
 
-func mailboxRPCConnection(mailboxServer,
-	pairingPhrase string) (*grpc.ClientConn, error) {
+func mailboxRPCConnection(mailboxServer, pairingPhrase string,
+	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
+	onRemoteStatic func(key *btcec.PublicKey) error,
+	onAuthData func(data []byte) error) (*grpc.ClientConn, error) {
 
 	words := strings.Split(pairingPhrase, " ")
 	var mnemonicWords [mailbox.NumPasswordWords]string
 	copy(mnemonicWords[:], words)
 	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
 
-	privKey, err := btcec.NewPrivateKey(btcec.S256())
-	if err != nil {
-		return nil, err
-	}
-	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-
-	connData := mailbox.NewConnData(ecdh, nil, password[:], nil, nil, nil)
+	connData := mailbox.NewConnData(
+		localStatic, remoteStatic, password[:], nil, onRemoteStatic,
+		onAuthData,
+	)
 
 	ctx := context.Background()
 	transportConn, err := mailbox.NewClient(ctx, connData)

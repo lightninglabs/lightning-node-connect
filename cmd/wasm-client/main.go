@@ -6,16 +6,19 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
 	"runtime/debug"
 	"syscall/js"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/autopilotrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
@@ -86,7 +89,7 @@ func main() {
 
 	wc, err := newWasmClient(&cfg)
 	if err != nil {
-		exit(err)
+		exit(fmt.Errorf("config validation error: %v", err))
 	}
 
 	// Setup JS callbacks.
@@ -117,18 +120,76 @@ type wasmClient struct {
 
 	lndConn *grpc.ClientConn
 
+	localStaticKey  keychain.SingleKeyECDH
+	remoteStaticKey *btcec.PublicKey
+
 	registry map[string]func(context.Context, *grpc.ClientConn,
 		string, func(string, error))
 }
 
 func newWasmClient(cfg *config) (*wasmClient, error) {
 	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("config validation error: %v", err)
+		return nil, err
+	}
+
+	var (
+		localStaticKey  keychain.SingleKeyECDH
+		remoteStaticKey *btcec.PublicKey
+	)
+	switch {
+	case cfg.LocalPrivate == "" && cfg.RemotePublic == "":
+		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		if err != nil {
+			return nil, err
+		}
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+		err = callJsCallback(
+			cfg.OnLocalPrivCreate,
+			hex.EncodeToString(privKey.Serialize()),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+	case cfg.RemotePublic == "":
+		privKeyByte, err := hex.DecodeString(cfg.LocalPrivate)
+		if err != nil {
+			return nil, err
+		}
+
+		privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyByte)
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+	default:
+		// Both local and remote are set.
+		localPrivKeyBytes, err := hex.DecodeString(cfg.LocalPrivate)
+		if err != nil {
+			return nil, err
+		}
+		privKey, _ := btcec.PrivKeyFromBytes(
+			btcec.S256(), localPrivKeyBytes,
+		)
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+		remoteKeyBytes, err := hex.DecodeString(cfg.RemotePublic)
+		if err != nil {
+			return nil, err
+		}
+
+		remoteStaticKey, err = btcec.ParsePubKey(
+			remoteKeyBytes, btcec.S256(),
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &wasmClient{
-		cfg:     cfg,
-		lndConn: nil,
+		cfg:             cfg,
+		lndConn:         nil,
+		localStaticKey:  localStaticKey,
+		remoteStaticKey: remoteStaticKey,
 		registry: make(map[string]func(context.Context,
 			*grpc.ClientConn, string, func(string, error))),
 	}, nil
@@ -161,7 +222,19 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	}
 
 	var err error
-	w.lndConn, err = mailboxRPCConnection(mailboxServer, pairingPhrase)
+	w.lndConn, err = mailboxRPCConnection(
+		mailboxServer, pairingPhrase, w.localStaticKey,
+		w.remoteStaticKey, func(key *btcec.PublicKey) error {
+			return callJsCallback(
+				w.cfg.OnRemoteKeyReceive,
+				hex.EncodeToString(key.SerializeCompressed()),
+			)
+		}, func(data []byte) error {
+			return callJsCallback(
+				w.cfg.OnAuthData, hex.EncodeToString(data),
+			)
+		},
+	)
 	if err != nil {
 		exit(err)
 	}
@@ -220,6 +293,20 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	}()
 	return nil
 
+}
+
+func callJsCallback(callbackName string, value string) error {
+	retValue := js.Global().Call(callbackName, value)
+
+	if isEmptyObject(retValue) || isEmptyObject(retValue.Get("err")) {
+		return nil
+	}
+
+	return fmt.Errorf(retValue.Get("err").String())
+}
+
+func isEmptyObject(value js.Value) bool {
+	return value.IsNull() || value.IsUndefined()
 }
 
 func exit(err error) {
