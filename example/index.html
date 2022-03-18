@@ -24,29 +24,27 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     }
 
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch('wasm-client.wasm'), go.importObject).then((result) => {
-        startInstance(result.module, result.instance);
-    }).catch((err) => {
-        console.error(err);
-    });
+    let namespace = ""
 
     async function startInstance(module, instance) {
+        namespace = $('#namespace').val();
+
         let localKey = ""
         let remoteKey = ""
 
-        if (localStorage.getItem("localKey")) {
-            localKey = localStorage.getItem("localKey")
+        if (localStorage.getItem(namespace+":localKey")) {
+            localKey = localStorage.getItem(namespace+":localKey")
         }
 
-        if (localStorage.getItem("remoteKey")) {
-            remoteKey = localStorage.getItem("remoteKey")
+        if (localStorage.getItem(namespace+":remoteKey")) {
+            remoteKey = localStorage.getItem(namespace+":remoteKey")
         }
 
         console.clear();
         go.argv = [
             'wasm-client',
             '--debuglevel=trace',
-            '--namespace=example',
+            '--namespace='+namespace,
             '--localprivate='+localKey,
             '--remotepublic='+remoteKey,
             '--onlocalprivcreate=onLocalKeyCreate',
@@ -55,11 +53,22 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         ];
         let readyTicker = null;
         let isReady = function () {
-            let result = example.wasmClientIsReady();
+            if (!window[namespace]) {
+                return
+            }
+            let result = window[namespace].wasmClientIsReady();
             console.log('Is WASM client ready? Result: ' + result);
             if (result === true) {
                 clearInterval(readyTicker);
                 document.getElementById('runButton').disabled = false;
+            }
+
+            // If we have a remote key stored, it means that the handshake we will do to create a connection will not
+            // involve the passphrase, so we can immediately connect to the server.
+            if (remoteKey != "") {
+                connectServer()
+            } else {
+                $('#passphrase').show();
             }
         }
         readyTicker = setInterval(isReady, 200);
@@ -67,34 +76,49 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         await WebAssembly.instantiate(module, go.importObject);
     }
 
+    async function initClient() {
+        WebAssembly.instantiateStreaming(fetch('wasm-client.wasm'), go.importObject).then((result) => {
+            startInstance(result.module, result.instance);
+        }).catch((err) => {
+            console.error(err);
+        });
+    }
+
     async function connectServer() {
         let server = $('#server').val();
+
+        if (localStorage.getItem(namespace+":mailboxHost")) {
+            server = localStorage.getItem(namespace+":mailboxHost")
+        } else {
+            localStorage.setItem(namespace+":mailboxHost", server)
+        }
+
         let password = $('#password').val();
         let connectedTicker = null;
         let isConnected = function () {
-            let result = example.wasmClientIsConnected();
+            let result = window[namespace].wasmClientIsConnected();
             console.log('Is WASM client connected? Result: ' + result);
             if (result === true) {
                 clearInterval(connectedTicker);
                 $('#ready').show();
                 document.getElementById('runButton').disabled = true;
-                window.onunload = example.wasmClientDisconnect;
+                window.onunload = window[namespace].wasmClientDisconnect;
             }
         }
         connectedTicker = setInterval(isConnected, 200);
-        example.wasmClientConnectServer(server, true, password);
+        window[namespace].wasmClientConnectServer(server, true, password);
     }
 
     async function callWASM(rpcName, req) {
-        example.wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
+        window[namespace].wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
     }
 
     async function callWASMLoop(rpcName, req) {
-        example.wasmClientInvokeRPC('looprpc.SwapClient.' + rpcName, req, setResult);
+        window[namespace].wasmClientInvokeRPC('looprpc.SwapClient.' + rpcName, req, setResult);
     }
 
     async function callWASMPool(rpcName, req) {
-        example.wasmClientInvokeRPC('poolrpc.Trader.' + rpcName, req, setResult);
+        window[namespace].wasmClientInvokeRPC('poolrpc.Trader.' + rpcName, req, setResult);
     }
 
     function setResult(result) {
@@ -103,7 +127,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
     function onLocalKeyCreate(keyHex) {
         console.log("local private key created: "+keyHex)
-        localStorage.setItem("localKey", keyHex)
+        localStorage.setItem(namespace+":localKey", keyHex)
         return {}
         // In case of an error, return an object with the following structure:
         //      `return {err:"this totally failed"}`
@@ -111,7 +135,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
     function onRemoteKeyReceive(keyHex) {
         console.log("remote key received: "+keyHex)
-        localStorage.setItem("remoteKey", keyHex)
+        localStorage.setItem(namespace+":remoteKey", keyHex)
         return {}
         // In case of an error, return an object with the following structure:
         //      `return {err:"this totally failed"}`
@@ -125,13 +149,21 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     }
 </script>
 
-<label for="password">Password: </label>
-<input id="password" type="text" size="50" maxlength="255"><br />
-<label for="server">Server: </label>
-<input id="server" type="text" size="50" maxlength="255"
-       value="mailbox.terminal.lightning.today:443">
-<button onClick="connectServer();" id="runButton" disabled>Connect to server
-</button>
+<h4>Choose a namespace to initiate the client with:</h4>
+<label for="namespace">Namespace: </label>
+<input id="namespace" type="text" size="50" maxlength="50" value="default"><br />
+<button onClick="initClient();" id="initClient">Initiate the client</button><br /><br />
+
+<div id="passphrase" style="display:none">
+    <h4>Now connect to the server with the session passphrase</h4>
+    <label for="password">Password: </label>
+    <input id="password" type="text" size="50" maxlength="255"><br />
+    <label for="server">Server: </label>
+    <input id="server" type="text" size="50" maxlength="255"
+           value="mailbox.terminal.lightning.today:443"><br />
+    <button onClick="connectServer();" id="runButton" disabled>Connect to server
+    </button>
+</div>
 
 <br /><br />
 
