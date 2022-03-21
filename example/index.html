@@ -109,6 +109,10 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         window[namespace].wasmClientConnectServer(server, true, password);
     }
 
+    async function clearStorage() {
+        localStorage.clear()
+    }
+
     async function callWASM(rpcName, req) {
         window[namespace].wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
     }
@@ -152,7 +156,8 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 <h4>Choose a namespace to initiate the client with:</h4>
 <label for="namespace">Namespace: </label>
 <input id="namespace" type="text" size="50" maxlength="50" value="default"><br />
-<button onClick="initClient();" id="initClient">Initiate the client</button><br /><br />
+<button onClick="initClient();" id="initClient">Initiate the client</button>
+<button onClick="clearStorage();" id="clearStorage">Delete all stored session info</button><br /><br />
 
 <div id="passphrase" style="display:none">
     <h4>Now connect to the server with the session passphrase</h4>
