@@ -278,7 +278,7 @@ func TestHandshake(t *testing.T) {
 	_, err := rand.Read(largeAuthData)
 	require.NoError(t, err)
 
-	tests := []struct {
+	type test struct {
 		name                 string
 		serverMinVersion     byte
 		serverMaxVersion     byte
@@ -286,7 +286,9 @@ func TestHandshake(t *testing.T) {
 		clientMaxVersion     byte
 		expectedFinalVersion byte
 		authData             []byte
-	}{
+	}
+
+	tests := []*test{
 		{
 			name:                 "server v0 and client v0",
 			serverMinVersion:     HandshakeVersion0,
@@ -334,6 +336,81 @@ func TestHandshake(t *testing.T) {
 		},
 	}
 
+	handshakeTest := func(t *testing.T, test *test, server,
+		client *NoiseGrpcConn, conn1, conn2 *mockProxyConn) {
+
+		var (
+			serverConn net.Conn
+		)
+		serverErrChan := make(chan error)
+		go func() {
+			var err error
+			serverConn, _, err = server.ServerHandshake(conn1)
+			serverErrChan <- err
+		}()
+
+		clientConn, _, err := client.ClientHandshake(
+			context.Background(), "", conn2,
+		)
+		require.NoError(t, err)
+
+		select {
+		case err := <-serverErrChan:
+			if err != nil {
+				t.Fatal(err)
+			}
+
+		case <-time.After(time.Second):
+			t.Fatalf("handshake timeout")
+		}
+
+		// Check that the negotiated version on either side
+		// is as expected.
+		require.Equal(
+			t, test.expectedFinalVersion,
+			client.noise.version,
+		)
+		require.Equal(
+			t, test.expectedFinalVersion,
+			server.noise.version,
+		)
+
+		// Ensure that any auth data was successfully received
+		// by the client.
+		require.True(
+			t, bytes.Equal(
+				client.connData.AuthData(), test.authData,
+			),
+		)
+
+		if test.expectedFinalVersion >= 2 {
+			require.True(
+				t, client.connData.RemoteKey().IsEqual(
+					server.connData.LocalKey().PubKey(),
+				),
+			)
+
+			require.True(
+				t, server.connData.RemoteKey().IsEqual(
+					client.connData.LocalKey().PubKey(),
+				),
+			)
+		}
+
+		// Check that messages can be sent between client and
+		// server normally now.
+		testMessage := []byte("test message")
+		go func() {
+			_, err := clientConn.Write(testMessage)
+			require.NoError(t, err)
+		}()
+
+		recvBuffer := make([]byte, len(testMessage))
+		_, err = serverConn.Read(recvBuffer)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(recvBuffer, testMessage))
+	}
+
 	pk1, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(t, err)
 
@@ -343,6 +420,14 @@ func TestHandshake(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
+			conn1, conn2 := newMockProxyConns()
+			defer func() {
+				conn1.Close()
+				conn2.Close()
+			}()
+
+			// First perform the tests without passing in the
+			// remote's pub key.
 			server := NewNoiseGrpcConn(
 				NewConnData(
 					&keychain.PrivKeyECDH{PrivKey: pk1},
@@ -361,50 +446,26 @@ func TestHandshake(t *testing.T) {
 				WithMaxHandshakeVersion(test.clientMaxVersion),
 			)
 
-			conn1, conn2 := newMockProxyConns()
-			defer func() {
-				conn1.Close()
-				conn2.Close()
-			}()
+			handshakeTest(t, test, server, client, conn1, conn2)
 
-			var (
-				serverConn net.Conn
-			)
-			serverErrChan := make(chan error)
-			go func() {
-				var err error
-				serverConn, _, err = server.ServerHandshake(
-					conn1,
-				)
-				serverErrChan <- err
-			}()
-
-			clientConn, _, err := client.ClientHandshake(
-				context.Background(), "", conn2,
-			)
-			if err != nil {
-				t.Fatal(err)
+			if test.serverMaxVersion < HandshakeVersion2 &&
+				test.clientMaxVersion < HandshakeVersion2 {
+				return
 			}
 
-			select {
-			case err := <-serverErrChan:
-				if err != nil {
-					t.Fatal(err)
-				}
-
-			case <-time.After(time.Second):
-				t.Fatalf("handshake timeout")
-			}
-
-			// Check that the negotiated version on either side
-			// is as expected.
-			require.Equal(
-				t, test.expectedFinalVersion,
-				client.noise.version,
-			)
-			require.Equal(
-				t, test.expectedFinalVersion,
-				server.noise.version,
+			// If either the client or server supports a version
+			// above or equal to version 2, we do the test again
+			// but this time the NoiseGrpcConn's will be initialised
+			// with the remote parties static key in order to force
+			// the KK pattern handshake.
+			server = NewNoiseGrpcConn(
+				NewConnData(
+					&keychain.PrivKeyECDH{PrivKey: pk1},
+					pk2.PubKey(), pass, test.authData, nil,
+					nil,
+				),
+				WithMinHandshakeVersion(test.serverMinVersion),
+				WithMaxHandshakeVersion(test.serverMaxVersion),
 			)
 
 			// Ensure that any auth data was successfully received
@@ -416,34 +477,16 @@ func TestHandshake(t *testing.T) {
 				),
 			)
 
-			if test.expectedFinalVersion >= 2 {
-				require.True(
-					t, client.connData.RemoteKey().IsEqual(
-						server.connData.LocalKey().
-							PubKey(),
-					),
-				)
+			client = NewNoiseGrpcConn(
+				NewConnData(
+					&keychain.PrivKeyECDH{PrivKey: pk2},
+					pk1.PubKey(), pass, nil, nil, nil,
+				),
+				WithMinHandshakeVersion(test.clientMinVersion),
+				WithMaxHandshakeVersion(test.clientMaxVersion),
+			)
 
-				require.True(
-					t, server.connData.RemoteKey().IsEqual(
-						client.connData.LocalKey().
-							PubKey(),
-					),
-				)
-			}
-
-			// Check that messages can be sent between client and
-			// server normally now.
-			testMessage := []byte("test message")
-			go func() {
-				_, err := clientConn.Write(testMessage)
-				require.NoError(t, err)
-			}()
-
-			recvBuffer := make([]byte, len(testMessage))
-			_, err = serverConn.Read(recvBuffer)
-			require.NoError(t, err)
-			require.True(t, bytes.Equal(recvBuffer, testMessage))
+			handshakeTest(t, test, server, client, conn1, conn2)
 		})
 	}
 }
