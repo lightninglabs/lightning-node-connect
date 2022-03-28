@@ -11,10 +11,9 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/keychain"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -98,17 +97,16 @@ var (
 
 	// ephemeralGen is the default ephemeral key generator, used to derive a
 	// unique ephemeral key for each brontide handshake.
-	ephemeralGen = func() (*btcec.PrivateKey, error) {
-		return btcec.NewPrivateKey(btcec.S256())
-	}
+	ephemeralGen = btcec.NewPrivateKey
 
 	// N is the generator point we'll use for our PAKE protocol. It was
 	// generated via a try-and-increment approach using the phrase
 	// "Lightning Node Connect" with SHA2-256.
 	nBytes, _ = hex.DecodeString(
-		"0254a58cd0f31c008fd0bc9b2dd5ba586144933829f6da33ac4130b555fb5ea32c",
+		"0254a58cd0f31c008fd0bc9b2dd5ba586144933829f6da33ac4130b555fb" +
+			"5ea32c",
 	)
-	N, _ = btcec.ParsePubKey(nBytes, btcec.S256())
+	N, _ = btcec.ParsePubKey(nBytes)
 )
 
 // cipherState encapsulates the state for the AEAD which will be used to
@@ -778,9 +776,7 @@ func (h *handshakeState) readTokens(r io.Reader, tokens []Token) error {
 				return err
 			}
 
-			h.remoteEphemeral, err = btcec.ParsePubKey(
-				e[:], btcec.S256(),
-			)
+			h.remoteEphemeral, err = btcec.ParsePubKey(e[:])
 			if err != nil {
 				return err
 			}
@@ -794,9 +790,7 @@ func (h *handshakeState) readTokens(r io.Reader, tokens []Token) error {
 				return err
 			}
 
-			maskedEphemeral, err := btcec.ParsePubKey(
-				me[:], btcec.S256(),
-			)
+			maskedEphemeral, err := btcec.ParsePubKey(me[:])
 			if err != nil {
 				return err
 			}
@@ -824,9 +818,7 @@ func (h *handshakeState) readTokens(r io.Reader, tokens []Token) error {
 				return err
 			}
 
-			h.remoteStatic, err = btcec.ParsePubKey(
-				rs, btcec.S256(),
-			)
+			h.remoteStatic, err = btcec.ParsePubKey(rs)
 			if err != nil {
 				return err
 			}
@@ -1076,44 +1068,48 @@ func hmac256(key, message []byte) ([]byte, error) {
 // using SPAKE2 as the public masking operation: me = e + N*pw
 func ekeMask(e *btcec.PublicKey, passphraseEntropy []byte) *btcec.PublicKey {
 	// me = e + N*pw
-	passPointX, passPointY := btcec.S256().ScalarMult(
-		N.X, N.Y, passphraseEntropy,
-	)
-	maskedEx, maskedEy := btcec.S256().Add(
-		e.X, e.Y,
-		passPointX, passPointY,
-	)
+	pw := new(btcec.ModNScalar)
+	pw.SetByteSlice(passphraseEntropy)
 
-	return &btcec.PublicKey{
-		X:     maskedEx,
-		Y:     maskedEy,
-		Curve: btcec.S256(),
-	}
+	var nJacob, pwNJacob btcec.JacobianPoint
+	N.AsJacobian(&nJacob)
+	btcec.ScalarMultNonConst(pw, &nJacob, &pwNJacob)
+
+	var eJacob, resultJacob btcec.JacobianPoint
+	e.AsJacobian(&eJacob)
+	btcec.AddNonConst(&eJacob, &pwNJacob, &resultJacob)
+
+	resultJacob.ToAffine()
+	return btcec.NewPublicKey(&resultJacob.X, &resultJacob.Y)
 }
 
 // ekeUnmask does the inverse operation of ekeMask: e = me - N*pw
 func ekeUnmask(me *btcec.PublicKey, passphraseEntropy []byte) *btcec.PublicKey {
 	// First, we'll need to re-generate the passphraseEntropy point: N*pw
-	passPointX, passPointY := btcec.S256().ScalarMult(
-		N.X, N.Y, passphraseEntropy,
-	)
+	pw := new(btcec.ModNScalar)
+	pw.SetByteSlice(passphraseEntropy)
+
+	var nJacob, pwNJacob btcec.JacobianPoint
+	N.AsJacobian(&nJacob)
+	btcec.ScalarMultNonConst(pw, &nJacob, &pwNJacob)
 
 	// With that generated, negate the y coordinate, then add that to the
 	// masked point, which gives us the proper ephemeral key.
-	passPointNegY := new(big.Int).Neg(passPointY)
-	passPointNegY = passPointY.Mod(passPointNegY, btcec.S256().P)
+	// Get -N*pw by negating the Y axis. We normalize first so we can negate
+	// with the magnitude of 1 and then again to make sure everything is
+	// normalized again after the negation.
+	pwNJacob.ToAffine()
+	pwNJacob.Y.Normalize()
+	pwNJacob.Y.Negate(1)
+	pwNJacob.Y.Normalize()
 
 	// e = me - N*pw
-	eX, eY := btcec.S256().Add(
-		me.X, me.Y,
-		passPointX, passPointNegY,
-	)
+	var meJacob, resultJacob btcec.JacobianPoint
+	me.AsJacobian(&meJacob)
+	btcec.AddNonConst(&meJacob, &pwNJacob, &resultJacob)
 
-	return &btcec.PublicKey{
-		X:     eX,
-		Y:     eY,
-		Curve: btcec.S256(),
-	}
+	resultJacob.ToAffine()
+	return btcec.NewPublicKey(&resultJacob.X, &resultJacob.Y)
 }
 
 // split is the final wrap-up act to be executed at the end of a successful

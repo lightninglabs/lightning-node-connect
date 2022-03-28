@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ import (
 func TestSpake2Mask(t *testing.T) {
 	t.Parallel()
 
-	priv, err := btcec.NewPrivateKey(btcec.S256())
+	priv, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	pub := priv.PubKey()
@@ -40,10 +40,10 @@ func TestSpake2Mask(t *testing.T) {
 // messages afterwards.
 func TestXXHandshake(t *testing.T) {
 	// First, generate static keys for each party.
-	pk1, err := btcec.NewPrivateKey(btcec.S256())
+	pk1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	pk2, err := btcec.NewPrivateKey(btcec.S256())
+	pk2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	// Create a passphraseEntropy that will be used to mask the first ephemeral key.
@@ -149,10 +149,10 @@ func TestXXHandshake(t *testing.T) {
 // complete a Noise_KK pattern handshake.
 func TestKKHandshake(t *testing.T) {
 	// First, generate static keys for each party.
-	pk1, err := btcec.NewPrivateKey(btcec.S256())
+	pk1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	pk2, err := btcec.NewPrivateKey(btcec.S256())
+	pk2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	// Create a passphraseEntropy that will be used to mask the first ephemeral key.
@@ -411,10 +411,10 @@ func TestHandshake(t *testing.T) {
 		require.True(t, bytes.Equal(recvBuffer, testMessage))
 	}
 
-	pk1, err := btcec.NewPrivateKey(btcec.S256())
+	pk1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	pk2, err := btcec.NewPrivateKey(btcec.S256())
+	pk2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	for _, test := range tests {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/tor"
 	"github.com/stretchr/testify/require"
@@ -28,7 +28,7 @@ type maybeNetConn struct {
 
 func makeListener(passphrase, authData []byte) (*Listener, net.Addr, error) {
 	// First, generate the long-term private keys for the brontide listener.
-	localPriv, err := btcec.NewPrivateKey(btcec.S256())
+	localPriv, err := btcec.NewPrivateKey()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -63,7 +63,7 @@ func establishTestConnection(clientPass, serverPass,
 
 	// Now, generate the long-term private keys remote end of the connection
 	// within our test.
-	remotePriv, err := btcec.NewPrivateKey(btcec.S256())
+	remotePriv, err := btcec.NewPrivateKey()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -230,7 +230,7 @@ func TestConcurrentHandshakes(t *testing.T) {
 
 	// Now, construct a new private key and use the brontide dialer to
 	// connect to the listener.
-	remotePriv, err := btcec.NewPrivateKey(btcec.S256())
+	remotePriv, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("unable to generate private key: %v", err)
 	}

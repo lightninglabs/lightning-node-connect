@@ -5,10 +5,9 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"math/big"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 const (
@@ -16,10 +15,6 @@ const (
 )
 
 var (
-	one = big.NewInt(1)
-
-	N = btcec.S256().N
-
 	seedPhrase = flag.String("seed_phrase", defaultSeedPhrase,
 		"the starting seed phrase that binds the global params to "+
 			"a particular context")
@@ -63,7 +58,7 @@ func main() {
 
 		// Try to see if this point when intercepted as an x coordinate
 		// is actually found on the curve.
-		candidatePoint, err := btcec.ParsePubKey(pubBytes[:], btcec.S256())
+		candidatePoint, err := btcec.ParsePubKey(pubBytes[:])
 		if err == nil {
 			fmt.Printf("Global param generated: %x\n",
 				candidatePoint.SerializeCompressed())
