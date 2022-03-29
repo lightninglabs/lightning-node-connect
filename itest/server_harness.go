@@ -17,9 +17,9 @@ type serverHarness struct {
 	mockServer *grpc.Server
 	server     *mockrpc.Server
 
-	password     []byte
-	localStatic  keychain.SingleKeyECDH
-	remoteStatic *btcec.PublicKey
+	passphraseEntropy []byte
+	localStatic       keychain.SingleKeyECDH
+	remoteStatic      *btcec.PublicKey
 
 	tlsConfig *tls.Config
 
@@ -30,11 +30,11 @@ type serverHarness struct {
 func newServerHarness(serverHost string, insecure bool) (*serverHarness,
 	error) {
 
-	password, _, err := mailbox.NewPassword()
+	entropy, _, err := mailbox.NewPassphraseEntropy()
 	if err != nil {
 		return nil, err
 	}
-	pswdEntropy := mailbox.PasswordMnemonicToEntropy(password)
+	pswdEntropy := mailbox.PassphraseMnemonicToEntropy(entropy)
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
@@ -49,11 +49,11 @@ func newServerHarness(serverHost string, insecure bool) (*serverHarness,
 	}
 
 	return &serverHarness{
-		serverHost:  serverHost,
-		password:    pswdEntropy[:],
-		localStatic: &keychain.PrivKeyECDH{PrivKey: privKey},
-		tlsConfig:   tlsConfig,
-		errChan:     make(chan error, 1),
+		serverHost:        serverHost,
+		passphraseEntropy: pswdEntropy[:],
+		localStatic:       &keychain.PrivKeyECDH{PrivKey: privKey},
+		tlsConfig:         tlsConfig,
+		errChan:           make(chan error, 1),
 	}, nil
 }
 
@@ -64,7 +64,7 @@ func (s *serverHarness) stop() {
 
 func (s *serverHarness) start() error {
 	connData := mailbox.NewConnData(
-		s.localStatic, s.remoteStatic, s.password, nil,
+		s.localStatic, s.remoteStatic, s.passphraseEntropy, nil,
 		func(key *btcec.PublicKey) error {
 			s.remoteStatic = key
 			return nil

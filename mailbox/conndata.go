@@ -147,7 +147,7 @@ func (s *ConnData) SetAuthData(data []byte) error {
 }
 
 // SID calculates the SID to be used given the presence of the remote static
-// key. If the remote key is not present, then only the password will be used
+// key. If the remote key is not present, then only the passphraseEntropy will be used
 // to derive the SID. Otherwise, the ECDH operation on the remote and local key
 // will be used.
 func (s *ConnData) SID() ([64]byte, error) {

@@ -18,14 +18,14 @@ type clientHarness struct {
 	grpcConn   *grpc.ClientConn
 	clientConn mockrpc.MockServiceClient
 
-	password     []byte
-	localStatic  keychain.SingleKeyECDH
-	remoteStatic *btcec.PublicKey
+	passphraseEntropy []byte
+	localStatic       keychain.SingleKeyECDH
+	remoteStatic      *btcec.PublicKey
 
 	cancel func()
 }
 
-func newClientHarness(serverAddress string, password []byte) (*clientHarness,
+func newClientHarness(serverAddress string, entropy []byte) (*clientHarness,
 	error) {
 
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
@@ -34,9 +34,9 @@ func newClientHarness(serverAddress string, password []byte) (*clientHarness,
 	}
 
 	return &clientHarness{
-		serverAddr:  serverAddress,
-		password:    password,
-		localStatic: &keychain.PrivKeyECDH{PrivKey: privKey},
+		serverAddr:        serverAddress,
+		passphraseEntropy: entropy,
+		localStatic:       &keychain.PrivKeyECDH{PrivKey: privKey},
 	}, nil
 }
 
@@ -45,7 +45,7 @@ func (c *clientHarness) start() error {
 	c.cancel = cancel
 
 	connData := mailbox.NewConnData(
-		c.localStatic, c.remoteStatic, c.password, nil,
+		c.localStatic, c.remoteStatic, c.passphraseEntropy, nil,
 		func(key *btcec.PublicKey) error {
 			c.remoteStatic = key
 			return nil

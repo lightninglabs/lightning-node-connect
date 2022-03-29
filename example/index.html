@@ -93,7 +93,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             localStorage.setItem(namespace+":mailboxHost", server)
         }
 
-        let password = $('#password').val();
+        let passphrase = $('#phrase').val();
         let connectedTicker = null;
         let isConnected = function () {
             let result = window[namespace].wasmClientIsConnected();
@@ -106,7 +106,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             }
         }
         connectedTicker = setInterval(isConnected, 200);
-        window[namespace].wasmClientConnectServer(server, true, password);
+        window[namespace].wasmClientConnectServer(server, true, passphrase);
     }
 
     async function clearStorage() {
@@ -161,8 +161,8 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
 <div id="passphrase" style="display:none">
     <h4>Now connect to the server with the session passphrase</h4>
-    <label for="password">Password: </label>
-    <input id="password" type="text" size="50" maxlength="255"><br />
+    <label for="phrase">Passphrase: </label>
+    <input id="phrase" type="text" size="50" maxlength="255"><br />
     <label for="server">Server: </label>
     <input id="server" type="text" size="50" maxlength="255"
            value="mailbox.terminal.lightning.today:443"><br />

@@ -182,7 +182,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	c.ProxyConn = transportConn
 
 	// First, initialize a new noise machine with our static long term, and
-	// password.
+	// passphraseEntropy.
 	var err error
 	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
 		Initiator:           true,

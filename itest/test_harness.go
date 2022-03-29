@@ -177,7 +177,7 @@ func setupClientAndServerHarnesses(t *testing.T,
 	time.Sleep(1000 * time.Millisecond)
 
 	clientHarness, err := newClientHarness(
-		mailboxAddr, serverHarness.password,
+		mailboxAddr, serverHarness.passphraseEntropy,
 	)
 	require.NoError(t, err)
 

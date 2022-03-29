@@ -19,12 +19,12 @@ func mailboxRPCConnection(mailboxServer, pairingPhrase string,
 	onAuthData func(data []byte) error) (*grpc.ClientConn, error) {
 
 	words := strings.Split(pairingPhrase, " ")
-	var mnemonicWords [mailbox.NumPasswordWords]string
+	var mnemonicWords [mailbox.NumPassphraseWords]string
 	copy(mnemonicWords[:], words)
-	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
+	entropy := mailbox.PassphraseMnemonicToEntropy(mnemonicWords)
 
 	connData := mailbox.NewConnData(
-		localStatic, remoteStatic, password[:], nil, onRemoteStatic,
+		localStatic, remoteStatic, entropy[:], nil, onRemoteStatic,
 		onAuthData,
 	)
 

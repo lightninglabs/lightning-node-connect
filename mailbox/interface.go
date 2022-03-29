@@ -34,7 +34,7 @@ var (
 // in mailbox connections.
 type Addr struct {
 	// SID is the unique session ID used for the mailbox connection. It is
-	// derived from the one-time connection password.
+	// derived from the one-time connection passphraseEntropy.
 	SID [64]byte
 
 	// Server is the mailbox server this connection is established over.

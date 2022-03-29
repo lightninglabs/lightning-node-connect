@@ -46,7 +46,7 @@ func TestXXHandshake(t *testing.T) {
 	pk2, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(t, err)
 
-	// Create a password that will be used to mask the first ephemeral key.
+	// Create a passphraseEntropy that will be used to mask the first ephemeral key.
 	pass := []byte("top secret")
 	passHash := sha256.Sum256(pass)
 
@@ -155,7 +155,7 @@ func TestKKHandshake(t *testing.T) {
 	pk2, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(t, err)
 
-	// Create a password that will be used to mask the first ephemeral key.
+	// Create a passphraseEntropy that will be used to mask the first ephemeral key.
 	pass := []byte("top secret")
 	passHash := sha256.Sum256(pass)
 

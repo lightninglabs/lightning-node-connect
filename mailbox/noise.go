@@ -329,9 +329,9 @@ type handshakeState struct {
 	remoteStatic    *btcec.PublicKey // nolint
 	remoteEphemeral *btcec.PublicKey // nolint
 
-	password        []byte
-	payloadToSend   []byte
-	receivedPayload []byte
+	passphraseEntropy []byte
+	payloadToSend     []byte
+	receivedPayload   []byte
 
 	pattern HandshakePattern
 
@@ -354,7 +354,8 @@ type handshakeState struct {
 // with the prologue and protocol name.
 func newHandshakeState(minVersion, maxVersion byte, pattern HandshakePattern,
 	initiator bool, prologue []byte, localPub keychain.SingleKeyECDH,
-	remoteStatic *btcec.PublicKey, password []byte, authData []byte,
+	remoteStatic *btcec.PublicKey, passphraseEntropy []byte,
+	authData []byte,
 	ephemeralGen func() (*btcec.PrivateKey, error)) (handshakeState,
 	error) {
 
@@ -364,17 +365,17 @@ func newHandshakeState(minVersion, maxVersion byte, pattern HandshakePattern,
 	}
 
 	h := handshakeState{
-		minVersion:     minVersion,
-		maxVersion:     maxVersion,
-		version:        startVersion,
-		symmetricState: symmetricState{},
-		initiator:      initiator,
-		localStatic:    localPub,
-		remoteStatic:   remoteStatic,
-		pattern:        pattern,
-		password:       password,
-		payloadToSend:  authData,
-		ephemeralGen:   ephemeralGen,
+		minVersion:        minVersion,
+		maxVersion:        maxVersion,
+		version:           startVersion,
+		symmetricState:    symmetricState{},
+		initiator:         initiator,
+		localStatic:       localPub,
+		remoteStatic:      remoteStatic,
+		pattern:           pattern,
+		passphraseEntropy: passphraseEntropy,
+		payloadToSend:     authData,
+		ephemeralGen:      ephemeralGen,
 	}
 
 	protocolName := fmt.Sprintf(
@@ -388,7 +389,7 @@ func newHandshakeState(minVersion, maxVersion byte, pattern HandshakePattern,
 	h.InitializeSymmetric([]byte(protocolName))
 	h.mixHash(prologue)
 
-	// TODO(roasbeef): if did mixHash here w/ the password, then the same
+	// TODO(roasbeef): if did mixHash here w/ the passphraseEntropy, then the same
 	// as using it as a PSK?
 
 	// Call mixHash once for every pub key listed in the pre-messages from
@@ -687,13 +688,13 @@ func (h *handshakeState) writeTokens(tokens []Token, w io.Writer) error {
 
 			// Mix in the _unmasked_ ephemeral into the transcript
 			// hash, as this allows us to use the MAC check to
-			// assert if the remote party knows the password or not.
+			// assert if the remote party knows the passphraseEntropy or not.
 			h.mixHash(e.PubKey().SerializeCompressed())
 
 			// Now that we have our ephemeral, we'll apply the
 			// eke-SPAKE2 specific portion by masking the key with
-			// our password.
-			me := ekeMask(h.localEphemeral.PubKey(), h.password)
+			// our passphraseEntropy.
+			me := ekeMask(h.localEphemeral.PubKey(), h.passphraseEntropy)
 			_, err = w.Write(me.SerializeCompressed())
 			if err != nil {
 				return err
@@ -803,7 +804,7 @@ func (h *handshakeState) readTokens(r io.Reader, tokens []Token) error {
 			// Turn the masked ephemeral into a normal point, and
 			// store that as the remote ephemeral key.
 			h.remoteEphemeral = ekeUnmask(
-				maskedEphemeral, h.password,
+				maskedEphemeral, h.passphraseEntropy,
 			)
 
 			// We mix in this _unmasked_ point as otherwise we will
@@ -915,7 +916,7 @@ func (h *handshakeState) readTokens(r io.Reader, tokens []Token) error {
 // In this context, me is the masked ephemeral point that's masked using an
 // operation derived from the traditional SPAKE2 protocol: e + h(pw)*M, where M
 // is a generator of the cyclic group, h is a key derivation function, and pw is
-// the password known to both sides.
+// the passphraseEntropy known to both sides.
 //
 // Note that there's also another operating mode based on Noise_IK which can be
 // used after the initial pairing is complete and both sides have exchange
@@ -958,8 +959,8 @@ type BrontideMachineConfig struct {
 // NewBrontideMachine creates a new instance of the brontide state-machine.
 func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 	var (
-		password []byte
-		err      error
+		passphraseEntropy []byte
+		err               error
 	)
 
 	var (
@@ -980,14 +981,14 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 		}
 	}
 
-	// Since the password is only used in the XX handshake pattern, we only
+	// Since the passphraseEntropy is only used in the XX handshake pattern, we only
 	// need to do the computationally expensive stretching operation if the
 	// XX pattern is being used.
 	if cfg.HandshakePattern.Name == XX {
 		// We stretch the passphrase here in order to partially thwart
 		// brute force attempts, and also ensure we obtain a high
 		// entropy blinding point.
-		password, err = stretchPassword(
+		passphraseEntropy, err = stretchPassphrase(
 			cfg.ConnData.PassphraseEntropy(),
 		)
 		if err != nil {
@@ -1002,8 +1003,8 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 	handshake, err := newHandshakeState(
 		minVersion, maxVersion, cfg.HandshakePattern, cfg.Initiator,
 		lightningNodeConnectPrologue, cfg.ConnData.LocalKey(),
-		cfg.ConnData.RemoteKey(), password, cfg.ConnData.AuthData(),
-		cfg.EphemeralGen,
+		cfg.ConnData.RemoteKey(), passphraseEntropy,
+		cfg.ConnData.AuthData(), cfg.EphemeralGen,
 	)
 	if err != nil {
 		return nil, err
@@ -1071,11 +1072,13 @@ func hmac256(key, message []byte) ([]byte, error) {
 	return mac.Sum(nil), nil
 }
 
-// ekeMask masks the passed ephemeral key with the stored pass phrase, using
-// SPAKE2 as the public masking operation: me = e + N*pw
-func ekeMask(e *btcec.PublicKey, password []byte) *btcec.PublicKey {
+// ekeMask masks the passed ephemeral key with the stored pass phrase entropy,
+// using SPAKE2 as the public masking operation: me = e + N*pw
+func ekeMask(e *btcec.PublicKey, passphraseEntropy []byte) *btcec.PublicKey {
 	// me = e + N*pw
-	passPointX, passPointY := btcec.S256().ScalarMult(N.X, N.Y, password)
+	passPointX, passPointY := btcec.S256().ScalarMult(
+		N.X, N.Y, passphraseEntropy,
+	)
 	maskedEx, maskedEy := btcec.S256().Add(
 		e.X, e.Y,
 		passPointX, passPointY,
@@ -1089,9 +1092,11 @@ func ekeMask(e *btcec.PublicKey, password []byte) *btcec.PublicKey {
 }
 
 // ekeUnmask does the inverse operation of ekeMask: e = me - N*pw
-func ekeUnmask(me *btcec.PublicKey, password []byte) *btcec.PublicKey {
-	// First, we'll need to re-generate the password point: N*pw
-	passPointX, passPointY := btcec.S256().ScalarMult(N.X, N.Y, password)
+func ekeUnmask(me *btcec.PublicKey, passphraseEntropy []byte) *btcec.PublicKey {
+	// First, we'll need to re-generate the passphraseEntropy point: N*pw
+	passPointX, passPointY := btcec.S256().ScalarMult(
+		N.X, N.Y, passphraseEntropy,
+	)
 
 	// With that generated, negate the y coordinate, then add that to the
 	// masked point, which gives us the proper ephemeral key.
