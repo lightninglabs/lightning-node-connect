@@ -173,7 +173,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	c.proxyConnMtx.Lock()
 	defer c.proxyConnMtx.Unlock()
 
-	log.Tracef("Starting client handshake")
+	log.Debugf("Starting client handshake")
 
 	transportConn, ok := conn.(ProxyConn)
 	if !ok {

@@ -62,6 +62,11 @@ const (
 	// is sent in a dynamically sized, length-prefixed payload in act 2.
 	HandshakeVersion1 = byte(1)
 
+	// HandshakeVersion2 is the handshake version that indicates that the
+	// KK pattern is to be used for all handshakes after the first
+	// handshake.
+	HandshakeVersion2 = byte(2)
+
 	// MinHandshakeVersion is the minimum handshake version that is
 	// currently supported.
 	MinHandshakeVersion = HandshakeVersion0
@@ -70,7 +75,7 @@ const (
 	// support. Any messages that carry a version not between
 	// MinHandshakeVersion and MaxHandshakeVersion will cause the handshake
 	// to abort immediately.
-	MaxHandshakeVersion = HandshakeVersion1
+	MaxHandshakeVersion = HandshakeVersion2
 
 	// ActTwoPayloadSize is the size of the fixed sized payload that can be
 	// sent from the responder to the Initiator in act two.
@@ -464,7 +469,7 @@ func (h *handshakeState) writeMsgPattern(w io.Writer, mp MessagePattern) error {
 			return err
 		}
 
-	case HandshakeVersion1:
+	case HandshakeVersion1, HandshakeVersion2:
 		var payload []byte
 		switch mp.ActNum {
 		case act1, act3:
@@ -595,7 +600,7 @@ func (h *handshakeState) readMsgPattern(r io.Reader, mp MessagePattern) error {
 
 		h.receivedPayload = authData
 
-	case HandshakeVersion1:
+	case HandshakeVersion1, HandshakeVersion2:
 		var payloadSize uint32
 		switch mp.ActNum {
 		case act1, act3:
@@ -957,6 +962,24 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 		err      error
 	)
 
+	var (
+		minVersion = cfg.MinHandshakeVersion
+		maxVersion = cfg.MaxHandshakeVersion
+	)
+	if cfg.HandshakePattern.Name == KK {
+		// If the handshake pattern is KK, then we require that the
+		// minimum and maximum handshake versions are at least 2.
+		if maxVersion < HandshakeVersion2 {
+			return nil, fmt.Errorf("a maximum handshake version " +
+				"of at least 2 is require if the KK pattern " +
+				"is to be used")
+		}
+
+		if minVersion < HandshakeVersion2 {
+			minVersion = HandshakeVersion2
+		}
+	}
+
 	// Since the password is only used in the XX handshake pattern, we only
 	// need to do the computationally expensive stretching operation if the
 	// XX pattern is being used.
@@ -977,8 +1000,7 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 	}
 
 	handshake, err := newHandshakeState(
-		cfg.MinHandshakeVersion, cfg.MaxHandshakeVersion,
-		cfg.HandshakePattern, cfg.Initiator,
+		minVersion, maxVersion, cfg.HandshakePattern, cfg.Initiator,
 		lightningNodeConnectPrologue, cfg.ConnData.LocalKey(),
 		cfg.ConnData.RemoteKey(), password, cfg.ConnData.AuthData(),
 		cfg.EphemeralGen,
@@ -1013,6 +1035,13 @@ func (b *Machine) DoHandshake(rw io.ReadWriter) error {
 	}
 
 	b.split()
+
+	if b.version >= HandshakeVersion2 {
+		err := b.cfg.ConnData.SetRemote(b.remoteStatic)
+		if err != nil {
+			return err
+		}
+	}
 
 	if b.initiator {
 		err := b.cfg.ConnData.SetAuthData(b.receivedPayload)

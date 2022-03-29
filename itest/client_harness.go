@@ -45,7 +45,11 @@ func (c *clientHarness) start() error {
 	c.cancel = cancel
 
 	connData := mailbox.NewConnData(
-		c.localStatic, c.remoteStatic, c.password, nil, nil, nil,
+		c.localStatic, c.remoteStatic, c.password, nil,
+		func(key *btcec.PublicKey) error {
+			c.remoteStatic = key
+			return nil
+		}, nil,
 	)
 
 	transportConn, err := mailbox.NewClient(ctx, connData)

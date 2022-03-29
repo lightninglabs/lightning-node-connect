@@ -110,8 +110,8 @@ func TestXXHandshake(t *testing.T) {
 	require.True(t, bytes.Equal(client.connData.AuthData(), authData))
 
 	// Also check that both parties now have the other parties static key.
-	require.True(t, client.noise.remoteStatic.IsEqual(pk1.PubKey()))
-	require.True(t, server.noise.remoteStatic.IsEqual(pk2.PubKey()))
+	require.True(t, client.connData.RemoteKey().IsEqual(pk1.PubKey()))
+	require.True(t, server.connData.RemoteKey().IsEqual(pk2.PubKey()))
 
 	// Check that messages can be sent between client and server normally
 	// now.
@@ -279,44 +279,58 @@ func TestHandshake(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name             string
-		serverMinVersion byte
-		serverMaxVersion byte
-		clientMinVersion byte
-		clientMaxVersion byte
-		authData         []byte
+		name                 string
+		serverMinVersion     byte
+		serverMaxVersion     byte
+		clientMinVersion     byte
+		clientMaxVersion     byte
+		expectedFinalVersion byte
+		authData             []byte
 	}{
 		{
-			name:             "server v0 and client v0",
-			serverMinVersion: HandshakeVersion0,
-			serverMaxVersion: HandshakeVersion0,
-			clientMinVersion: HandshakeVersion0,
-			clientMaxVersion: HandshakeVersion0,
-			authData:         []byte{0, 1, 2, 3},
+			name:                 "server v0 and client v0",
+			serverMinVersion:     HandshakeVersion0,
+			serverMaxVersion:     HandshakeVersion0,
+			clientMinVersion:     HandshakeVersion0,
+			clientMaxVersion:     HandshakeVersion0,
+			expectedFinalVersion: HandshakeVersion0,
+			authData:             []byte{0, 1, 2, 3},
 		},
 		{
-			name:             "server v1 and client v1",
-			serverMinVersion: HandshakeVersion1,
-			serverMaxVersion: HandshakeVersion1,
-			clientMinVersion: HandshakeVersion1,
-			clientMaxVersion: HandshakeVersion1,
-			authData:         largeAuthData,
+			name:                 "server v1 and client v1",
+			serverMinVersion:     HandshakeVersion1,
+			serverMaxVersion:     HandshakeVersion1,
+			clientMinVersion:     HandshakeVersion1,
+			clientMaxVersion:     HandshakeVersion1,
+			expectedFinalVersion: HandshakeVersion1,
+			authData:             largeAuthData,
 		},
 		{
-			name:             "server v0 and client [v0, v1]",
-			serverMinVersion: HandshakeVersion0,
-			serverMaxVersion: HandshakeVersion0,
-			clientMinVersion: HandshakeVersion0,
-			clientMaxVersion: HandshakeVersion1,
-			authData:         []byte{0, 1, 2, 3},
+			name:                 "server v0 and client [v0, v1]",
+			serverMinVersion:     HandshakeVersion0,
+			serverMaxVersion:     HandshakeVersion0,
+			clientMinVersion:     HandshakeVersion0,
+			clientMaxVersion:     HandshakeVersion1,
+			expectedFinalVersion: HandshakeVersion0,
+			authData:             []byte{0, 1, 2, 3},
 		},
 		{
-			name:             "server v1 and client [v0, v1]",
-			serverMinVersion: HandshakeVersion0,
-			serverMaxVersion: HandshakeVersion1,
-			clientMinVersion: HandshakeVersion0,
-			clientMaxVersion: HandshakeVersion1,
-			authData:         largeAuthData,
+			name:                 "server v1 and client [v0, v1]",
+			serverMinVersion:     HandshakeVersion0,
+			serverMaxVersion:     HandshakeVersion1,
+			clientMinVersion:     HandshakeVersion0,
+			clientMaxVersion:     HandshakeVersion1,
+			expectedFinalVersion: HandshakeVersion1,
+			authData:             largeAuthData,
+		},
+		{
+			name:                 "server v2 and client [v0, v2]",
+			serverMinVersion:     HandshakeVersion0,
+			serverMaxVersion:     HandshakeVersion2,
+			clientMinVersion:     HandshakeVersion0,
+			clientMaxVersion:     HandshakeVersion2,
+			expectedFinalVersion: HandshakeVersion2,
+			authData:             []byte{0, 1, 2, 3},
 		},
 	}
 
@@ -382,6 +396,17 @@ func TestHandshake(t *testing.T) {
 				t.Fatalf("handshake timeout")
 			}
 
+			// Check that the negotiated version on either side
+			// is as expected.
+			require.Equal(
+				t, test.expectedFinalVersion,
+				client.noise.version,
+			)
+			require.Equal(
+				t, test.expectedFinalVersion,
+				server.noise.version,
+			)
+
 			// Ensure that any auth data was successfully received
 			// by the client.
 			require.True(
@@ -390,6 +415,22 @@ func TestHandshake(t *testing.T) {
 					test.authData,
 				),
 			)
+
+			if test.expectedFinalVersion >= 2 {
+				require.True(
+					t, client.connData.RemoteKey().IsEqual(
+						server.connData.LocalKey().
+							PubKey(),
+					),
+				)
+
+				require.True(
+					t, server.connData.RemoteKey().IsEqual(
+						client.connData.LocalKey().
+							PubKey(),
+					),
+				)
+			}
 
 			// Check that messages can be sent between client and
 			// server normally now.

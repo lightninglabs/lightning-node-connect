@@ -64,7 +64,11 @@ func (s *serverHarness) stop() {
 
 func (s *serverHarness) start() error {
 	connData := mailbox.NewConnData(
-		s.localStatic, s.remoteStatic, s.password, nil, nil, nil,
+		s.localStatic, s.remoteStatic, s.password, nil,
+		func(key *btcec.PublicKey) error {
+			s.remoteStatic = key
+			return nil
+		}, nil,
 	)
 
 	mailboxServer, err := mailbox.NewServer(
