@@ -63,9 +63,12 @@ func (s *serverHarness) stop() {
 }
 
 func (s *serverHarness) start() error {
+	connData := mailbox.NewConnData(
+		s.localStatic, s.remoteStatic, s.password, nil, nil, nil,
+	)
+
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, s.password[:], s.localStatic, s.remoteStatic,
-		grpc.WithTransportCredentials(
+		s.serverHost, connData, grpc.WithTransportCredentials(
 			credentials.NewTLS(s.tlsConfig),
 		),
 	)
@@ -73,7 +76,7 @@ func (s *serverHarness) start() error {
 		return err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(s.localStatic, nil, s.password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(connData)
 
 	s.mockServer = grpc.NewServer(
 		grpc.Creds(noiseConn),

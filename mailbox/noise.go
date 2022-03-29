@@ -916,6 +916,8 @@ func (h *handshakeState) readTokens(r io.Reader, tokens []Token) error {
 // used after the initial pairing is complete and both sides have exchange
 // long-term public keys.
 type Machine struct {
+	cfg *BrontideMachineConfig
+
 	sendCipher cipherState
 	recvCipher cipherState
 
@@ -940,14 +942,11 @@ type Machine struct {
 // BrontideMachineConfig holds the config necessary to construct a new Machine
 // object.
 type BrontideMachineConfig struct {
+	ConnData            ConnectionData
 	Initiator           bool
 	HandshakePattern    HandshakePattern
 	MinHandshakeVersion byte
 	MaxHandshakeVersion byte
-	LocalStaticKey      keychain.SingleKeyECDH
-	RemoteStaticKey     *btcec.PublicKey
-	PAKEPassphrase      []byte
-	AuthData            []byte
 	EphemeralGen        func() (*btcec.PrivateKey, error)
 }
 
@@ -965,7 +964,9 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 		// We stretch the passphrase here in order to partially thwart
 		// brute force attempts, and also ensure we obtain a high
 		// entropy blinding point.
-		password, err = stretchPassword(cfg.PAKEPassphrase)
+		password, err = stretchPassword(
+			cfg.ConnData.PassphraseEntropy(),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -978,14 +979,16 @@ func NewBrontideMachine(cfg *BrontideMachineConfig) (*Machine, error) {
 	handshake, err := newHandshakeState(
 		cfg.MinHandshakeVersion, cfg.MaxHandshakeVersion,
 		cfg.HandshakePattern, cfg.Initiator,
-		lightningNodeConnectPrologue, cfg.LocalStaticKey,
-		cfg.RemoteStaticKey, password, cfg.AuthData, cfg.EphemeralGen,
+		lightningNodeConnectPrologue, cfg.ConnData.LocalKey(),
+		cfg.ConnData.RemoteKey(), password, cfg.ConnData.AuthData(),
+		cfg.EphemeralGen,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Machine{
+		cfg:            cfg,
 		handshakeState: handshake,
 	}, nil
 }
@@ -1010,6 +1013,13 @@ func (b *Machine) DoHandshake(rw io.ReadWriter) error {
 	}
 
 	b.split()
+
+	if b.initiator {
+		err := b.cfg.ConnData.SetAuthData(b.receivedPayload)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

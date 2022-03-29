@@ -48,8 +48,9 @@ func Dial(localPriv keychain.SingleKeyECDH, netAddr net.Addr, passphrase []byte,
 		HandshakePattern:    XXPattern,
 		MinHandshakeVersion: MinHandshakeVersion,
 		MaxHandshakeVersion: MaxHandshakeVersion,
-		LocalStaticKey:      localPriv,
-		PAKEPassphrase:      passphrase,
+		ConnData: NewConnData(
+			localPriv, nil, passphrase, nil, nil, nil,
+		),
 	})
 	if err != nil {
 		return nil, err

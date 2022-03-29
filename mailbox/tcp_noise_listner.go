@@ -118,9 +118,9 @@ func (l *Listener) doHandshake(conn net.Conn) {
 		HandshakePattern:    XXPattern,
 		MinHandshakeVersion: MinHandshakeVersion,
 		MaxHandshakeVersion: MaxHandshakeVersion,
-		LocalStaticKey:      l.localStatic,
-		PAKEPassphrase:      l.passphrase,
-		AuthData:            l.authData,
+		ConnData: NewConnData(
+			l.localStatic, nil, l.passphrase, l.authData, nil, nil,
+		),
 	})
 	if err != nil {
 		l.rejectConn(rejectedConnErr(err, remoteAddr))

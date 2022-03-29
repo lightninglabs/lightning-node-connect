@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"net"
-
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // Client manages the mailboxConn it holds and refreshes it on connection
@@ -14,9 +11,7 @@ import (
 type Client struct {
 	mailboxConn *ClientConn
 
-	password  []byte
-	localKey  keychain.SingleKeyECDH
-	remoteKey *btcec.PublicKey
+	connData *ConnData
 
 	sid [64]byte
 
@@ -25,20 +20,16 @@ type Client struct {
 
 // NewClient creates a new Client object which will handle the mailbox
 // connection.
-func NewClient(ctx context.Context, localKey keychain.SingleKeyECDH,
-	remoteKey *btcec.PublicKey, password []byte) (*Client, error) {
-
-	sid, err := deriveSID(localKey, remoteKey, password)
+func NewClient(ctx context.Context, connData *ConnData) (*Client, error) {
+	sid, err := connData.SID()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		ctx:       ctx,
-		localKey:  localKey,
-		remoteKey: remoteKey,
-		password:  password,
-		sid:       sid,
+		ctx:      ctx,
+		connData: connData,
+		sid:      sid,
 	}, nil
 }
 
@@ -57,7 +48,7 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 
 	log.Debugf("Client: Dialing...")
 
-	sid, err := deriveSID(c.localKey, c.remoteKey, c.password)
+	sid, err := c.connData.SID()
 	if err != nil {
 		return nil, err
 	}

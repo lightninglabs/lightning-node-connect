@@ -63,9 +63,11 @@ func TestXXHandshake(t *testing.T) {
 	}()
 
 	// Create a server.
-	server := NewNoiseGrpcConn(
-		&keychain.PrivKeyECDH{PrivKey: pk1}, authData, passHash[:],
+	serverData := NewConnData(
+		&keychain.PrivKeyECDH{PrivKey: pk1}, nil, passHash[:], authData,
+		nil, nil,
 	)
+	server := NewNoiseGrpcConn(serverData)
 
 	// Spin off the server's handshake process.
 	var (
@@ -79,9 +81,11 @@ func TestXXHandshake(t *testing.T) {
 	}()
 
 	// Create a client.
-	client := NewNoiseGrpcConn(
-		&keychain.PrivKeyECDH{PrivKey: pk2}, nil, passHash[:],
+	clientData := NewConnData(
+		&keychain.PrivKeyECDH{PrivKey: pk2}, nil, passHash[:], nil,
+		nil, nil,
 	)
+	client := NewNoiseGrpcConn(clientData)
 
 	// Start the client's handshake process.
 	clientConn, _, err := client.ClientHandshake(
@@ -103,11 +107,11 @@ func TestXXHandshake(t *testing.T) {
 	}
 
 	// Ensure that any auth data was successfully received by the client.
-	require.True(t, bytes.Equal(client.authData, authData))
+	require.True(t, bytes.Equal(client.connData.AuthData(), authData))
 
 	// Also check that both parties now have the other parties static key.
-	require.True(t, client.remoteKey.IsEqual(pk1.PubKey()))
-	require.True(t, server.remoteKey.IsEqual(pk2.PubKey()))
+	require.True(t, client.noise.remoteStatic.IsEqual(pk1.PubKey()))
+	require.True(t, server.noise.remoteStatic.IsEqual(pk2.PubKey()))
 
 	// Check that messages can be sent between client and server normally
 	// now.
@@ -175,10 +179,10 @@ func TestKKHandshake(t *testing.T) {
 		HandshakePattern:    KKPattern,
 		MinHandshakeVersion: MinHandshakeVersion,
 		MaxHandshakeVersion: MaxHandshakeVersion,
-		LocalStaticKey:      &keychain.PrivKeyECDH{PrivKey: pk1},
-		RemoteStaticKey:     pk2.PubKey(),
-		PAKEPassphrase:      passHash[:],
-		AuthData:            authData,
+		ConnData: NewConnData(
+			&keychain.PrivKeyECDH{PrivKey: pk1}, pk2.PubKey(),
+			passHash[:], authData, nil, nil,
+		),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,9 +201,10 @@ func TestKKHandshake(t *testing.T) {
 		HandshakePattern:    KKPattern,
 		MinHandshakeVersion: MinHandshakeVersion,
 		MaxHandshakeVersion: MaxHandshakeVersion,
-		LocalStaticKey:      &keychain.PrivKeyECDH{PrivKey: pk2},
-		RemoteStaticKey:     pk1.PubKey(),
-		PAKEPassphrase:      passHash[:],
+		ConnData: NewConnData(
+			&keychain.PrivKeyECDH{PrivKey: pk2}, pk1.PubKey(),
+			passHash[:], nil, nil, nil,
+		),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -325,14 +330,19 @@ func TestHandshake(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			server := NewNoiseGrpcConn(
-				&keychain.PrivKeyECDH{PrivKey: pk1},
-				test.authData, pass,
+				NewConnData(
+					&keychain.PrivKeyECDH{PrivKey: pk1},
+					nil, pass, test.authData, nil, nil,
+				),
 				WithMinHandshakeVersion(test.serverMinVersion),
 				WithMaxHandshakeVersion(test.serverMaxVersion),
 			)
 
 			client := NewNoiseGrpcConn(
-				&keychain.PrivKeyECDH{PrivKey: pk2}, nil, pass,
+				NewConnData(
+					&keychain.PrivKeyECDH{PrivKey: pk2},
+					nil, pass, nil, nil, nil,
+				),
 				WithMinHandshakeVersion(test.clientMinVersion),
 				WithMaxHandshakeVersion(test.clientMaxVersion),
 			)
@@ -375,7 +385,10 @@ func TestHandshake(t *testing.T) {
 			// Ensure that any auth data was successfully received
 			// by the client.
 			require.True(
-				t, bytes.Equal(client.authData, test.authData),
+				t, bytes.Equal(
+					client.connData.AuthData(),
+					test.authData,
+				),
 			)
 
 			// Check that messages can be sent between client and

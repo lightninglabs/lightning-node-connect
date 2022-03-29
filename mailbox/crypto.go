@@ -2,13 +2,10 @@ package mailbox
 
 import (
 	"crypto/rand"
-	"crypto/sha512"
 	"runtime/debug"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/kkdai/bstream"
 	"github.com/lightningnetwork/lnd/aezeed"
-	"github.com/lightningnetwork/lnd/keychain"
 	"golang.org/x/crypto/scrypt"
 )
 
@@ -122,30 +119,4 @@ func stretchPassword(password []byte) ([]byte, error) {
 	debug.FreeOSMemory()
 
 	return rawPairingBytes, nil
-}
-
-// deriveSID calculates the SID to be used. If the remote key is not present,
-// then only the password will be used to derive the SID. Otherwise, the
-// ECDH operation on the remote and local key will be used.
-func deriveSID(localKey keychain.SingleKeyECDH, remoteKey *btcec.PublicKey,
-	password []byte) ([64]byte, error) {
-
-	var entropy = password
-	if remoteKey != nil {
-		hash, err := ecdh(remoteKey, localKey)
-		if err != nil {
-			return [64]byte{}, err
-		}
-
-		// Note that both the client and server will use the same HMAC
-		// key because we want their stream IDs to be identical except
-		// for the last bit which will be flipped depending on if it
-		// is the send or receive stream.
-		entropy, err = hmac256(hash, []byte("mailbox"))
-		if err != nil {
-			return [64]byte{}, err
-		}
-	}
-
-	return sha512.Sum512(entropy), nil
 }

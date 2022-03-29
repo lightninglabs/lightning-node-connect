@@ -7,9 +7,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
-	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 )
 
@@ -22,9 +20,7 @@ type Server struct {
 
 	mailboxConn *ServerConn
 
-	password  []byte
-	localKey  keychain.SingleKeyECDH
-	remoteKey *btcec.PublicKey
+	connData *ConnData
 
 	sid [64]byte
 
@@ -34,8 +30,7 @@ type Server struct {
 	cancel func()
 }
 
-func NewServer(serverHost string, password []byte,
-	localKey keychain.SingleKeyECDH, remoteKey *btcec.PublicKey,
+func NewServer(serverHost string, connData *ConnData,
 	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
@@ -46,7 +41,7 @@ func NewServer(serverHost string, password []byte,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
-	sid, err := deriveSID(localKey, remoteKey, password)
+	sid, err := connData.SID()
 	if err != nil {
 		return nil, err
 	}
@@ -54,9 +49,7 @@ func NewServer(serverHost string, password []byte,
 	s := &Server{
 		serverHost: serverHost,
 		client:     clientConn,
-		password:   password,
-		localKey:   localKey,
-		remoteKey:  remoteKey,
+		connData:   connData,
 		sid:        sid,
 		quit:       make(chan struct{}),
 	}
@@ -91,7 +84,7 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
-	sid, err := deriveSID(s.localKey, s.remoteKey, s.password)
+	sid, err := s.connData.SID()
 	if err != nil {
 		return nil, err
 	}

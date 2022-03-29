@@ -44,14 +44,16 @@ func (c *clientHarness) start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 
-	transportConn, err := mailbox.NewClient(
-		ctx, c.localStatic, c.remoteStatic, c.password,
+	connData := mailbox.NewConnData(
+		c.localStatic, c.remoteStatic, c.password, nil, nil, nil,
 	)
+
+	transportConn, err := mailbox.NewClient(ctx, connData)
 	if err != nil {
 		return err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(c.localStatic, nil, c.password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(connData)
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),
