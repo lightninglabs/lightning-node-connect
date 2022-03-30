@@ -186,7 +186,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	var err error
 	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
 		Initiator:           true,
-		HandshakePattern:    XXPattern,
+		HandshakePattern:    c.connData.HandshakePattern(),
 		ConnData:            c.connData,
 		MinHandshakeVersion: c.minHandshakeVersion,
 		MaxHandshakeVersion: c.maxHandshakeVersion,
@@ -247,7 +247,7 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	var err error
 	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
 		Initiator:           false,
-		HandshakePattern:    XXPattern,
+		HandshakePattern:    c.connData.HandshakePattern(),
 		ConnData:            c.connData,
 		MinHandshakeVersion: c.minHandshakeVersion,
 		MaxHandshakeVersion: c.maxHandshakeVersion,

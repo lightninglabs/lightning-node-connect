@@ -113,14 +113,16 @@ func (l *Listener) doHandshake(conn net.Conn) {
 
 	remoteAddr := conn.RemoteAddr().String()
 
+	connData := NewConnData(
+		l.localStatic, nil, l.passphrase, l.authData, nil, nil,
+	)
+
 	noise, err := NewBrontideMachine(&BrontideMachineConfig{
 		Initiator:           false,
-		HandshakePattern:    XXPattern,
+		HandshakePattern:    connData.HandshakePattern(),
 		MinHandshakeVersion: MinHandshakeVersion,
 		MaxHandshakeVersion: MaxHandshakeVersion,
-		ConnData: NewConnData(
-			l.localStatic, nil, l.passphrase, l.authData, nil, nil,
-		),
+		ConnData:            connData,
 	})
 	if err != nil {
 		l.rejectConn(rejectedConnErr(err, remoteAddr))
