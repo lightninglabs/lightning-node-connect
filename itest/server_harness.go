@@ -14,22 +14,47 @@ import (
 
 type serverHarness struct {
 	serverHost string
-	insecure   bool
 	mockServer *grpc.Server
 	server     *mockrpc.Server
-	password   [mailbox.NumPasswordWords]string
+
+	passphraseEntropy []byte
+	localStatic       keychain.SingleKeyECDH
+	remoteStatic      *btcec.PublicKey
+
+	tlsConfig *tls.Config
 
 	errChan chan error
-
-	wg sync.WaitGroup
+	wg      sync.WaitGroup
 }
 
-func newServerHarness(serverHost string, insecure bool) *serverHarness {
-	return &serverHarness{
-		serverHost: serverHost,
-		insecure:   insecure,
-		errChan:    make(chan error, 1),
+func newServerHarness(serverHost string, insecure bool) (*serverHarness,
+	error) {
+
+	entropy, _, err := mailbox.NewPassphraseEntropy()
+	if err != nil {
+		return nil, err
 	}
+	pswdEntropy := mailbox.PassphraseMnemonicToEntropy(entropy)
+
+	privKey, err := btcec.NewPrivateKey(btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConfig := &tls.Config{}
+	if insecure {
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+
+	return &serverHarness{
+		serverHost:        serverHost,
+		passphraseEntropy: pswdEntropy[:],
+		localStatic:       &keychain.PrivKeyECDH{PrivKey: privKey},
+		tlsConfig:         tlsConfig,
+		errChan:           make(chan error, 1),
+	}, nil
 }
 
 func (s *serverHarness) stop() {
@@ -37,39 +62,25 @@ func (s *serverHarness) stop() {
 	s.wg.Wait()
 }
 
-func (s *serverHarness) start(newPassword bool) error {
-	if newPassword {
-		password, _, err := mailbox.NewPassword()
-		if err != nil {
-			return err
-		}
-		s.password = password
-	}
+func (s *serverHarness) start() error {
+	connData := mailbox.NewConnData(
+		s.localStatic, s.remoteStatic, s.passphraseEntropy, nil,
+		func(key *btcec.PublicKey) error {
+			s.remoteStatic = key
+			return nil
+		}, nil,
+	)
 
-	privKey, err := btcec.NewPrivateKey(btcec.S256())
-	if err != nil {
-		return err
-	}
-
-	tlsConfig := &tls.Config{}
-	if s.insecure {
-		tlsConfig = &tls.Config{
-			InsecureSkipVerify: true,
-		}
-	}
-
-	pswdEntropy := mailbox.PasswordMnemonicToEntropy(s.password)
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, pswdEntropy[:], grpc.WithTransportCredentials(
-			credentials.NewTLS(tlsConfig),
+		s.serverHost, connData, grpc.WithTransportCredentials(
+			credentials.NewTLS(s.tlsConfig),
 		),
 	)
 	if err != nil {
 		return err
 	}
 
-	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, pswdEntropy[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(connData)
 
 	s.mockServer = grpc.NewServer(
 		grpc.Creds(noiseConn),

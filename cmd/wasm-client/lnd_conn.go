@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha512"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -14,29 +13,28 @@ import (
 	"google.golang.org/grpc"
 )
 
-func mailboxRPCConnection(mailboxServer,
-	pairingPhrase string) (*grpc.ClientConn, error) {
+func mailboxRPCConnection(mailboxServer, pairingPhrase string,
+	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
+	onRemoteStatic func(key *btcec.PublicKey) error,
+	onAuthData func(data []byte) error) (*grpc.ClientConn, error) {
 
 	words := strings.Split(pairingPhrase, " ")
-	var mnemonicWords [mailbox.NumPasswordWords]string
+	var mnemonicWords [mailbox.NumPassphraseWords]string
 	copy(mnemonicWords[:], words)
-	password := mailbox.PasswordMnemonicToEntropy(mnemonicWords)
+	entropy := mailbox.PassphraseMnemonicToEntropy(mnemonicWords)
 
-	sid := sha512.Sum512(password[:])
-
-	privKey, err := btcec.NewPrivateKey(btcec.S256())
-	if err != nil {
-		return nil, err
-	}
-	ecdh := &keychain.PrivKeyECDH{PrivKey: privKey}
+	connData := mailbox.NewConnData(
+		localStatic, remoteStatic, entropy[:], nil, onRemoteStatic,
+		onAuthData,
+	)
 
 	ctx := context.Background()
-	transportConn, err := mailbox.NewClient(ctx, sid)
+	transportConn, err := mailbox.NewClient(ctx, connData)
 	if err != nil {
 		return nil, err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(ecdh, nil, password[:])
+	noiseConn := mailbox.NewNoiseGrpcConn(connData)
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),

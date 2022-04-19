@@ -1,3 +1,4 @@
+//go:build js
 // +build js
 
 package main
@@ -5,15 +6,19 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime/debug"
 	"syscall/js"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/autopilotrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
@@ -31,53 +36,32 @@ import (
 type stubPackageRegistration func(map[string]func(context.Context,
 	*grpc.ClientConn, string, func(string, error)))
 
-var (
-	cfg     = config{}
-	lndConn *grpc.ClientConn
-
-	registry = make(map[string]func(context.Context, *grpc.ClientConn,
-		string, func(string, error)))
-
-	registrations = []stubPackageRegistration{
-		lnrpc.RegisterLightningJSONCallbacks,
-		lnrpc.RegisterStateJSONCallbacks,
-		autopilotrpc.RegisterAutopilotJSONCallbacks,
-		chainrpc.RegisterChainNotifierJSONCallbacks,
-		invoicesrpc.RegisterInvoicesJSONCallbacks,
-		routerrpc.RegisterRouterJSONCallbacks,
-		signrpc.RegisterSignerJSONCallbacks,
-		verrpc.RegisterVersionerJSONCallbacks,
-		walletrpc.RegisterWalletKitJSONCallbacks,
-		watchtowerrpc.RegisterWatchtowerJSONCallbacks,
-		wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
-		looprpc.RegisterSwapClientJSONCallbacks,
-		poolrpc.RegisterTraderJSONCallbacks,
-	}
-)
+var registrations = []stubPackageRegistration{
+	lnrpc.RegisterLightningJSONCallbacks,
+	lnrpc.RegisterStateJSONCallbacks,
+	autopilotrpc.RegisterAutopilotJSONCallbacks,
+	chainrpc.RegisterChainNotifierJSONCallbacks,
+	invoicesrpc.RegisterInvoicesJSONCallbacks,
+	routerrpc.RegisterRouterJSONCallbacks,
+	signrpc.RegisterSignerJSONCallbacks,
+	verrpc.RegisterVersionerJSONCallbacks,
+	walletrpc.RegisterWalletKitJSONCallbacks,
+	watchtowerrpc.RegisterWatchtowerJSONCallbacks,
+	wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
+	looprpc.RegisterSwapClientJSONCallbacks,
+	poolrpc.RegisterTraderJSONCallbacks,
+}
 
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Debugf("Recovered in f: %v", r)
+			fmt.Printf("Recovered in f: %v", r)
 			debug.PrintStack()
 		}
 	}()
 
-	// Setup JS callbacks.
-	js.Global().Set("wasmClientIsReady", js.FuncOf(wasmClientIsReady))
-	js.Global().Set(
-		"wasmClientConnectServer", js.FuncOf(wasmClientConnectServer),
-	)
-	js.Global().Set(
-		"wasmClientIsConnected", js.FuncOf(wasmClientIsConnected),
-	)
-	js.Global().Set("wasmClientDisconnect", js.FuncOf(wasmClientDisconnect))
-	js.Global().Set("wasmClientInvokeRPC", js.FuncOf(wasmClientInvokeRPC))
-	for _, registration := range registrations {
-		registration(registry)
-	}
-
 	// Parse command line flags.
+	cfg := config{}
 	parser := flags.NewParser(&cfg, flags.Default)
 	parser.SubcommandsOptional = true
 
@@ -103,24 +87,122 @@ func main() {
 		exit(err)
 	}
 
+	wc, err := newWasmClient(&cfg)
+	if err != nil {
+		exit(fmt.Errorf("config validation error: %v", err))
+	}
+
+	// Setup JS callbacks.
+	callbacks := js.ValueOf(make(map[string]interface{}))
+	callbacks.Set("wasmClientIsReady", js.FuncOf(wc.IsReady))
+	callbacks.Set("wasmClientConnectServer", js.FuncOf(wc.ConnectServer))
+	callbacks.Set("wasmClientIsConnected", js.FuncOf(wc.IsConnected))
+	callbacks.Set("wasmClientDisconnect", js.FuncOf(wc.Disconnect))
+	callbacks.Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
+	js.Global().Set(cfg.NameSpace, callbacks)
+
+	for _, registration := range registrations {
+		registration(wc.registry)
+	}
+
 	log.Debugf("WASM client ready for connecting")
 
 	select {
 	case <-shutdownInterceptor.ShutdownChannel():
 		log.Debugf("Shutting down WASM client")
-		_ = wasmClientDisconnect(js.ValueOf(nil), nil)
+		_ = wc.Disconnect(js.ValueOf(nil), nil)
 		log.Debugf("Shutdown of WASM client complete")
 	}
 }
 
-func wasmClientIsReady(_ js.Value, _ []js.Value) interface{} {
+type wasmClient struct {
+	cfg *config
+
+	lndConn *grpc.ClientConn
+
+	localStaticKey  keychain.SingleKeyECDH
+	remoteStaticKey *btcec.PublicKey
+
+	registry map[string]func(context.Context, *grpc.ClientConn,
+		string, func(string, error))
+}
+
+func newWasmClient(cfg *config) (*wasmClient, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
+	var (
+		localStaticKey  keychain.SingleKeyECDH
+		remoteStaticKey *btcec.PublicKey
+	)
+	switch {
+	case cfg.LocalPrivate == "" && cfg.RemotePublic == "":
+		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		if err != nil {
+			return nil, err
+		}
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+		err = callJsCallback(
+			cfg.OnLocalPrivCreate,
+			hex.EncodeToString(privKey.Serialize()),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+	case cfg.RemotePublic == "":
+		privKeyByte, err := hex.DecodeString(cfg.LocalPrivate)
+		if err != nil {
+			return nil, err
+		}
+
+		privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyByte)
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+	default:
+		// Both local and remote are set.
+		localPrivKeyBytes, err := hex.DecodeString(cfg.LocalPrivate)
+		if err != nil {
+			return nil, err
+		}
+		privKey, _ := btcec.PrivKeyFromBytes(
+			btcec.S256(), localPrivKeyBytes,
+		)
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+		remoteKeyBytes, err := hex.DecodeString(cfg.RemotePublic)
+		if err != nil {
+			return nil, err
+		}
+
+		remoteStaticKey, err = btcec.ParsePubKey(
+			remoteKeyBytes, btcec.S256(),
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &wasmClient{
+		cfg:             cfg,
+		lndConn:         nil,
+		localStaticKey:  localStaticKey,
+		remoteStaticKey: remoteStaticKey,
+		registry: make(map[string]func(context.Context,
+			*grpc.ClientConn, string, func(string, error))),
+	}, nil
+}
+
+func (w *wasmClient) IsReady(_ js.Value, _ []js.Value) interface{} {
 	// This will always return true. So as soon as this method is called
 	// successfully the JS part knows the WASM instance is fully started up
 	// and ready to connect.
 	return js.ValueOf(true)
 }
 
-func wasmClientConnectServer(_ js.Value, args []js.Value) interface{} {
+func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	if len(args) != 3 {
 		return js.ValueOf("invalid use of wasmClientConnectServer, " +
 			"need 3 parameters: server, isDevServer, pairingPhrase")
@@ -140,7 +222,19 @@ func wasmClientConnectServer(_ js.Value, args []js.Value) interface{} {
 	}
 
 	var err error
-	lndConn, err = mailboxRPCConnection(mailboxServer, pairingPhrase)
+	w.lndConn, err = mailboxRPCConnection(
+		mailboxServer, pairingPhrase, w.localStaticKey,
+		w.remoteStaticKey, func(key *btcec.PublicKey) error {
+			return callJsCallback(
+				w.cfg.OnRemoteKeyReceive,
+				hex.EncodeToString(key.SerializeCompressed()),
+			)
+		}, func(data []byte) error {
+			return callJsCallback(
+				w.cfg.OnAuthData, hex.EncodeToString(data),
+			)
+		},
+	)
 	if err != nil {
 		exit(err)
 	}
@@ -150,13 +244,13 @@ func wasmClientConnectServer(_ js.Value, args []js.Value) interface{} {
 	return nil
 }
 
-func wasmClientIsConnected(_ js.Value, _ []js.Value) interface{} {
-	return js.ValueOf(lndConn != nil)
+func (w *wasmClient) IsConnected(_ js.Value, _ []js.Value) interface{} {
+	return js.ValueOf(w.lndConn != nil)
 }
 
-func wasmClientDisconnect(_ js.Value, _ []js.Value) interface{} {
-	if lndConn != nil {
-		if err := lndConn.Close(); err != nil {
+func (w *wasmClient) Disconnect(_ js.Value, _ []js.Value) interface{} {
+	if w.lndConn != nil {
+		if err := w.lndConn.Close(); err != nil {
 			log.Errorf("Error closing RPC connection: %v", err)
 		}
 	}
@@ -164,13 +258,13 @@ func wasmClientDisconnect(_ js.Value, _ []js.Value) interface{} {
 	return nil
 }
 
-func wasmClientInvokeRPC(_ js.Value, args []js.Value) interface{} {
+func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	if len(args) != 3 {
 		return js.ValueOf("invalid use of wasmClientInvokeRPC, " +
 			"need 3 parameters: rpcName, request, callback")
 	}
 
-	if lndConn == nil {
+	if w.lndConn == nil {
 		return js.ValueOf("RPC connection not ready")
 	}
 
@@ -178,7 +272,7 @@ func wasmClientInvokeRPC(_ js.Value, args []js.Value) interface{} {
 	requestJSON := args[1].String()
 	jsCallback := args[len(args)-1:][0]
 
-	method, ok := registry[rpcName]
+	method, ok := w.registry[rpcName]
 	if !ok {
 		return js.ValueOf("rpc with name " + rpcName + " not found")
 	}
@@ -194,14 +288,31 @@ func wasmClientInvokeRPC(_ js.Value, args []js.Value) interface{} {
 			}
 		}
 		ctx := context.Background()
-		method(ctx, lndConn, requestJSON, cb)
+		method(ctx, w.lndConn, requestJSON, cb)
 		<-ctx.Done()
 	}()
 	return nil
 
 }
 
+func callJsCallback(callbackName string, value string) error {
+	retValue := js.Global().Call(callbackName, value)
+
+	if isEmptyObject(retValue) || isEmptyObject(retValue.Get("err")) {
+		return nil
+	}
+
+	return fmt.Errorf(retValue.Get("err").String())
+}
+
+func isEmptyObject(value js.Value) bool {
+	return value.IsNull() || value.IsUndefined()
+}
+
 func exit(err error) {
-	log.Debugf("Error running wasm client: %v", err)
+	// We use the fmt package for this error statement here instead of the
+	// logger so that we can use this exit function before the logger has
+	// been initialised since this would result in a panic.
+	fmt.Printf("Error running wasm client: %v\n", err)
 	os.Exit(1)
 }

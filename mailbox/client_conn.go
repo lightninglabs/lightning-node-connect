@@ -139,7 +139,7 @@ func NewClientConn(ctx context.Context, sid [64]byte,
 		gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
 	)
 	if err != nil {
-		return c, err
+		return nil, err
 	}
 	c.gbnConn = gbnConn
 
@@ -182,7 +182,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 		gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
 	)
 	if err != nil {
-		return cc, err
+		return nil, err
 	}
 	cc.gbnConn = gbnConn
 

@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -25,14 +23,9 @@ const (
 // implementation that's used by HTTP/2.
 type NoiseGrpcConn struct {
 	ProxyConn
-
 	proxyConnMtx sync.RWMutex
 
-	password []byte
-	authData []byte
-
-	localKey  keychain.SingleKeyECDH
-	remoteKey *btcec.PublicKey
+	connData *ConnData
 
 	nextMsg    []byte
 	nextMsgMtx sync.Mutex
@@ -46,14 +39,11 @@ type NoiseGrpcConn struct {
 // NewNoiseGrpcConn creates a new noise connection using given local ECDH key.
 // The auth data can be set for server connections and is sent as the payload
 // to the client during the handshake.
-func NewNoiseGrpcConn(localKey keychain.SingleKeyECDH,
-	authData []byte, password []byte,
+func NewNoiseGrpcConn(connData *ConnData,
 	options ...func(conn *NoiseGrpcConn)) *NoiseGrpcConn {
 
 	conn := &NoiseGrpcConn{
-		localKey:            localKey,
-		authData:            authData,
-		password:            password,
+		connData:            connData,
 		minHandshakeVersion: MinHandshakeVersion,
 		maxHandshakeVersion: MaxHandshakeVersion,
 	}
@@ -147,11 +137,11 @@ func (c *NoiseGrpcConn) LocalAddr() net.Addr {
 	defer c.proxyConnMtx.RUnlock()
 
 	if c.ProxyConn == nil {
-		return &NoiseAddr{PubKey: c.localKey.PubKey()}
+		return &NoiseAddr{PubKey: c.connData.LocalKey().PubKey()}
 	}
 
 	return &NoiseAddr{
-		PubKey: c.localKey.PubKey(),
+		PubKey: c.connData.LocalKey().PubKey(),
 		Server: c.ProxyConn.LocalAddr().String(),
 	}
 }
@@ -164,11 +154,11 @@ func (c *NoiseGrpcConn) RemoteAddr() net.Addr {
 	defer c.proxyConnMtx.RUnlock()
 
 	if c.ProxyConn == nil {
-		return &NoiseAddr{PubKey: c.remoteKey}
+		return &NoiseAddr{PubKey: c.connData.RemoteKey()}
 	}
 
 	return &NoiseAddr{
-		PubKey: c.remoteKey,
+		PubKey: c.connData.RemoteKey(),
 		Server: c.ProxyConn.RemoteAddr().String(),
 	}
 }
@@ -183,7 +173,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	c.proxyConnMtx.Lock()
 	defer c.proxyConnMtx.Unlock()
 
-	log.Tracef("Starting client handshake")
+	log.Debugf("Starting client handshake")
 
 	transportConn, ok := conn.(ProxyConn)
 	if !ok {
@@ -192,13 +182,12 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	c.ProxyConn = transportConn
 
 	// First, initialize a new noise machine with our static long term, and
-	// password.
+	// passphraseEntropy.
 	var err error
 	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
 		Initiator:           true,
-		HandshakePattern:    XXPattern,
-		LocalStaticKey:      c.localKey,
-		PAKEPassphrase:      c.password,
+		HandshakePattern:    c.connData.HandshakePattern(),
+		ConnData:            c.connData,
 		MinHandshakeVersion: c.minHandshakeVersion,
 		MaxHandshakeVersion: c.maxHandshakeVersion,
 	})
@@ -207,7 +196,7 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	}
 
 	log.Debugf("Kicking off client handshake with client_key=%x",
-		c.localKey.PubKey().SerializeCompressed())
+		c.connData.LocalKey().PubKey().SerializeCompressed())
 
 	// We'll ensure that we get a response from the remote peer in a timely
 	// manner. If they don't respond within 1s, then we'll kill the
@@ -220,11 +209,6 @@ func (c *NoiseGrpcConn) ClientHandshake(_ context.Context, _ string,
 	if err := c.noise.DoHandshake(c.ProxyConn); err != nil {
 		return nil, nil, err
 	}
-
-	// At this point, we'll also extract the auth data and remote static
-	// key obtained during the handshake.
-	c.authData = c.noise.receivedPayload
-	c.remoteKey = c.noise.remoteStatic
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
@@ -263,12 +247,10 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	var err error
 	c.noise, err = NewBrontideMachine(&BrontideMachineConfig{
 		Initiator:           false,
-		HandshakePattern:    XXPattern,
+		HandshakePattern:    c.connData.HandshakePattern(),
+		ConnData:            c.connData,
 		MinHandshakeVersion: c.minHandshakeVersion,
 		MaxHandshakeVersion: c.maxHandshakeVersion,
-		LocalStaticKey:      c.localKey,
-		PAKEPassphrase:      c.password,
-		AuthData:            c.authData,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -285,10 +267,6 @@ func (c *NoiseGrpcConn) ServerHandshake(conn net.Conn) (net.Conn,
 	if err := c.noise.DoHandshake(c.ProxyConn); err != nil {
 		return nil, nil, err
 	}
-
-	// At this point, we'll also extract the auth data and remote static
-	// key obtained during the handshake.
-	c.remoteKey = c.noise.remoteStatic
 
 	// We'll reset the deadline as it's no longer critical beyond the
 	// initial handshake.
@@ -336,9 +314,7 @@ func (c *NoiseGrpcConn) Clone() credentials.TransportCredentials {
 
 	return &NoiseGrpcConn{
 		ProxyConn: c.ProxyConn,
-		authData:  c.authData,
-		localKey:  c.localKey,
-		remoteKey: c.remoteKey,
+		connData:  c.connData,
 	}
 }
 
@@ -369,7 +345,7 @@ func (c *NoiseGrpcConn) GetRequestMetadata(_ context.Context,
 	// The authentication data is just a string encoded representation of
 	// HTTP header fields. So we can split by '\r\n' to get individual lines
 	// and then by ': ' to get field name and field value.
-	lines := strings.Split(string(c.authData), "\r\n")
+	lines := strings.Split(string(c.connData.AuthData()), "\r\n")
 	for _, line := range lines {
 		parts := strings.Split(line, ": ")
 		if len(parts) != 2 {

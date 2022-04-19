@@ -10,17 +10,18 @@ import (
 )
 
 const (
-	// NumPasswordWords is the number of words we use for the pairing
+	// NumPassphraseWords is the number of words we use for the pairing
 	// phrase.
-	NumPasswordWords = 10
+	NumPassphraseWords = 10
 
-	// NumPasswordBytes is the number of bytes we use for the pairing
-	// phrase. This must be:
-	//   ceil( (NumPasswordWords * aezeed.BitsPerWord) / 8 )
-	NumPasswordBytes = 14
+	// NumPassphraseEntropyBytes is the number of bytes we use for the
+	// pairing phrase. This must be:
+	//   ceil( (NumPassphraseWords * aezeed.BitsPerWord) / 8 )
+	NumPassphraseEntropyBytes = 14
 
 	// scryptKeyLen is the amount of bytes we'll generate from the scrpt
-	// invocation. Using the password as the password and the salt.
+	// invocation. Using the passphrase entropy as the passphraseEntropy and the
+	// salt.
 	scryptKeyLen = 32
 )
 
@@ -32,83 +33,87 @@ var (
 	scryptP = 1
 )
 
-// NewPassword generates a new one-time-use password, represented as a set of
-// mnemonic words and the raw entropy itself.
-func NewPassword() ([NumPasswordWords]string, [NumPasswordBytes]byte, error) {
+// NewPassphraseEntropy generates a new one-time-use passphrase, represented as
+// a set of mnemonic words and the raw entropy itself.
+func NewPassphraseEntropy() ([NumPassphraseWords]string,
+	[NumPassphraseEntropyBytes]byte, error) {
+
 	var (
-		passwordEntropy [NumPasswordBytes]byte
-		password        [NumPasswordWords]string
-		err             error
+		passphraseEntropy [NumPassphraseEntropyBytes]byte
+		passphrase        [NumPassphraseWords]string
+		err               error
 	)
-	if _, err = rand.Read(passwordEntropy[:]); err != nil {
-		return password, passwordEntropy, err
+	if _, err = rand.Read(passphraseEntropy[:]); err != nil {
+		return passphrase, passphraseEntropy, err
 	}
 
 	// Turn the raw bytes into words. Since we read full bytes above but
 	// might only use some bits of the last byte the words won't contain
 	// the full data.
-	password, err = PasswordEntropyToMnemonic(passwordEntropy)
+	passphrase, err = PassphraseEntropyToMnemonic(passphraseEntropy)
 	if err != nil {
-		return password, passwordEntropy, err
+		return passphrase, passphraseEntropy, err
 	}
 
 	// To make sure the words and raw bytes match, we convert the words
 	// back into raw bytes, effectively setting the last, unused bits to
 	// zero.
-	passwordEntropy = PasswordMnemonicToEntropy(password)
+	passphraseEntropy = PassphraseMnemonicToEntropy(passphrase)
 
-	return password, passwordEntropy, nil
+	return passphrase, passphraseEntropy, nil
 }
 
-// PasswordEntropyToMnemonic turns the raw bytes of a password entropy into
-// human-readable mnemonic words.
-// NOTE: This will only use NumPasswordWords * aezeed.BitsPerWord bits of the
+// PassphraseEntropyToMnemonic turns the raw bytes of the passphrase entropy
+// into human-readable mnemonic words.
+// NOTE: This will only use NumPassphraseWords * aezeed.BitsPerWord bits of the
 // provided entropy.
-func PasswordEntropyToMnemonic(
-	entropy [NumPasswordBytes]byte) ([NumPasswordWords]string, error) {
+func PassphraseEntropyToMnemonic(
+	entropy [NumPassphraseEntropyBytes]byte) ([NumPassphraseWords]string,
+	error) {
 
 	var (
-		password   [NumPasswordWords]string
+		passphrase [NumPassphraseWords]string
 		cipherBits = bstream.NewBStreamReader(entropy[:])
 	)
-	for i := 0; i < NumPasswordWords; i++ {
+	for i := 0; i < NumPassphraseWords; i++ {
 		index, err := cipherBits.ReadBits(aezeed.BitsPerWord)
 		if err != nil {
-			return password, err
+			return passphrase, err
 		}
 
-		password[i] = aezeed.DefaultWordList[index]
+		passphrase[i] = aezeed.DefaultWordList[index]
 	}
 
-	return password, nil
+	return passphrase, nil
 }
 
-// PasswordMnemonicToEntropy reverses the mnemonic word encoding and returns the
-// raw password entropy bytes.
-// NOTE: This will only set the first NumPasswordWords * aezeed.BitsPerWord bits
-// of the entropy. The remaining bits will be set to zero.
-func PasswordMnemonicToEntropy(
-	password [NumPasswordWords]string) [NumPasswordBytes]byte {
+// PassphraseMnemonicToEntropy reverses the mnemonic word encoding and returns
+// the raw passphrase entropy bytes.
+// NOTE: This will only set the first NumPassphraseWords * aezeed.BitsPerWord
+// bits of the entropy. The remaining bits will be set to zero.
+func PassphraseMnemonicToEntropy(
+	passphrase [NumPassphraseWords]string) [NumPassphraseEntropyBytes]byte {
 
-	var passwordEntropy [NumPasswordBytes]byte
-	cipherBits := bstream.NewBStreamWriter(NumPasswordBytes)
-	for _, word := range password {
+	var passphraseEntropy [NumPassphraseEntropyBytes]byte
+	cipherBits := bstream.NewBStreamWriter(NumPassphraseEntropyBytes)
+	for _, word := range passphrase {
 		index := uint64(aezeed.ReverseWordMap[word])
 		cipherBits.WriteBits(index, aezeed.BitsPerWord)
 	}
 
-	copy(passwordEntropy[:], cipherBits.Bytes())
+	copy(passphraseEntropy[:], cipherBits.Bytes())
 
-	return passwordEntropy
+	return passphraseEntropy
 }
 
-// stretchPassword takes a randomly generated passphrase and runs it through
-// scrypt with our specified parameters.
-func stretchPassword(password []byte) ([]byte, error) {
-	// Note that we use the password again as the salt itself, as we always
-	// generate the pairing phrase from a high entropy source.
+// stretchPassphrase takes a randomly generated passphrase entropy and runs it
+// through scrypt with our specified parameters.
+func stretchPassphrase(passphraseEntropy []byte) ([]byte, error) {
+	// Note that we use the passphrase entropy again as the salt itself, as
+	// we always generate the pairing phrase from a high entropy source.
 	rawPairingBytes, err := scrypt.Key(
-		password, password, scryptN, scryptR, scryptP, scryptKeyLen,
+		passphraseEntropy, passphraseEntropy, scryptN, scryptR, scryptP,
+		scryptKeyLen,
 	)
 	if err != nil {
 		return nil, err

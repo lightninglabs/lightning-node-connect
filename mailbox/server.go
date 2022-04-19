@@ -1,8 +1,8 @@
 package mailbox
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha512"
 	"fmt"
 	"io"
 	"net"
@@ -20,14 +20,17 @@ type Server struct {
 
 	mailboxConn *ServerConn
 
+	connData *ConnData
+
 	sid [64]byte
+
 	ctx context.Context
 
 	quit   chan struct{}
 	cancel func()
 }
 
-func NewServer(serverHost string, password []byte,
+func NewServer(serverHost string, connData *ConnData,
 	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
@@ -38,10 +41,16 @@ func NewServer(serverHost string, password []byte,
 
 	clientConn := hashmailrpc.NewHashMailClient(mailboxGrpcConn)
 
+	sid, err := connData.SID()
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Server{
 		serverHost: serverHost,
 		client:     clientConn,
-		sid:        sha512.Sum512(password),
+		connData:   connData,
+		sid:        sid,
 		quit:       make(chan struct{}),
 	}
 
@@ -75,20 +84,31 @@ func (s *Server) Accept() (net.Conn, error) {
 		}
 	}
 
-	receiveSID := GetSID(s.sid, false)
-	sendSID := GetSID(s.sid, true)
+	sid, err := s.connData.SID()
+	if err != nil {
+		return nil, err
+	}
+
+	// If the SID has changed from what it was previously, then we close any
+	// previous connection we had.
+	if !bytes.Equal(s.sid[:], sid[:]) && s.mailboxConn != nil {
+		err := s.mailboxConn.Stop()
+		if err != nil {
+			log.Errorf("could not close mailbox conn: %v", err)
+		}
+
+		s.mailboxConn = nil
+	}
+
+	s.sid = sid
 
 	// If this is the first connection, we create a new ServerConn object.
 	// otherwise, we just refresh the ServerConn.
 	if s.mailboxConn == nil {
 		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, receiveSID, sendSID,
+			s.ctx, s.serverHost, s.client, sid,
 		)
 		if err != nil {
-			log.Errorf("couldn't create new server: %v", err)
-			if err := mailboxConn.Close(); err != nil {
-				return nil, &temporaryError{err}
-			}
 			return nil, &temporaryError{err}
 		}
 		s.mailboxConn = mailboxConn
@@ -96,12 +116,6 @@ func (s *Server) Accept() (net.Conn, error) {
 	} else {
 		mailboxConn, err := RefreshServerConn(s.mailboxConn)
 		if err != nil {
-			log.Errorf("couldn't refresh server: %v", err)
-			if err := mailboxConn.Stop(); err != nil {
-				return nil, &temporaryError{err}
-			}
-
-			s.mailboxConn = nil
 			return nil, &temporaryError{err}
 		}
 		s.mailboxConn = mailboxConn

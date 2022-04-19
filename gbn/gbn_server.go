@@ -22,6 +22,10 @@ func NewServerConn(ctx context.Context, sendFunc sendBytesFunc,
 	}
 
 	if err := conn.serverHandshake(); err != nil {
+		if err := conn.Close(); err != nil {
+			log.Errorf("error closing ServerConn: %v", err)
+		}
+
 		return nil, err
 	}
 	conn.start()
