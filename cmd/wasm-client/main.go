@@ -15,6 +15,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/jessevdk/go-flags"
+	"github.com/lightninglabs/faraday/frdrpc"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/build"
@@ -50,6 +51,7 @@ var registrations = []stubPackageRegistration{
 	wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
 	looprpc.RegisterSwapClientJSONCallbacks,
 	poolrpc.RegisterTraderJSONCallbacks,
+	frdrpc.RegisterFaradayServerJSONCallbacks,
 }
 
 func main() {
