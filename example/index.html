@@ -124,6 +124,10 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     async function callWASMPool(rpcName, req) {
         window[namespace].wasmClientInvokeRPC('poolrpc.Trader.' + rpcName, req, setResult);
     }
+    
+    async function callWASMFaraday(rpcName, req) {
+        window[namespace].wasmClientInvokeRPC('frdrpc.FaradayServer.' + rpcName, req, setResult);
+    }
 
     function setResult(result) {
         $('#output').text(result);
@@ -196,6 +200,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
     <h2>Pool</h2>
     <button onClick="callWASMPool('GetInfo', '{}');">GetInfo</button>
+    
+    <h2>Faraday</h2>
+    <button onClick="callWASMFaraday('RevenueReport', '{}');">RevenueReport</button>
 </div>
 </body>
 
