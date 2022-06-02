@@ -33,6 +33,8 @@ func newHashmailHarness() *hashmailHarness {
 				MessageBurstAllowance: math.MaxUint32,
 			},
 			DebugLevel: "debug",
+			Tor:        &aperture.TorConfig{},
+			Prometheus: &aperture.PrometheusConfig{},
 		},
 	}
 }

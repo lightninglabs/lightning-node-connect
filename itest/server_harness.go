@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"sync"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lightning-node-connect/itest/mockrpc"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -36,7 +36,7 @@ func newServerHarness(serverHost string, insecure bool) (*serverHarness,
 	}
 	pswdEntropy := mailbox.PassphraseMnemonicToEntropy(entropy)
 
-	privKey, err := btcec.NewPrivateKey(btcec.S256())
+	privKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		return nil, err
 	}

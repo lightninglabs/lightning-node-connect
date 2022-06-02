@@ -13,7 +13,7 @@ import (
 	"runtime/debug"
 	"syscall/js"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -138,7 +138,7 @@ func newWasmClient(cfg *config) (*wasmClient, error) {
 	)
 	switch {
 	case cfg.LocalPrivate == "" && cfg.RemotePublic == "":
-		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		privKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +158,7 @@ func newWasmClient(cfg *config) (*wasmClient, error) {
 			return nil, err
 		}
 
-		privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyByte)
+		privKey, _ := btcec.PrivKeyFromBytes(privKeyByte)
 		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
 
 	default:
@@ -167,9 +167,7 @@ func newWasmClient(cfg *config) (*wasmClient, error) {
 		if err != nil {
 			return nil, err
 		}
-		privKey, _ := btcec.PrivKeyFromBytes(
-			btcec.S256(), localPrivKeyBytes,
-		)
+		privKey, _ := btcec.PrivKeyFromBytes(localPrivKeyBytes)
 		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
 
 		remoteKeyBytes, err := hex.DecodeString(cfg.RemotePublic)
@@ -177,9 +175,7 @@ func newWasmClient(cfg *config) (*wasmClient, error) {
 			return nil, err
 		}
 
-		remoteStaticKey, err = btcec.ParsePubKey(
-			remoteKeyBytes, btcec.S256(),
-		)
+		remoteStaticKey, err = btcec.ParsePubKey(remoteKeyBytes)
 		if err != nil {
 			return nil, err
 		}
