@@ -16,7 +16,8 @@ import (
 func mailboxRPCConnection(mailboxServer, pairingPhrase string,
 	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
 	onRemoteStatic func(key *btcec.PublicKey) error,
-	onAuthData func(data []byte) error) (*grpc.ClientConn, error) {
+	onAuthData func(data []byte) error) (func() mailbox.ConnStatus,
+	func() (*grpc.ClientConn, error), error) {
 
 	words := strings.Split(pairingPhrase, " ")
 	var mnemonicWords [mailbox.NumPassphraseWords]string
@@ -31,7 +32,7 @@ func mailboxRPCConnection(mailboxServer, pairingPhrase string,
 	ctx := context.Background()
 	transportConn, err := mailbox.NewClient(ctx, connData)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	noiseConn := mailbox.NewNoiseGrpcConn(connData)
@@ -45,5 +46,7 @@ func mailboxRPCConnection(mailboxServer, pairingPhrase string,
 		),
 	}
 
-	return grpc.DialContext(ctx, mailboxServer, dialOpts...)
+	return transportConn.ConnStatus, func() (*grpc.ClientConn, error) {
+		return grpc.DialContext(ctx, mailboxServer, dialOpts...)
+	}, nil
 }

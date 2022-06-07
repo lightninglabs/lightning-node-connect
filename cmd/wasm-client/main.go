@@ -16,6 +16,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/faraday/frdrpc"
+	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/build"
@@ -101,6 +102,7 @@ func main() {
 	callbacks.Set("wasmClientIsConnected", js.FuncOf(wc.IsConnected))
 	callbacks.Set("wasmClientDisconnect", js.FuncOf(wc.Disconnect))
 	callbacks.Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
+	callbacks.Set("wasmClientStatus", js.FuncOf(wc.Status))
 	js.Global().Set(cfg.NameSpace, callbacks)
 
 	for _, registration := range registrations {
@@ -121,6 +123,8 @@ type wasmClient struct {
 	cfg *config
 
 	lndConn *grpc.ClientConn
+
+	statusChecker func() mailbox.ConnStatus
 
 	localStaticKey  keychain.SingleKeyECDH
 	remoteStaticKey *btcec.PublicKey
@@ -220,7 +224,7 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	}
 
 	var err error
-	w.lndConn, err = mailboxRPCConnection(
+	statusChecker, lndConnect, err := mailboxRPCConnection(
 		mailboxServer, pairingPhrase, w.localStaticKey,
 		w.remoteStaticKey, func(key *btcec.PublicKey) error {
 			return callJsCallback(
@@ -236,6 +240,9 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	if err != nil {
 		exit(err)
 	}
+
+	w.statusChecker = statusChecker
+	w.lndConn, err = lndConnect()
 
 	log.Debugf("WASM client connected to RPC")
 
@@ -254,6 +261,14 @@ func (w *wasmClient) Disconnect(_ js.Value, _ []js.Value) interface{} {
 	}
 
 	return nil
+}
+
+func (w *wasmClient) Status(_ js.Value, _ []js.Value) interface{} {
+	if w.statusChecker == nil {
+		return nil
+	}
+
+	return js.ValueOf(w.statusChecker().String())
 }
 
 func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
