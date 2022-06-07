@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -126,72 +127,18 @@ type wasmClient struct {
 
 	statusChecker func() mailbox.ConnStatus
 
-	localStaticKey  keychain.SingleKeyECDH
-	remoteStaticKey *btcec.PublicKey
-
 	registry map[string]func(context.Context, *grpc.ClientConn,
 		string, func(string, error))
 }
 
 func newWasmClient(cfg *config) (*wasmClient, error) {
-	if err := cfg.validate(); err != nil {
-		return nil, err
-	}
-
-	var (
-		localStaticKey  keychain.SingleKeyECDH
-		remoteStaticKey *btcec.PublicKey
-	)
-	switch {
-	case cfg.LocalPrivate == "" && cfg.RemotePublic == "":
-		privKey, err := btcec.NewPrivateKey()
-		if err != nil {
-			return nil, err
-		}
-		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
-
-		err = callJsCallback(
-			cfg.OnLocalPrivCreate,
-			hex.EncodeToString(privKey.Serialize()),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-	case cfg.RemotePublic == "":
-		privKeyByte, err := hex.DecodeString(cfg.LocalPrivate)
-		if err != nil {
-			return nil, err
-		}
-
-		privKey, _ := btcec.PrivKeyFromBytes(privKeyByte)
-		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
-
-	default:
-		// Both local and remote are set.
-		localPrivKeyBytes, err := hex.DecodeString(cfg.LocalPrivate)
-		if err != nil {
-			return nil, err
-		}
-		privKey, _ := btcec.PrivKeyFromBytes(localPrivKeyBytes)
-		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
-
-		remoteKeyBytes, err := hex.DecodeString(cfg.RemotePublic)
-		if err != nil {
-			return nil, err
-		}
-
-		remoteStaticKey, err = btcec.ParsePubKey(remoteKeyBytes)
-		if err != nil {
-			return nil, err
-		}
+	if cfg.NameSpace == "" {
+		return nil, fmt.Errorf("a non-empty namespace is required")
 	}
 
 	return &wasmClient{
-		cfg:             cfg,
-		lndConn:         nil,
-		localStaticKey:  localStaticKey,
-		remoteStaticKey: remoteStaticKey,
+		cfg:     cfg,
+		lndConn: nil,
 		registry: make(map[string]func(context.Context,
 			*grpc.ClientConn, string, func(string, error))),
 	}, nil
@@ -205,14 +152,32 @@ func (w *wasmClient) IsReady(_ js.Value, _ []js.Value) interface{} {
 }
 
 func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
-	if len(args) != 3 {
+	if len(args) != 5 {
 		return js.ValueOf("invalid use of wasmClientConnectServer, " +
-			"need 3 parameters: server, isDevServer, pairingPhrase")
+			"need 5 parameters: server, isDevServer, " +
+			"pairingPhrase, localStaticPrivKey, remoteStaticPubKey")
 	}
 
 	mailboxServer := args[0].String()
 	isDevServer := args[1].Bool()
 	pairingPhrase := args[2].String()
+	localStatic := args[3].String()
+	remoteStatic := args[4].String()
+
+	// Check that the correct arguments and config combinations have been
+	// provided.
+	err := validateArgs(w.cfg, localStatic, remoteStatic)
+	if err != nil {
+		exit(err)
+	}
+
+	// Parse the key arguments.
+	localPriv, remotePub, err := parseKeys(
+		w.cfg.OnLocalPrivCreate, localStatic, remoteStatic,
+	)
+	if err != nil {
+		exit(err)
+	}
 
 	// Disable TLS verification for the REST connections if this is a dev
 	// server.
@@ -223,10 +188,9 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 		}
 	}
 
-	var err error
 	statusChecker, lndConnect, err := mailboxRPCConnection(
-		mailboxServer, pairingPhrase, w.localStaticKey,
-		w.remoteStaticKey, func(key *btcec.PublicKey) error {
+		mailboxServer, pairingPhrase, localPriv, remotePub,
+		func(key *btcec.PublicKey) error {
 			return callJsCallback(
 				w.cfg.OnRemoteKeyReceive,
 				hex.EncodeToString(key.SerializeCompressed()),
@@ -306,6 +270,92 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	}()
 	return nil
 
+}
+
+// validateArgs checks that the correct keys and callback functions have been
+// provided.
+func validateArgs(cfg *config, localPrivKey, remotePubKey string) error {
+	if remotePubKey != "" && localPrivKey == "" {
+		return errors.New("cannot set remote pub key if local priv " +
+			"key is not also set")
+	}
+
+	if localPrivKey == "" && cfg.OnLocalPrivCreate == "" {
+		return errors.New("OnLocalPrivCreate must be defined if a " +
+			"local key is not provided")
+	}
+
+	if remotePubKey == "" && cfg.OnRemoteKeyReceive == "" {
+		return errors.New("OnRemoteKeyReceive must be defined if a " +
+			"remote key is not provided")
+	}
+
+	return nil
+}
+
+// parseKeys parses the given keys from their string format and calls callback
+// functions where appropriate. NOTE: This function assumes that the parameter
+// combinations have been checked by validateArgs.
+func parseKeys(onLocalPrivCreate, localPrivKey, remotePubKey string) (
+	keychain.SingleKeyECDH, *btcec.PublicKey, error) {
+
+	var (
+		localStaticKey  keychain.SingleKeyECDH
+		remoteStaticKey *btcec.PublicKey
+	)
+	switch {
+
+	// This is a new session for which a local key has not yet been derived,
+	// so we generate a new key and call the onLocalPrivCreate callback so
+	// that this key can be persisted.
+	case localPrivKey == "" && remotePubKey == "":
+		privKey, err := btcec.NewPrivateKey()
+		if err != nil {
+			return nil, nil, err
+		}
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+		err = callJsCallback(
+			onLocalPrivCreate,
+			hex.EncodeToString(privKey.Serialize()),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+
+	// A local private key has been provided, so parse it.
+	case remotePubKey == "":
+		privKeyByte, err := hex.DecodeString(localPrivKey)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		privKey, _ := btcec.PrivKeyFromBytes(privKeyByte)
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+	// Both local private key and remote public key have been provided,
+	// so parse them both into the appropriate types.
+	default:
+		// Both local and remote are set.
+		localPrivKeyBytes, err := hex.DecodeString(localPrivKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		privKey, _ := btcec.PrivKeyFromBytes(localPrivKeyBytes)
+		localStaticKey = &keychain.PrivKeyECDH{PrivKey: privKey}
+
+		remoteKeyBytes, err := hex.DecodeString(remotePubKey)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		remoteStaticKey, err = btcec.ParsePubKey(remoteKeyBytes)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return localStaticKey, remoteStaticKey, nil
 }
 
 func callJsCallback(callbackName string, value string) error {
