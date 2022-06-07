@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,36 @@ const (
 	sendSocketTimeout = 1000 * time.Millisecond
 )
 
+// ConnStatus is a description of the connection status of the client.
+type ConnStatus string
+
+const (
+	// ConnStatusNotConnected means that the client is not connected at all.
+	// This is likely due to the mailbox server being down.
+	ConnStatusNotConnected ConnStatus = "Not Connected"
+
+	// ConnStatusSessionNotFound means that the connection to the mailbox
+	// server was successful but that the mailbox with the given ID was
+	// not found. This either means that the server is down, that the
+	// session has expired or that the user entered passphrase was
+	// incorrect.
+	ConnStatusSessionNotFound ConnStatus = "Session Not Found"
+
+	// ConnStatusSessionInUse means that the connection to the mailbox
+	// server was successful but that the stream for the session is already
+	// occupied by another client.
+	ConnStatusSessionInUse ConnStatus = "Session In Use"
+
+	// ConnStatusConnected indicates that the connection to both the
+	// mailbox server and end server was successful.
+	ConnStatusConnected ConnStatus = "Connected"
+)
+
+// String converts the ConnStatus to a string type.
+func (c ConnStatus) String() string {
+	return string(c)
+}
+
 // ClientConn is a type that establishes a base transport connection to a
 // mailbox server using a REST/WebSocket connection. This type can be used to
 // initiate a mailbox transport connection from a browser/WASM environment.
@@ -102,14 +133,18 @@ type ClientConn struct {
 
 	closeOnce sync.Once
 
+	status      ConnStatus
+	onNewStatus func(status ConnStatus)
+	statusMu    sync.Mutex
+
 	quit chan struct{}
 }
 
 // NewClientConn creates a new client connection with the given receive and send
 // session identifiers. The context given as the first parameter will be used
 // throughout the connection lifetime.
-func NewClientConn(ctx context.Context, sid [64]byte,
-	serverHost string) (*ClientConn, error) {
+func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
+	onNewStatus func(status ConnStatus)) (*ClientConn, error) {
 
 	receiveSID := GetSID(sid, true)
 	sendSID := GetSID(sid, false)
@@ -125,7 +160,9 @@ func NewClientConn(ctx context.Context, sid [64]byte,
 				gbnClientPingTimeout, gbnPongTimeout,
 			),
 		},
-		quit: make(chan struct{}),
+		status:      ConnStatusNotConnected,
+		onNewStatus: onNewStatus,
+		quit:        make(chan struct{}),
 	}
 	c.connKit = &connKit{
 		ctx:        ctx,
@@ -164,6 +201,8 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	cc := &ClientConn{
 		receiveSocket: c.receiveSocket,
 		sendSocket:    c.sendSocket,
+		status:        ConnStatusNotConnected,
+		onNewStatus:   c.onNewStatus,
 		gbnOptions:    c.gbnOptions,
 		quit:          make(chan struct{}),
 	}
@@ -195,6 +234,51 @@ func (c *ClientConn) Done() <-chan struct{} {
 	return c.quit
 }
 
+// setStatusByErr parses the given error and sets the connection status
+// accordingly.
+func (c *ClientConn) setStatusByErr(err error) {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+
+	switch {
+	case strings.Contains(err.Error(), "stream not found"):
+		c.setStatusUnsafe(ConnStatusSessionNotFound)
+
+	case strings.Contains(
+		err.Error(), "stream occupied"):
+
+		c.setStatusUnsafe(ConnStatusSessionInUse)
+
+	default:
+		// We give previously set status priority if it provides more
+		// detail than the NotConnected status.
+		if c.status == ConnStatusSessionInUse ||
+			c.status == ConnStatusSessionNotFound {
+
+			return
+		}
+
+		c.setStatusUnsafe(ConnStatusNotConnected)
+	}
+}
+
+// setStatus is used to set a new connection status and to call the onNewStatus
+// callback function.
+func (c *ClientConn) setStatus(s ConnStatus) {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+
+	c.setStatusUnsafe(s)
+}
+
+// setStatusUnsafe is used to set a new connection status and to call the
+// onNewStatus callback function. Note that this function is not thread safe
+// and must only be called if the statusMu lock is being held.
+func (c *ClientConn) setStatusUnsafe(s ConnStatus) {
+	c.status = s
+	c.onNewStatus(s)
+}
+
 // recvFromStream is used to receive a payload from the receive socket.
 // The function is passed to and used by the gbn connection.
 // It therefore takes in and reacts on the cancellation of a context so that
@@ -221,6 +305,7 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 			log.Debugf("Client: got failure on receive socket, "+
 				"re-trying: %v", err)
 
+			c.setStatus(ConnStatusNotConnected)
 			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
 			continue
@@ -229,6 +314,8 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 		if err != nil {
 			log.Debugf("Client: got error message from receive "+
 				"socket: %v", err)
+
+			c.setStatusByErr(err)
 
 			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
@@ -241,6 +328,8 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		c.setStatus(ConnStatusConnected)
 
 		return mailboxMsg.Msg, nil
 	}
@@ -290,6 +379,7 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 			log.Debugf("Client: got failure on send socket, "+
 				"re-trying: %v", err)
 
+			c.setStatusByErr(err)
 			c.createSendMailBox(ctx, retryWait)
 			c.sendStreamMu.Unlock()
 			continue

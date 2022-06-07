@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"sync"
 )
 
 // Client manages the mailboxConn it holds and refreshes it on connection
@@ -12,6 +13,9 @@ type Client struct {
 	mailboxConn *ClientConn
 
 	connData *ConnData
+
+	status   ConnStatus
+	statusMu sync.Mutex
 
 	sid [64]byte
 
@@ -29,6 +33,7 @@ func NewClient(ctx context.Context, connData *ConnData) (*Client, error) {
 	return &Client{
 		ctx:      ctx,
 		connData: connData,
+		status:   ConnStatusNotConnected,
 		sid:      sid,
 	}, nil
 }
@@ -67,7 +72,13 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 	c.sid = sid
 
 	if c.mailboxConn == nil {
-		mailboxConn, err := NewClientConn(c.ctx, c.sid, serverHost)
+		mailboxConn, err := NewClientConn(
+			c.ctx, c.sid, serverHost, func(status ConnStatus) {
+				c.statusMu.Lock()
+				c.status = status
+				c.statusMu.Unlock()
+			},
+		)
 		if err != nil {
 			return nil, &temporaryError{err}
 		}
@@ -81,4 +92,12 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 	}
 
 	return c.mailboxConn, nil
+}
+
+// ConnStatus returns last determined client connection status.
+func (c *Client) ConnStatus() ConnStatus {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+
+	return c.status
 }
