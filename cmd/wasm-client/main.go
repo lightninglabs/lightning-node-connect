@@ -188,27 +188,36 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 		}
 	}
 
-	statusChecker, lndConnect, err := mailboxRPCConnection(
-		mailboxServer, pairingPhrase, localPriv, remotePub,
-		func(key *btcec.PublicKey) error {
-			return callJsCallback(
-				w.cfg.OnRemoteKeyReceive,
-				hex.EncodeToString(key.SerializeCompressed()),
-			)
-		}, func(data []byte) error {
-			return callJsCallback(
-				w.cfg.OnAuthData, hex.EncodeToString(data),
-			)
-		},
-	)
-	if err != nil {
-		exit(err)
-	}
+	// Since the connection function is blocking, we need to spin it off
+	// in another goroutine here. See https://pkg.go.dev/syscall/js#FuncOf.
+	go func() {
+		var err error
+		statusChecker, lndConnect, err := mailboxRPCConnection(
+			mailboxServer, pairingPhrase, localPriv, remotePub,
+			func(key *btcec.PublicKey) error {
+				return callJsCallback(
+					w.cfg.OnRemoteKeyReceive,
+					hex.EncodeToString(
+						key.SerializeCompressed(),
+					),
+				)
+			}, func(data []byte) error {
+				return callJsCallback(
+					w.cfg.OnAuthData, hex.EncodeToString(
+						data,
+					),
+				)
+			},
+		)
+		if err != nil {
+			exit(err)
+		}
 
-	w.statusChecker = statusChecker
-	w.lndConn, err = lndConnect()
+		w.statusChecker = statusChecker
+		w.lndConn, err = lndConnect()
 
-	log.Debugf("WASM client connected to RPC")
+		log.Debugf("WASM client connected to RPC")
+	}()
 
 	return nil
 }
