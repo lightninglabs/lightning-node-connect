@@ -12,4 +12,8 @@ require (
 	google.golang.org/grpc v1.39.0
 )
 
+replace github.com/lightninglabs/lightning-node-connect => ../../
+
+replace github.com/lightninglabs/lightning-node-connect/hashmailrpc => ../../hashmailrpc
+
 go 1.16

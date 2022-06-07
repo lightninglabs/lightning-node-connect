@@ -505,10 +505,6 @@ github.com/lightninglabs/faraday v0.2.7-alpha.0.20220503144421-cd1e56982f09 h1:4
 github.com/lightninglabs/faraday v0.2.7-alpha.0.20220503144421-cd1e56982f09/go.mod h1:YyeMuBbsqJ85wT6j1rCmTPMuk5a5Iz+QouiTN6qQiQ0=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI/f/O0Avg7t8sqkPo78HFzjmeYFl6DPnc=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
-github.com/lightninglabs/lightning-node-connect v0.1.9-alpha.0.20220602120524-e9964c685b18 h1:V68nv3ZyoWu/pEDlhaS81Tq6/LMPLsop2sV+WlxD4F4=
-github.com/lightninglabs/lightning-node-connect v0.1.9-alpha.0.20220602120524-e9964c685b18/go.mod h1:dgyhE+O4GpWBhS7yIzKCm8LqFHX8/QRwJ6OWFrN+WnA=
-github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 h1:Er1miPZD2XZwcfE4xoS5AILqP1mj7kqnhbBSxW9BDxY=
-github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2/go.mod h1:antQGRDRJiuyQF6l+k6NECCSImgCpwaZapATth2Chv4=
 github.com/lightninglabs/lndclient v0.15.0-0/go.mod h1:ORS/YFe9hAXlzN/Uj+gvTmrnXEml6yD6dWwzCjpTJyQ=
 github.com/lightninglabs/lndclient v0.15.0-2/go.mod h1:bef6exkGOboLNGZpx+nJFspmyV/CSiO/aIeWj9UFqE4=
 github.com/lightninglabs/loop v0.18.0-beta h1:Xnx2u96MX/4uIeKei4MmkCEXbSgooS3u9pC/ZqoCNf0=
