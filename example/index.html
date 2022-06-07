@@ -72,6 +72,13 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             }
         }
         readyTicker = setInterval(isReady, 200);
+
+        let connStatus = function () {
+            let result = window[namespace].wasmClientStatus();
+            document.getElementById('status').innerHTML = "Connection Status: " + result;
+        }
+        setInterval(connStatus, 200);
+
         await go.run(instance);
         await WebAssembly.instantiate(module, go.importObject);
     }
@@ -174,7 +181,11 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     </button>
 </div>
 
-<br /><br />
+<br />
+
+<h4 id="status"></h4>
+
+<br />
 
 <div id="ready" style="display:none">
     <pre id="output">
