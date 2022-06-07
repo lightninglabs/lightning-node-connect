@@ -40,6 +40,11 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             remoteKey = localStorage.getItem(namespace+":remoteKey")
         }
 
+        if (localStorage.getItem(namespace+":mailboxHost")) {
+            server = localStorage.getItem(namespace+":mailboxHost")
+            document.getElementById('server').value = server
+        }
+
         console.clear();
         go.argv = [
             'wasm-client',
@@ -93,12 +98,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
     async function connectServer() {
         let server = $('#server').val();
-
-        if (localStorage.getItem(namespace+":mailboxHost")) {
-            server = localStorage.getItem(namespace+":mailboxHost")
-        } else {
-            localStorage.setItem(namespace+":mailboxHost", server)
-        }
+        localStorage.setItem(namespace+":mailboxHost", server)
 
         let passphrase = $('#phrase').val();
         let connectedTicker = null;
