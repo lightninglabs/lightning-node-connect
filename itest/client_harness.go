@@ -66,6 +66,7 @@ func (c *clientHarness) start() error {
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
 		),
+		grpc.WithBlock(),
 	}
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{

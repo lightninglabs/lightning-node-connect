@@ -44,6 +44,7 @@ func mailboxRPCConnection(mailboxServer, pairingPhrase string,
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(1024 * 1024 * 200),
 		),
+		grpc.WithBlock(),
 	}
 
 	return transportConn.ConnStatus, func() (*grpc.ClientConn, error) {
