@@ -29,17 +29,6 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     async function startInstance(module, instance) {
         namespace = $('#namespace').val();
 
-        let localKey = ""
-        let remoteKey = ""
-
-        if (localStorage.getItem(namespace+":localKey")) {
-            localKey = localStorage.getItem(namespace+":localKey")
-        }
-
-        if (localStorage.getItem(namespace+":remoteKey")) {
-            remoteKey = localStorage.getItem(namespace+":remoteKey")
-        }
-
         if (localStorage.getItem(namespace+":mailboxHost")) {
             server = localStorage.getItem(namespace+":mailboxHost")
             document.getElementById('server').value = server
@@ -50,8 +39,6 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             'wasm-client',
             '--debuglevel=trace',
             '--namespace='+namespace,
-            '--localprivate='+localKey,
-            '--remotepublic='+remoteKey,
             '--onlocalprivcreate=onLocalKeyCreate',
             '--onremotekeyreceive=onRemoteKeyReceive',
             '--onauthdata=onAuthData',
@@ -70,7 +57,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
             // If we have a remote key stored, it means that the handshake we will do to create a connection will not
             // involve the passphrase, so we can immediately connect to the server.
-            if (remoteKey != "") {
+            if (localStorage.getItem(namespace+":remoteKey")) {
                 connectServer()
             } else {
                 $('#passphrase').show();
@@ -100,6 +87,17 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         let server = $('#server').val();
         localStorage.setItem(namespace+":mailboxHost", server)
 
+        let localKey = ""
+        let remoteKey = ""
+
+        if (localStorage.getItem(namespace+":localKey")) {
+            localKey = localStorage.getItem(namespace+":localKey")
+        }
+
+        if (localStorage.getItem(namespace+":remoteKey")) {
+            remoteKey = localStorage.getItem(namespace+":remoteKey")
+        }
+
         let passphrase = $('#phrase').val();
         let connectedTicker = null;
         let isConnected = function () {
@@ -113,7 +111,7 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             }
         }
         connectedTicker = setInterval(isConnected, 200);
-        window[namespace].wasmClientConnectServer(server, true, passphrase);
+        window[namespace].wasmClientConnectServer(server, true, passphrase, localKey, remoteKey);
     }
 
     async function clearStorage() {
