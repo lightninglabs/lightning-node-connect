@@ -33,6 +33,13 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             server = localStorage.getItem(namespace+":mailboxHost")
             document.getElementById('server').value = server
         }
+        if (localStorage.getItem(namespace + ":expiry")) {
+            let expiry = new Date(localStorage.getItem(namespace + ":expiry") * 1000);
+            if (expiry < Date.now()) {
+                document.getElementById('expiry').innerHTML = "Session has expired";
+                return
+            }
+        }
 
         console.clear();
         go.argv = [
@@ -156,6 +163,17 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
     function onAuthData(data) {
         console.log("auth data received: "+data)
+
+        // extract expiry.
+        let expiry = window[namespace].wasmClientGetExpiry();
+        if (!expiry) {
+            document.getElementById('expiry').innerHTML = "No expiry found in macaroon";
+            return {}
+        }
+
+        localStorage.setItem(namespace+":expiry", expiry)
+        document.getElementById('expiry').innerHTML = "Session Expiry: "+new Date(expiry*1000).toLocaleString();
+
         return {}
         // In case of an error, return an object with the following structure:
         //      `return {err:"this totally failed"}`
@@ -182,6 +200,8 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 <br />
 
 <h4 id="status"></h4>
+
+<h4 id="expiry"></h4>
 
 <br />
 

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strings"
 	"syscall/js"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -34,6 +35,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
+	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
+	"gopkg.in/macaroon.v2"
 )
 
 type stubPackageRegistration func(map[string]func(context.Context,
@@ -104,6 +107,7 @@ func main() {
 	callbacks.Set("wasmClientDisconnect", js.FuncOf(wc.Disconnect))
 	callbacks.Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
 	callbacks.Set("wasmClientStatus", js.FuncOf(wc.Status))
+	callbacks.Set("wasmClientGetExpiry", js.FuncOf(wc.GetExpiry))
 	js.Global().Set(cfg.NameSpace, callbacks)
 
 	for _, registration := range registrations {
@@ -126,6 +130,8 @@ type wasmClient struct {
 	lndConn *grpc.ClientConn
 
 	statusChecker func() mailbox.ConnStatus
+
+	mac *macaroon.Macaroon
 
 	registry map[string]func(context.Context, *grpc.ClientConn,
 		string, func(string, error))
@@ -202,10 +208,28 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 					),
 				)
 			}, func(data []byte) error {
+				parts := strings.Split(string(data), ": ")
+				if len(parts) != 2 || parts[0] != "Macaroon" {
+					return fmt.Errorf("authdata does " +
+						"not contain a macaroon")
+				}
+
+				macBytes, err := hex.DecodeString(parts[1])
+				if err != nil {
+					return err
+				}
+
+				mac := &macaroon.Macaroon{}
+				err = mac.UnmarshalBinary(macBytes)
+				if err != nil {
+					return fmt.Errorf("unable to decode "+
+						"macaroon: %v", err)
+				}
+
+				w.mac = mac
+
 				return callJsCallback(
-					w.cfg.OnAuthData, hex.EncodeToString(
-						data,
-					),
+					w.cfg.OnAuthData, string(data),
 				)
 			},
 		)
@@ -279,6 +303,49 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	}()
 	return nil
 
+}
+
+func (w *wasmClient) GetExpiry(_ js.Value, _ []js.Value) interface{} {
+	if w.mac == nil {
+		log.Errorf("macaroon not obtained yet. GetExpiry should " +
+			"only be called once the connection is complete")
+		return nil
+	}
+
+	expiry, found := checkers.ExpiryTime(nil, w.mac.Caveats())
+	if !found {
+		return nil
+	}
+
+	return js.ValueOf(expiry.Unix())
+}
+	if len(args) != 1 {
+		return js.ValueOf("invalid use of wasmClientExtractExpiry, " +
+			"need 1 parameters: macaroon string")
+	}
+
+	parts := strings.Split(args[0].String(), ": ")
+	if len(parts) != 2 || parts[0] != "Macaroon" {
+		return js.ValueOf("macaroon missing from auth data")
+	}
+
+	macBytes, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return js.ValueOf(err.Error())
+	}
+
+	mac := &macaroon.Macaroon{}
+	if err := mac.UnmarshalBinary(macBytes); err != nil {
+		return js.ValueOf(fmt.Sprintf("unable to decode macaroon: %v",
+			err))
+	}
+
+	expiry, found := checkers.ExpiryTime(nil, mac.Caveats())
+	if !found {
+		return nil
+	}
+
+	return js.ValueOf(expiry.Unix())
 }
 
 // validateArgs checks that the correct keys and callback functions have been

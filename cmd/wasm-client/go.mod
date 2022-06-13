@@ -10,6 +10,8 @@ require (
 	github.com/lightninglabs/pool v0.5.6-alpha
 	github.com/lightningnetwork/lnd v0.15.0-beta.rc3
 	google.golang.org/grpc v1.39.0
+	gopkg.in/macaroon-bakery.v2 v2.0.1
+	gopkg.in/macaroon.v2 v2.1.0
 )
 
 replace github.com/lightninglabs/lightning-node-connect => ../../
