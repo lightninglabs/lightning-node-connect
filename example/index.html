@@ -174,6 +174,44 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         localStorage.setItem(namespace+":expiry", expiry)
         document.getElementById('expiry').innerHTML = "Session Expiry: "+new Date(expiry*1000).toLocaleString();
 
+        // Determine if the session is a read only session.
+        let readOnly = window[namespace].wasmClientIsReadOnly();
+        if (readOnly) {
+            document.getElementById('sessiontype').textContent = "This is a Read-Only Session"
+        } else {
+            document.getElementById('sessiontype').textContent = "This is an Admin Session"
+        }
+
+        // extract permissions.
+        if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.GetInfo")) {
+            document.getElementById('getinfo').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.ListChannels")) {
+            document.getElementById('listchannels').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.ListPeers")) {
+            document.getElementById('listpeers').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.WalletBalance")) {
+            document.getElementById('walletbalance').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.NewAddress")) {
+            document.getElementById('newaddr1').disabled = false;
+            document.getElementById('newaddr2').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.SubscribeTransactions")) {
+            document.getElementById('subscribetx').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("looprpc.SwapClient.LoopOutTerms")) {
+            document.getElementById('loopoutterms').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("poolrpc.Trader.GetInfo")) {
+            document.getElementById('poolinfo').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("frdrpc.FaradayServer.RevenueReport")) {
+            document.getElementById('revenuereport').disabled = false;
+        }
+
         return {}
         // In case of an error, return an object with the following structure:
         //      `return {err:"this totally failed"}`
@@ -203,6 +241,8 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 
 <h4 id="expiry"></h4>
 
+<h4 id="sessiontype"></h4>
+
 <br />
 
 <div id="ready" style="display:none">
@@ -210,28 +250,28 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     </pre>
 
     <h2>LND</h2>
-    <button onClick="callWASM('GetInfo', '{}');">GetInfo</button>
-    <button onClick="callWASM('ListChannels', '{}');">ListChannels</button>
-    <button onClick="callWASM('ListPeers', '{}');">ListPeers</button>
-    <button onClick="callWASM('WalletBalance', '{}');">WalletBalance</button>
-    <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;WITNESS_PUBKEY_HASH&quot;}');">
+    <button id="getinfo" onClick="callWASM('GetInfo', '{}');" disabled>GetInfo</button>
+    <button id="listchannels" onClick="callWASM('ListChannels', '{}');" disabled>ListChannels</button>
+    <button id="listpeers" onClick="callWASM('ListPeers', '{}');" disabled>ListPeers</button>
+    <button id="walletbalance" onClick="callWASM('WalletBalance', '{}');" disabled>WalletBalance</button>
+    <button id="newaddr1" onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;WITNESS_PUBKEY_HASH&quot;}');" disabled>
         New P2WKH address
     </button>
-    <button onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;NESTED_PUBKEY_HASH&quot;}');">
+    <button id="newaddr2" onClick="callWASM('NewAddress', '{&quot;type&quot;:&quot;NESTED_PUBKEY_HASH&quot;}');" disabled>
         New NP2WKH address
     </button>
-    <button onClick="callWASM('SubscribeTransactions', '{}');">
+    <button id="subscribetx" onClick="callWASM('SubscribeTransactions', '{}');" disabled>
         SubscribeTransactions
     </button>
 
     <h2>Loop</h2>
-    <button onClick="callWASMLoop('LoopOutTerms', '{}');">LoopOutTerms</button>
+    <button id="loopoutterms" onClick="callWASMLoop('LoopOutTerms', '{}');" disabled>LoopOutTerms</button>
 
     <h2>Pool</h2>
-    <button onClick="callWASMPool('GetInfo', '{}');">GetInfo</button>
+    <button id="poolinfo" onClick="callWASMPool('GetInfo', '{}');" disabled>GetInfo</button>
     
     <h2>Faraday</h2>
-    <button onClick="callWASMFaraday('RevenueReport', '{}');">RevenueReport</button>
+    <button id="revenuereport" onClick="callWASMFaraday('RevenueReport', '{}');" disabled>RevenueReport</button>
 </div>
 </body>
 

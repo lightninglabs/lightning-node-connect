@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"syscall/js"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/golang/protobuf/proto"
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/faraday/frdrpc"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
@@ -35,6 +37,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 	"gopkg.in/macaroon.v2"
 )
@@ -42,22 +45,28 @@ import (
 type stubPackageRegistration func(map[string]func(context.Context,
 	*grpc.ClientConn, string, func(string, error)))
 
-var registrations = []stubPackageRegistration{
-	lnrpc.RegisterLightningJSONCallbacks,
-	lnrpc.RegisterStateJSONCallbacks,
-	autopilotrpc.RegisterAutopilotJSONCallbacks,
-	chainrpc.RegisterChainNotifierJSONCallbacks,
-	invoicesrpc.RegisterInvoicesJSONCallbacks,
-	routerrpc.RegisterRouterJSONCallbacks,
-	signrpc.RegisterSignerJSONCallbacks,
-	verrpc.RegisterVersionerJSONCallbacks,
-	walletrpc.RegisterWalletKitJSONCallbacks,
-	watchtowerrpc.RegisterWatchtowerJSONCallbacks,
-	wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
-	looprpc.RegisterSwapClientJSONCallbacks,
-	poolrpc.RegisterTraderJSONCallbacks,
-	frdrpc.RegisterFaradayServerJSONCallbacks,
-}
+var (
+	registrations = []stubPackageRegistration{
+		lnrpc.RegisterLightningJSONCallbacks,
+		lnrpc.RegisterStateJSONCallbacks,
+		autopilotrpc.RegisterAutopilotJSONCallbacks,
+		chainrpc.RegisterChainNotifierJSONCallbacks,
+		invoicesrpc.RegisterInvoicesJSONCallbacks,
+		routerrpc.RegisterRouterJSONCallbacks,
+		signrpc.RegisterSignerJSONCallbacks,
+		verrpc.RegisterVersionerJSONCallbacks,
+		walletrpc.RegisterWalletKitJSONCallbacks,
+		watchtowerrpc.RegisterWatchtowerJSONCallbacks,
+		wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
+		looprpc.RegisterSwapClientJSONCallbacks,
+		poolrpc.RegisterTraderJSONCallbacks,
+		frdrpc.RegisterFaradayServerJSONCallbacks,
+	}
+
+	perms = getAllMethodPermissions()
+
+	jsonCBRegex = regexp.MustCompile("(\\w+)\\.(\\w+)\\.(\\w+)")
+)
 
 func main() {
 	defer func() {
@@ -108,6 +117,8 @@ func main() {
 	callbacks.Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
 	callbacks.Set("wasmClientStatus", js.FuncOf(wc.Status))
 	callbacks.Set("wasmClientGetExpiry", js.FuncOf(wc.GetExpiry))
+	callbacks.Set("wasmClientHasPerms", js.FuncOf(wc.HasPermissions))
+	callbacks.Set("wasmClientIsReadOnly", js.FuncOf(wc.IsReadOnly))
 	js.Global().Set(cfg.NameSpace, callbacks)
 
 	for _, registration := range registrations {
@@ -319,33 +330,118 @@ func (w *wasmClient) GetExpiry(_ js.Value, _ []js.Value) interface{} {
 
 	return js.ValueOf(expiry.Unix())
 }
-	if len(args) != 1 {
-		return js.ValueOf("invalid use of wasmClientExtractExpiry, " +
-			"need 1 parameters: macaroon string")
+
+func (w *wasmClient) IsReadOnly(_ js.Value, _ []js.Value) interface{} {
+	if w.mac == nil {
+		log.Errorf("macaroon not obtained yet. IsReadOnly should " +
+			"only be called once the connection is complete")
+		return js.ValueOf(false)
 	}
 
-	parts := strings.Split(args[0].String(), ": ")
-	if len(parts) != 2 || parts[0] != "Macaroon" {
-		return js.ValueOf("macaroon missing from auth data")
-	}
-
-	macBytes, err := hex.DecodeString(parts[1])
+	macOps, err := extractMacaroonOps(w.mac)
 	if err != nil {
-		return js.ValueOf(err.Error())
+		log.Errorf("could not extract macaroon ops: %v", err)
+		return js.ValueOf(false)
 	}
 
-	mac := &macaroon.Macaroon{}
-	if err := mac.UnmarshalBinary(macBytes); err != nil {
-		return js.ValueOf(fmt.Sprintf("unable to decode macaroon: %v",
-			err))
+	// Check that the macaroon contains each of the required permissions
+	// for the given URI.
+	return js.ValueOf(isReadOnly(macOps))
+}
+
+func (w *wasmClient) HasPermissions(_ js.Value, args []js.Value) interface{} {
+	if len(args) != 1 {
+		return js.ValueOf(false)
 	}
 
-	expiry, found := checkers.ExpiryTime(nil, mac.Caveats())
-	if !found {
-		return nil
+	if w.mac == nil {
+		log.Errorf("macaroon not obtained yet. HasPermissions should " +
+			"only be called once the connection is complete")
+		return js.ValueOf(false)
 	}
 
-	return js.ValueOf(expiry.Unix())
+	// Convert JSON callback to grpc URI. JSON callbacks are of the form:
+	// `lnrpc.Lightning.WalletBalance` and the corresponding grpc URI is of
+	// the form: `/lnrpc.Lightning/WalletBalance`. So to convert the one to
+	// the other, we first convert all the `.` into `/`. Then we replace the
+	// first `/` back to a `.` and then we prepend the result with a `/`.
+	uri := jsonCBRegex.ReplaceAllString(args[0].String(), "/$1.$2/$3")
+
+	ops, ok := perms[uri]
+	if !ok {
+		log.Errorf("uri %s not found in known permissions list", uri)
+		return js.ValueOf(false)
+	}
+
+	macOps, err := extractMacaroonOps(w.mac)
+	if err != nil {
+		log.Errorf("could not extract macaroon ops: %v", err)
+		return js.ValueOf(false)
+	}
+
+	// Check that the macaroon contains each of the required permissions
+	// for the given URI.
+	return js.ValueOf(hasPermissions(macOps, ops))
+}
+
+// extractMacaroonOps is a helper function that extracts operations from the
+// ID of a macaroon.
+func extractMacaroonOps(mac *macaroon.Macaroon) ([]*lnrpc.Op, error) {
+	rawID := mac.Id()
+	if rawID[0] != byte(bakery.LatestVersion) {
+		return nil, fmt.Errorf("invalid macaroon version: %x", rawID)
+	}
+
+	decodedID := &lnrpc.MacaroonId{}
+	idProto := rawID[1:]
+	err := proto.Unmarshal(idProto, decodedID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode macaroon: %v", err)
+	}
+
+	return decodedID.Ops, nil
+}
+
+// isReadOnly returns true if the given operations only contain "read" actions.
+func isReadOnly(ops []*lnrpc.Op) bool {
+	for _, op := range ops {
+		for _, action := range op.Actions {
+			if action != "read" {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// hasPermissions returns true if all the operations in requiredOps can also be
+// found in macOps.
+func hasPermissions(macOps []*lnrpc.Op, requiredOps []bakery.Op) bool {
+	// Create a lookup map of the macaroon operations.
+	macOpsMap := make(map[string]map[string]bool)
+	for _, op := range macOps {
+		macOpsMap[op.Entity] = make(map[string]bool)
+
+		for _, action := range op.Actions {
+			macOpsMap[op.Entity][action] = true
+		}
+	}
+
+	// For each of the required operations, we ensure that the macaroon also
+	// contains the operation.
+	for _, op := range requiredOps {
+		macEntity, ok := macOpsMap[op.Entity]
+		if !ok {
+			return false
+		}
+
+		if !macEntity[op.Action] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // validateArgs checks that the correct keys and callback functions have been
