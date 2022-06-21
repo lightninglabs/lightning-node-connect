@@ -173,7 +173,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 	}
 
 	gbnConn, err := gbn.NewClientConn(
-		gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
+		ctx, gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err
@@ -218,7 +218,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	}
 
 	gbnConn, err := gbn.NewClientConn(
-		gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
+		ctx, gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err

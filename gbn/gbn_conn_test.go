@@ -174,7 +174,7 @@ func TestServerHandshakeTimeout(t *testing.T) {
 	// Give the server time to be ready for the handshake
 	time.Sleep(time.Millisecond * 200)
 
-	client, err := NewClientConn(10, s2Write, s1Read)
+	client, err := NewClientConn(ctx, 10, s2Write, s1Read)
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -1205,7 +1205,7 @@ func setUpClientServerConns(t *testing.T, n uint8,
 	// Give the server time to be ready for the handshake
 	time.Sleep(time.Millisecond * 200)
 
-	client, err := NewClientConn(n, cWrite, cRead, opts...)
+	client, err := NewClientConn(ctx, n, cWrite, cRead, opts...)
 	require.NoError(t, err)
 
 	wg.Wait()

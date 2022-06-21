@@ -350,8 +350,12 @@ func (g *GoBackNConn) Close() error {
 
 		g.wg.Wait()
 
-		g.pingTicker.Stop()
-		g.resendTicker.Stop()
+		if g.pingTicker != nil {
+			g.pingTicker.Stop()
+		}
+		if g.resendTicker != nil {
+			g.resendTicker.Stop()
+		}
 
 		log.Debugf("GBN is closed, isServer=%v", g.isServer)
 	})
