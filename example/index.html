@@ -90,6 +90,14 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         });
     }
 
+    async function disconnect() {
+        window[namespace].wasmClientDisconnect();
+
+        document.getElementById('disconnectBtn').disabled = true;
+        document.getElementById('reconnectBtn').disabled = false;
+        document.getElementById('ready').style.display= 'none' ;
+    }
+
     async function connectServer() {
         let server = $('#server').val();
         localStorage.setItem(namespace+":mailboxHost", server)
@@ -119,6 +127,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         }
         connectedTicker = setInterval(isConnected, 200);
         window[namespace].wasmClientConnectServer(server, true, passphrase, localKey, remoteKey);
+
+        document.getElementById('disconnectBtn').disabled = false;
+        document.getElementById('reconnectBtn').disabled = true;
     }
 
     async function clearStorage() {
@@ -242,6 +253,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
 <h4 id="expiry"></h4>
 
 <h4 id="sessiontype"></h4>
+
+<button onClick="disconnect();" id="disconnectBtn" disabled>Disconnect</button>
+<button onClick="connectServer();" id="reconnectBtn" disabled>Reconnect</button>
 
 <br />
 
