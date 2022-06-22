@@ -168,11 +168,10 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         let expiry = window[namespace].wasmClientGetExpiry();
         if (!expiry) {
             document.getElementById('expiry').innerHTML = "No expiry found in macaroon";
-            return {}
+        } else {
+            localStorage.setItem(namespace+":expiry", expiry)
+            document.getElementById('expiry').innerHTML = "Session Expiry: "+new Date(expiry*1000).toLocaleString();
         }
-
-        localStorage.setItem(namespace+":expiry", expiry)
-        document.getElementById('expiry').innerHTML = "Session Expiry: "+new Date(expiry*1000).toLocaleString();
 
         // Determine if the session is a read only session.
         let readOnly = window[namespace].wasmClientIsReadOnly();
