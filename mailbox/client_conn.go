@@ -537,8 +537,12 @@ func (c *ClientConn) Close() error {
 		if c.receiveSocket != nil {
 			log.Debugf("sending bye on receive socket")
 			returnErr = c.receiveSocket.Close(
-				websocket.StatusGoingAway, "bye",
+				websocket.StatusNormalClosure, "bye",
 			)
+			if returnErr != nil {
+				log.Errorf("Error closing receive socket: %v",
+					returnErr)
+			}
 		}
 		c.receiveStreamMu.Unlock()
 
@@ -546,8 +550,12 @@ func (c *ClientConn) Close() error {
 		if c.sendSocket != nil {
 			log.Debugf("sending bye on send socket")
 			returnErr = c.sendSocket.Close(
-				websocket.StatusGoingAway, "bye",
+				websocket.StatusNormalClosure, "bye",
 			)
+			if returnErr != nil {
+				log.Errorf("Error closing send socket: %v",
+					returnErr)
+			}
 		}
 		c.sendStreamMu.Unlock()
 

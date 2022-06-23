@@ -250,6 +250,9 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 
 		w.statusChecker = statusChecker
 		w.lndConn, err = lndConnect()
+		if err != nil {
+			exit(err)
+		}
 
 		log.Debugf("WASM client connected to RPC")
 	}()
@@ -266,6 +269,7 @@ func (w *wasmClient) Disconnect(_ js.Value, _ []js.Value) interface{} {
 		if err := w.lndConn.Close(); err != nil {
 			log.Errorf("Error closing RPC connection: %v", err)
 		}
+		w.lndConn = nil
 	}
 
 	return nil
