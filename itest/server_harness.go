@@ -12,6 +12,8 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+var authData = []byte{1, 2, 3, 4}
+
 type serverHarness struct {
 	serverHost string
 	mockServer *grpc.Server
@@ -64,7 +66,7 @@ func (s *serverHarness) stop() {
 
 func (s *serverHarness) start() error {
 	connData := mailbox.NewConnData(
-		s.localStatic, s.remoteStatic, s.passphraseEntropy, nil,
+		s.localStatic, s.remoteStatic, s.passphraseEntropy, authData,
 		func(key *btcec.PublicKey) error {
 			s.remoteStatic = key
 			return nil

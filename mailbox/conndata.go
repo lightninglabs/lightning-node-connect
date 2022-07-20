@@ -58,7 +58,7 @@ type ConnData struct {
 func NewConnData(localKey keychain.SingleKeyECDH, remoteKey *btcec.PublicKey,
 	passphraseEntropy []byte, authData []byte,
 	onRemoteStatic func(key *btcec.PublicKey) error,
-	onAuthData func(date []byte) error) *ConnData {
+	onAuthData func(data []byte) error) *ConnData {
 
 	return &ConnData{
 		localKey:          localKey,
