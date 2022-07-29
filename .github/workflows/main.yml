@@ -17,12 +17,13 @@ env:
   GOCACHE: /home/runner/work/go/pkg/build
   GOPATH: /home/runner/work/go
   GO_VERSION: 1.17.x
-  GOPRIVATE: "github.com/lightninglabs/aperture-mailbox"
-  TOKEN: ${{ secrets.ACCESS_TOKEN }}
 
 jobs:
+  ########################
+  # build pkg and wasm bin
+  ########################
   build:
-    name: build package, run linter
+    name: build package and wasm
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
@@ -32,23 +33,17 @@ jobs:
         uses: actions/cache@v1
         with:
           path: /home/runner/work/go
-          key: lndclient-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            lndclient-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
-            lndclient-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
-            lndclient-${{ runner.os }}-go-${{ env.GO_VERSION }}-
-            lndclient-${{ runner.os }}-go-
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            lnc-${{ runner.os }}-go-
 
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
         with:
           go-version: '~${{ env.GO_VERSION }}'
-
-      - name: configure for private repos
-        run: git config --global url."https://roasbeef:${TOKEN}@github.com".insteadOf "https://github.com"
-
-      - name: lint
-        run: make lint
 
       - name: go compile
         run: make build
@@ -56,8 +51,114 @@ jobs:
       - name: wasm compile
         run: make wasm
 
+  ########################
+  # lint code
+  ########################
+  lint:
+    name: lint code
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: Fetch all history for linter
+        run: git fetch --prune --unshallow
+
+      - name: go cache
+        uses: actions/cache@v1
+        with:
+          path: /home/runner/work/go
+          key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            lnc-${{ runner.os }}-go-
+
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: lint
+        run: GOGC=50 make lint
+
+  ########################
+  # run unit tests
+  ########################
+  unit-test:
+    name: run unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      # Allow other tests in the matrix to continue if one fails.
+      fail-fast: false
+      matrix:
+        unit_type:
+          - unit
+          - unit-race
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: go cache
+        uses: actions/cache@v1
+        with:
+          path: /home/runner/work/go
+          key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            lnc-${{ runner.os }}-go-
+
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: '~${{ env.GO_VERSION }}'
+
+      - name: run ${{ matrix.unit_type }}
+        run: make ${{ matrix.unit_type }}
+
+  ########################
+  # run integration tests
+  ########################
+  integration-test:
+    name: run itests
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: go cache
+        uses: actions/cache@v1
+        with:
+          path: /home/runner/work/go
+          key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
+            lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            lnc-${{ runner.os }}-go-
+
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
       - name: prepare for itest
         run: mkdir -p /home/runner/.aperture
 
-      - name: unit-race
-        run: make unit-race
+      - name: run itest
+        run: make itest
+
+      - name: Zip log files on failure
+        if: ${{ failure() }}
+        run: 7z a logs-itest.zip itest/**/*.log
+
+      - name: Upload log files on failure
+        uses: actions/upload-artifact@v2.2.4
+        if: ${{ failure() }}
+        with:
+          name: logs-itest
+          path: logs-itest.zip
+          retention-days: 5
