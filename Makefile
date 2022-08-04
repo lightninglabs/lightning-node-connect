@@ -97,8 +97,5 @@ rpc-check: rpc
 	@$(call print, "Verifying protos.")
 	if test -n "$$(git describe --dirty | grep dirty)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
 
-rpc-stubs:
-	cd cmd/wasm-client; ./gen_stubs.sh
-
 example-server:
 	go run example-server.go example/ 8080
