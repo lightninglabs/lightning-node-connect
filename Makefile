@@ -19,9 +19,6 @@ GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list $(PKG)/... | grep -v '/vendor/'
 XARGS := xargs -L 1
 
-UNIT := $(GOLIST) | $(XARGS) env $(GOTEST) -tags="rpctest $(DEV_TAGS) $(LOG_TAGS)" $(TEST_FLAGS)
-UNIT_RACE := $(UNIT) -race
-
 LDFLAGS := -s -w -buildid=
 
 RM := rm -f
@@ -29,7 +26,9 @@ CP := cp
 MAKE := make
 XARGS := xargs -L 1
 
-LINT = $(LINT_BIN) run -v
+LINT = $(LINT_BIN) run -v --build-tags itest
+
+include make/testing_flags.mk
 
 default: build
 
@@ -70,6 +69,12 @@ unit:
 unit-race:
 	@$(call print, "Running unit race tests.")
 	env CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(UNIT_RACE)
+
+itest: itest-run
+
+itest-run:
+	@$(call print, "Running integration tests.")
+	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -logdir=itest_logs
 
 # =========
 # UTILITIES
