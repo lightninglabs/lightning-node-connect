@@ -1,8 +1,10 @@
 package itest
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -45,11 +47,18 @@ func (c *clientHarness) start() error {
 	c.cancel = cancel
 
 	connData := mailbox.NewConnData(
-		c.localStatic, c.remoteStatic, c.passphraseEntropy, nil,
-		func(key *btcec.PublicKey) error {
+		c.localStatic, c.remoteStatic, c.passphraseEntropy,
+		nil, func(key *btcec.PublicKey) error {
 			c.remoteStatic = key
 			return nil
-		}, nil,
+		}, func(data []byte) error {
+			if !bytes.Equal(data, authData) {
+				return fmt.Errorf("incorrect auth data. "+
+					"Expected %x, got %x", authData, data)
+			}
+
+			return nil
+		},
 	)
 
 	transportConn, err := mailbox.NewClient(ctx, connData)
