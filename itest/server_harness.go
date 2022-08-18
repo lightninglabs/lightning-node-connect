@@ -74,7 +74,7 @@ func (s *serverHarness) start() error {
 	)
 
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, connData, grpc.WithTransportCredentials(
+		s.serverHost, connData, nil, grpc.WithTransportCredentials(
 			credentials.NewTLS(s.tlsConfig),
 		),
 	)
