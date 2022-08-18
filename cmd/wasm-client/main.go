@@ -140,7 +140,7 @@ type wasmClient struct {
 
 	lndConn *grpc.ClientConn
 
-	statusChecker func() mailbox.ConnStatus
+	statusChecker func() mailbox.ClientStatus
 
 	mac *macaroon.Macaroon
 

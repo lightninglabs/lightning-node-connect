@@ -14,7 +14,7 @@ type Client struct {
 
 	connData *ConnData
 
-	status   ConnStatus
+	status   ClientStatus
 	statusMu sync.Mutex
 
 	sid [64]byte
@@ -33,7 +33,7 @@ func NewClient(ctx context.Context, connData *ConnData) (*Client, error) {
 	return &Client{
 		ctx:      ctx,
 		connData: connData,
-		status:   ConnStatusNotConnected,
+		status:   ClientStatusNotConnected,
 		sid:      sid,
 	}, nil
 }
@@ -73,7 +73,7 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 
 	if c.mailboxConn == nil {
 		mailboxConn, err := NewClientConn(
-			c.ctx, c.sid, serverHost, func(status ConnStatus) {
+			c.ctx, c.sid, serverHost, func(status ClientStatus) {
 				c.statusMu.Lock()
 				c.status = status
 				c.statusMu.Unlock()
@@ -95,7 +95,7 @@ func (c *Client) Dial(_ context.Context, serverHost string) (net.Conn, error) {
 }
 
 // ConnStatus returns last determined client connection status.
-func (c *Client) ConnStatus() ConnStatus {
+func (c *Client) ConnStatus() ClientStatus {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
 

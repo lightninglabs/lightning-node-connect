@@ -16,7 +16,7 @@ import (
 func mailboxRPCConnection(mailboxServer, pairingPhrase string,
 	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
 	onRemoteStatic func(key *btcec.PublicKey) error,
-	onAuthData func(data []byte) error) (func() mailbox.ConnStatus,
+	onAuthData func(data []byte) error) (func() mailbox.ClientStatus,
 	func() (*grpc.ClientConn, error), error) {
 
 	words := strings.Split(pairingPhrase, " ")
