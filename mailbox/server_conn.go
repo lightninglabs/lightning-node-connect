@@ -12,6 +12,24 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ServerStatus is a description of the server's session state.
+type ServerStatus uint8
+
+const (
+	// ServerStatusNotConnected means that the server is currently not
+	// connected to a mailbox. This is either because the session is
+	// restarting or because the mailbox server is down.
+	ServerStatusNotConnected ServerStatus = 0
+
+	// ServerStatusInUse means that a client is currently connected and
+	// using the session.
+	ServerStatusInUse ServerStatus = 1
+
+	// ServerStatusIdle means that the session is ready for use but that
+	// there is currently no client connected.
+	ServerStatusIdle ServerStatus = 2
+)
+
 // ServerConn is a type that implements the Conn interface and can be used to
 // serve a gRPC connection over a noise encrypted connection that uses a mailbox
 // connection as its transport connection. The mailbox level connection to the
@@ -33,6 +51,10 @@ type ServerConn struct {
 	sendStream     hashmailrpc.HashMail_SendStreamClient
 	sendStreamMu   sync.Mutex
 
+	status      ServerStatus
+	onNewStatus func(status ServerStatus)
+	statusMu    sync.Mutex
+
 	cancel func()
 
 	quit      chan struct{}
@@ -42,7 +64,8 @@ type ServerConn struct {
 // NewServerConn creates a new net.Conn compatible server connection that uses
 // a gRPC based connection to tunnel traffic over a mailbox server.
 func NewServerConn(ctx context.Context, serverHost string,
-	client hashmailrpc.HashMailClient, sid [64]byte) (*ServerConn, error) {
+	client hashmailrpc.HashMailClient, sid [64]byte,
+	onNewStatus func(status ServerStatus)) (*ServerConn, error) {
 
 	ctxc, cancel := context.WithCancel(ctx)
 
@@ -56,8 +79,12 @@ func NewServerConn(ctx context.Context, serverHost string,
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeout(gbnTimeout),
 			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-			gbn.WithKeepalivePing(gbnServerPingTimeout, gbnPongTimeout),
+			gbn.WithKeepalivePing(
+				gbnServerPingTimeout, gbnPongTimeout,
+			),
 		},
+		status:      ServerStatusNotConnected,
+		onNewStatus: onNewStatus,
 	}
 	c.connKit = &connKit{
 		ctx:        ctxc,
@@ -90,12 +117,17 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 	s.sendStreamMu.Lock()
 	defer s.sendStreamMu.Unlock()
 
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+
 	sc := &ServerConn{
 		client:            s.client,
 		receiveBoxCreated: s.receiveBoxCreated,
 		sendBoxCreated:    s.sendBoxCreated,
 		gbnOptions:        s.gbnOptions,
 		cancel:            s.cancel,
+		status:            ServerStatusNotConnected,
+		onNewStatus:       s.onNewStatus,
 		quit:              make(chan struct{}),
 	}
 
@@ -145,12 +177,15 @@ func (c *ServerConn) recvFromStream(ctx context.Context) ([]byte, error) {
 			log.Debugf("Server: got failure on receive socket, "+
 				"re-trying: %v", err)
 
+			c.setStatus(ServerStatusNotConnected)
 			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
 
 			continue
 		}
 		c.receiveStreamMu.Unlock()
+
+		c.setStatus(ServerStatusInUse)
 		return controlMsg.Msg, nil
 	}
 }
@@ -183,6 +218,7 @@ func (c *ServerConn) sendToStream(ctx context.Context, payload []byte) error {
 			log.Debugf("Server: got failure on send socket, "+
 				"re-trying: %v", err)
 
+			c.setStatus(ServerStatusNotConnected)
 			c.createSendMailBox(ctx, retryWait)
 			c.sendStreamMu.Unlock()
 
@@ -253,7 +289,8 @@ func (c *ServerConn) createReceiveMailBox(ctx context.Context,
 		// Create receive mailbox and get receive stream.
 		err := initAccountCipherBox(ctx, c.client, c.receiveSID)
 		if err != nil && !isErrAlreadyExists(err) {
-			log.Debugf("Server: failed to re-create read stream mbox: %v", err)
+			log.Debugf("Server: failed to re-create read stream "+
+				"mbox: %v", err)
 
 			continue
 		}
@@ -269,11 +306,13 @@ func (c *ServerConn) createReceiveMailBox(ctx context.Context,
 		}
 		readStream, err := c.client.RecvStream(ctx, streamDesc)
 		if err != nil {
-			log.Debugf("Server: failed to create read stream: %w", err)
+			log.Debugf("Server: failed to create read stream: %w",
+				err)
 
 			continue
 		}
 
+		c.setStatus(ServerStatusIdle)
 		c.receiveStream = readStream
 
 		log.Debugf("Server: receive mailbox created")
@@ -401,6 +440,19 @@ func (c *ServerConn) Close() error {
 // to determine if the current connection is closed or not.
 func (c *ServerConn) Done() <-chan struct{} {
 	return c.quit
+}
+
+// setStatus is used to set a new connection status and to call the onNewStatus
+// callback function.
+func (c *ServerConn) setStatus(s ServerStatus) {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+
+	if c.onNewStatus != nil && c.status != s {
+		c.onNewStatus(s)
+	}
+
+	c.status = s
 }
 
 var _ ProxyConn = (*ServerConn)(nil)

@@ -25,6 +25,9 @@ type serverHarness struct {
 
 	tlsConfig *tls.Config
 
+	status   mailbox.ServerStatus
+	statusMu sync.Mutex
+
 	errChan chan error
 	wg      sync.WaitGroup
 }
@@ -74,7 +77,11 @@ func (s *serverHarness) start() error {
 	)
 
 	mailboxServer, err := mailbox.NewServer(
-		s.serverHost, connData, grpc.WithTransportCredentials(
+		s.serverHost, connData, func(status mailbox.ServerStatus) {
+			s.statusMu.Lock()
+			s.status = status
+			s.statusMu.Unlock()
+		}, grpc.WithTransportCredentials(
 			credentials.NewTLS(s.tlsConfig),
 		),
 	)

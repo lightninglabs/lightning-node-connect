@@ -22,6 +22,8 @@ type Server struct {
 
 	connData *ConnData
 
+	onNewStatus func(status ServerStatus)
+
 	sid [64]byte
 
 	ctx context.Context
@@ -31,6 +33,7 @@ type Server struct {
 }
 
 func NewServer(serverHost string, connData *ConnData,
+	onNewStatus func(status ServerStatus),
 	dialOpts ...grpc.DialOption) (*Server, error) {
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
@@ -47,11 +50,12 @@ func NewServer(serverHost string, connData *ConnData,
 	}
 
 	s := &Server{
-		serverHost: serverHost,
-		client:     clientConn,
-		connData:   connData,
-		sid:        sid,
-		quit:       make(chan struct{}),
+		serverHost:  serverHost,
+		client:      clientConn,
+		connData:    connData,
+		sid:         sid,
+		onNewStatus: onNewStatus,
+		quit:        make(chan struct{}),
 	}
 
 	s.ctx, s.cancel = context.WithCancel(context.Background())
@@ -106,7 +110,7 @@ func (s *Server) Accept() (net.Conn, error) {
 	// otherwise, we just refresh the ServerConn.
 	if s.mailboxConn == nil {
 		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, sid,
+			s.ctx, s.serverHost, s.client, sid, s.onNewStatus,
 		)
 		if err != nil {
 			return nil, &temporaryError{err}
