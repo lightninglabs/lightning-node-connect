@@ -19,6 +19,7 @@ type clientHarness struct {
 
 	grpcConn   *grpc.ClientConn
 	clientConn mockrpc.MockServiceClient
+	client     *mailbox.Client
 
 	passphraseEntropy []byte
 	localStatic       keychain.SingleKeyECDH
@@ -65,6 +66,7 @@ func (c *clientHarness) start() error {
 	if err != nil {
 		return err
 	}
+	c.client = transportConn
 
 	noiseConn := mailbox.NewNoiseGrpcConn(connData)
 
