@@ -53,7 +53,7 @@ build:
 wasm:
 	# The appengine build tag is needed because of the jessevdk/go-flags library
 	# that has some OS specific terminal code that doesn't compile to WASM.
-	cd cmd/wasm-client; GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="appengine" -v -o wasm-client.wasm .
+	cd cmd/wasm-client; GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="appengine autopilotrpc chainrpc invoicesrpc neutrinorpc peersrpc signrpc wtclientrpc watchtowerrpc routerrpc walletrpc verrpc" -v -o wasm-client.wasm .
 	$(CP) cmd/wasm-client/wasm-client.wasm example/wasm-client.wasm
 
 # =======
