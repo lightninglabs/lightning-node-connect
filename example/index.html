@@ -151,6 +151,10 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     async function callWASMFaraday(rpcName, req) {
         window[namespace].wasmClientInvokeRPC('frdrpc.FaradayServer.' + rpcName, req, setResult);
     }
+    
+    async function callWASMDirect(rpcName, req) {
+        window[namespace].wasmClientInvokeRPC(rpcName, req, setResult);
+    }
 
     function setResult(result) {
         $('#output').text(result);
@@ -211,6 +215,33 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         }
         if (window[namespace].wasmClientHasPerms("lnrpc.Lightning.SubscribeTransactions")) {
             document.getElementById('subscribetx').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("autopilotrpc.Autopilot.Status")) {
+            document.getElementById('autopilotrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("chainrpc.ChainNotifier.RegisterBlockEpochNtfn")) {
+            document.getElementById('chainrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("invoicesrpc.Invoices.AddHoldInvoice")) {
+            document.getElementById('invoicesrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("routerrpc.Router.GetMissionControlConfig")) {
+            document.getElementById('routerrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("signrpc.Signer.SignMessage")) {
+            document.getElementById('signrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("lnrpc.State.GetState")) {
+            document.getElementById('lnrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("walletrpc.WalletKit.ListUnspent")) {
+            document.getElementById('walletrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("watchtowerrpc.Watchtower.GetInfo")) {
+            document.getElementById('watchtowerrpc').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("wtclientrpc.WatchtowerClient.ListTowers")) {
+            document.getElementById('wtclientrpc').disabled = false;
         }
         if (window[namespace].wasmClientHasPerms("looprpc.SwapClient.LoopOutTerms")) {
             document.getElementById('loopoutterms').disabled = false;
@@ -276,6 +307,16 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     <button id="subscribetx" onClick="callWASM('SubscribeTransactions', '{}');" disabled>
         SubscribeTransactions
     </button>
+    <p>Sub-servers</p>
+    <button id="autopilotrpc" onClick="callWASMDirect('autopilotrpc.Autopilot.Status', '{}');" disabled>Status</button>
+    <button id="chainrpc" onClick="callWASMDirect('chainrpc.ChainNotifier.RegisterBlockEpochNtfn', '{}');" disabled>RegisterBlockEpochNtfn</button>
+    <button id="invoicesrpc" onClick="callWASMDirect('invoicesrpc.Invoices.AddHoldInvoice', '{}');" disabled>AddHoldInvoice</button>
+    <button id="routerrpc" onClick="callWASMDirect('routerrpc.Router.GetMissionControlConfig', '{}');" disabled>GetMissionControlConfig</button>
+    <button id="signrpc" onClick="callWASMDirect('signrpc.Signer.SignMessage', '{}');" disabled>SignMessage</button>
+    <button id="lnrpc" onClick="callWASMDirect('lnrpc.State.GetState', '{}');" disabled>GetState</button>
+    <button id="walletrpc" onClick="callWASMDirect('walletrpc.WalletKit.ListUnspent', '{}');" disabled>ListUnspent</button>
+    <button id="watchtowerrpc" onClick="callWASMDirect('watchtowerrpc.Watchtower.GetInfo', '{}');" disabled>GetInfo</button>
+    <button id="wtclientrpc" onClick="callWASMDirect('wtclientrpc.WatchtowerClient.ListTowers', '{}');" disabled>ListTowers</button>
 
     <h2>Loop</h2>
     <button id="loopoutterms" onClick="callWASMLoop('LoopOutTerms', '{}');" disabled>LoopOutTerms</button>
