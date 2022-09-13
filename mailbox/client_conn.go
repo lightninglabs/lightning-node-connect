@@ -10,9 +10,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lightning-node-connect/gbn"
-	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/protobuf/encoding/protojson"
-	"nhooyr.io/websocket"
 )
 
 var (
@@ -74,16 +72,6 @@ const (
 	// gbnPongTimout is the time after sending the pong message that we will
 	// timeout if we do not receive any message from our peer.
 	gbnPongTimeout = 3 * time.Second
-
-	// webSocketRecvLimit is used to set the websocket receive limit. The
-	// default value of 32KB is enough due to the fact that grpc has a
-	// default packet maximum of 32KB which we then further wrap in gbn and
-	// hashmail messages.
-	webSocketRecvLimit int64 = 100 * 1024 // 100KB
-
-	// sendSocketTimeout is the timeout used for context cancellation on the
-	// send socket.
-	sendSocketTimeout = 1000 * time.Millisecond
 )
 
 // ClientStatus is a description of the connection status of the client.
@@ -121,11 +109,9 @@ func (c ClientStatus) String() string {
 type ClientConn struct {
 	*connKit
 
-	receiveSocket *websocket.Conn
-	receiveMu     sync.Mutex
-
-	sendSocket *websocket.Conn
-	sendMu     sync.Mutex
+	transport ClientConnTransport
+	receiveMu sync.Mutex
+	sendMu    sync.Mutex
 
 	gbnConn    *gbn.GoBackNConn
 	gbnOptions []gbn.Option
@@ -147,12 +133,18 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 
 	receiveSID := GetSID(sid, true)
 	sendSID := GetSID(sid, false)
+	mailBoxInfo := &mailboxInfo{
+		addr:    serverHost,
+		recvSID: receiveSID[:],
+		sendSID: sendSID[:],
+	}
 
 	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
 		receiveSID[:], sendSID[:])
 
 	ctxc, cancel := context.WithCancel(ctx)
 	c := &ClientConn{
+		transport: newWebsocketTransport(mailBoxInfo),
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeout(gbnTimeout),
 			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
@@ -203,6 +195,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 		c.receiveSID[:], c.sendSID[:])
 
 	cc := &ClientConn{
+		transport:   c.transport.Refresh(),
 		status:      ClientStatusNotConnected,
 		onNewStatus: c.onNewStatus,
 		gbnOptions:  c.gbnOptions,
@@ -275,10 +268,11 @@ func statusFromError(err error) ClientStatus {
 // independently of the ClientConn.
 func (c *ClientConn) recv(ctx context.Context) ([]byte, error) {
 	c.receiveMu.Lock()
-	if c.receiveSocket == nil {
+	defer c.receiveMu.Unlock()
+
+	if !c.transport.ReceiveConnected() {
 		c.createReceiveMailBox(ctx, 0)
 	}
-	c.receiveMu.Unlock()
 
 	for {
 		select {
@@ -289,38 +283,22 @@ func (c *ClientConn) recv(ctx context.Context) ([]byte, error) {
 		default:
 		}
 
-		c.receiveMu.Lock()
-		_, msg, err := c.receiveSocket.Read(ctx)
+		msg, retry, errStatus, err := c.transport.Recv(ctx)
 		if err != nil {
-			log.Debugf("Client: got failure on receive socket, "+
-				"re-trying: %v", err)
+			if !retry {
+				return nil, err
+			}
 
-			c.setStatus(ClientStatusNotConnected)
+			log.Debugf("Client: got failure on receive "+
+				"socket/stream, re-trying: %v", err)
+
+			c.setStatus(errStatus)
 			c.createReceiveMailBox(ctx, retryWait)
-			c.receiveMu.Unlock()
 			continue
-		}
-		unwrapped, err := stripJSONWrapper(string(msg))
-		if err != nil {
-			log.Debugf("Client: got error message from receive "+
-				"socket: %v", err)
-
-			c.setStatus(statusFromError(err))
-			c.createReceiveMailBox(ctx, retryWait)
-			c.receiveMu.Unlock()
-			continue
-		}
-		c.receiveMu.Unlock()
-
-		mailboxMsg := &hashmailrpc.CipherBox{}
-		err = defaultMarshaler.Unmarshal([]byte(unwrapped), mailboxMsg)
-		if err != nil {
-			return nil, err
 		}
 
 		c.setStatus(ClientStatusConnected)
-
-		return mailboxMsg.Msg, nil
+		return msg, nil
 	}
 }
 
@@ -329,12 +307,13 @@ func (c *ClientConn) recv(ctx context.Context) ([]byte, error) {
 // cancellation of a context so that the gbn connection is able to close
 // independently of the ClientConn.
 func (c *ClientConn) send(ctx context.Context, payload []byte) error {
-	// Set up the send-socket if it has not yet been initialized.
 	c.sendMu.Lock()
-	if c.sendSocket == nil {
+	defer c.sendMu.Unlock()
+
+	// Set up the send-socket if it has not yet been initialized.
+	if !c.transport.SendConnected() {
 		c.createSendMailBox(ctx, 0)
 	}
-	c.sendMu.Unlock()
 
 	// Retry sending the payload to the hashmail server until it succeeds.
 	for {
@@ -346,34 +325,21 @@ func (c *ClientConn) send(ctx context.Context, payload []byte) error {
 		default:
 		}
 
-		sendInit := &hashmailrpc.CipherBox{
-			Desc: &hashmailrpc.CipherBoxDesc{
-				StreamId: c.sendSID[:],
-			},
-			Msg: payload,
-		}
-
-		sendInitBytes, err := defaultMarshaler.Marshal(sendInit)
-		if err != nil {
-			return err
-		}
-
-		c.sendMu.Lock()
-		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
-		err = c.sendSocket.Write(
-			ctxt, websocket.MessageText, sendInitBytes,
+		retry, errStatus, err := c.transport.Send(
+			ctx, c.sendSID[:], payload,
 		)
-		cancel()
 		if err != nil {
-			log.Debugf("Client: got failure on send socket, "+
-				"re-trying: %v", err)
+			if !retry {
+				return err
+			}
 
-			c.setStatus(statusFromError(err))
+			log.Debugf("Client: got failure on send "+
+				"socket/stream, re-trying: %v", err)
+
+			c.setStatus(errStatus)
 			c.createSendMailBox(ctx, retryWait)
-			c.sendMu.Unlock()
 			continue
 		}
-		c.sendMu.Unlock()
 
 		return nil
 	}
@@ -400,38 +366,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 
 		waiter.Wait()
 
-		receiveAddr := fmt.Sprintf(
-			addrFormat, c.serverAddr, receivePath,
-		)
-		receiveSocket, _, err := websocket.Dial(ctx, receiveAddr, nil)
-		if err != nil {
-			log.Debugf("Client: error creating receive socket %v",
-				err)
-
-			continue
-		}
-		receiveSocket.SetReadLimit(webSocketRecvLimit)
-		c.receiveSocket = receiveSocket
-
-		receiveInit := &hashmailrpc.CipherBoxDesc{
-			StreamId: c.receiveSID[:],
-		}
-		receiveInitBytes, err := defaultMarshaler.Marshal(receiveInit)
-		if err != nil {
-			log.Debugf("Client: error marshaling receive init "+
-				"bytes %w", err)
-
-			continue
-		}
-
-		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
-		err = c.receiveSocket.Write(
-			ctxt, websocket.MessageText, receiveInitBytes,
-		)
-		cancel()
-		if err != nil {
-			log.Debugf("Client: error creating receive stream "+
-				"%v", err)
+		if err := c.transport.ConnectReceive(ctx); err != nil {
+			log.Errorf("Client: error connecting to receive " +
+				"socket/stream: %v")
 
 			continue
 		}
@@ -459,17 +396,14 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		waiter.Wait()
 
-		log.Debugf("Client: Attempting to create send socket")
-		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
-		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
-		if err != nil {
-			log.Debugf("Client: error creating send socket %v", err)
+		log.Debugf("Client: Attempting to create send socket/stream")
+		if err := c.transport.ConnectSend(ctx); err != nil {
+			log.Debugf("Client: error connecting to send "+
+				"stream/socket %v", err)
 			continue
 		}
 
-		c.sendSocket = sendSocket
-
-		log.Debugf("Client: Send socket created")
+		log.Debugf("Client: Connected to send socket/stream")
 		return
 	}
 }
@@ -528,31 +462,18 @@ func (c *ClientConn) Close() error {
 		}
 
 		c.receiveMu.Lock()
-		if c.receiveSocket != nil {
-			log.Debugf("sending bye on receive socket")
-			err := c.receiveSocket.Close(
-				websocket.StatusNormalClosure, "bye",
-			)
-			if err != nil {
-				log.Errorf("Error closing receive socket: %v",
-					err)
-
-				returnErr = err
-			}
+		log.Debugf("closing receive stream/socket")
+		if err := c.transport.CloseReceive(); err != nil {
+			log.Errorf("Error closing receive stream/socket: %v", err)
+			returnErr = err
 		}
 		c.receiveMu.Unlock()
 
 		c.sendMu.Lock()
-		if c.sendSocket != nil {
-			log.Debugf("sending bye on send socket")
-			err := c.sendSocket.Close(
-				websocket.StatusNormalClosure, "bye",
-			)
-			if err != nil {
-				log.Errorf("Error closing send socket: %v", err)
-
-				returnErr = err
-			}
+		log.Debugf("closing send stream/socket")
+		if err := c.transport.CloseSend(); err != nil {
+			log.Errorf("Error closing send stream/socket: %v", err)
+			returnErr = err
 		}
 		c.sendMu.Unlock()
 
