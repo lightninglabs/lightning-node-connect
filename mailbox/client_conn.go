@@ -233,49 +233,38 @@ func (c *ClientConn) Done() <-chan struct{} {
 	return c.quit
 }
 
-// setStatusByErr parses the given error and sets the connection status
-// accordingly.
-func (c *ClientConn) setStatusByErr(err error) {
-	c.statusMu.Lock()
-	defer c.statusMu.Unlock()
-
-	switch {
-	case strings.Contains(err.Error(), "stream not found"):
-		c.setStatusUnsafe(ClientStatusSessionNotFound)
-
-	case strings.Contains(
-		err.Error(), "stream occupied"):
-
-		c.setStatusUnsafe(ClientStatusSessionInUse)
-
-	default:
-		// We give previously set status priority if it provides more
-		// detail than the NotConnected status.
-		if c.status == ClientStatusSessionInUse ||
-			c.status == ClientStatusSessionNotFound {
-
-			return
-		}
-
-		c.setStatusUnsafe(ClientStatusNotConnected)
-	}
-}
-
 // setStatus is used to set a new connection status and to call the onNewStatus
 // callback function.
 func (c *ClientConn) setStatus(s ClientStatus) {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
 
-	c.setStatusUnsafe(s)
-}
+	// We give previously set status priority if it provides more detail
+	// than the NotConnected status.
+	if s == ClientStatusNotConnected &&
+		(c.status == ClientStatusSessionInUse ||
+			c.status == ClientStatusSessionNotFound) {
 
-// setStatusUnsafe is used to set a new connection status and to call the
-// onNewStatus callback function. Note that this function is not thread safe
-// and must only be called if the statusMu lock is being held.
-func (c *ClientConn) setStatusUnsafe(s ClientStatus) {
+		return
+	}
+
 	c.status = s
 	c.onNewStatus(s)
+}
+
+// statusFromError parses the given error and returns an appropriate Client
+// connection status.
+func statusFromError(err error) ClientStatus {
+	switch {
+	case strings.Contains(err.Error(), "stream not found"):
+		return ClientStatusSessionNotFound
+
+	case strings.Contains(err.Error(), "stream occupied"):
+		return ClientStatusSessionInUse
+
+	default:
+		return ClientStatusNotConnected
+	}
 }
 
 // recvFromStream is used to receive a payload from the receive socket.
@@ -314,8 +303,7 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 			log.Debugf("Client: got error message from receive "+
 				"socket: %v", err)
 
-			c.setStatusByErr(err)
-
+			c.setStatus(statusFromError(err))
 			c.createReceiveMailBox(ctx, retryWait)
 			c.receiveStreamMu.Unlock()
 			continue
@@ -378,7 +366,7 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 			log.Debugf("Client: got failure on send socket, "+
 				"re-trying: %v", err)
 
-			c.setStatusByErr(err)
+			c.setStatus(statusFromError(err))
 			c.createSendMailBox(ctx, retryWait)
 			c.sendStreamMu.Unlock()
 			continue
