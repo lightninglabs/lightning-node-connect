@@ -4,5 +4,3 @@
 package itest
 
 var testCases []*testCase
-
-var stagingMailboxTests []*testCase

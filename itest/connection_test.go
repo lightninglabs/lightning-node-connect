@@ -46,7 +46,6 @@ func testHashmailServerReconnect(t *harnessTest) {
 
 	// Shut down hashmail server
 	require.NoError(t.t, t.hmserver.stop())
-	t.t.Logf("")
 
 	// Check that the client and server status are updated appropriately.
 	assertServerStatus(t, mailbox.ServerStatusNotConnected)
