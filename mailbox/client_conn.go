@@ -10,6 +10,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lightning-node-connect/gbn"
+	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -129,6 +130,7 @@ type ClientConn struct {
 // session identifiers. The context given as the first parameter will be used
 // throughout the connection lifetime.
 func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
+	client hashmailrpc.HashMailClient,
 	onNewStatus func(status ClientStatus)) (*ClientConn, error) {
 
 	receiveSID := GetSID(sid, true)
@@ -143,8 +145,16 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 		receiveSID[:], sendSID[:])
 
 	ctxc, cancel := context.WithCancel(ctx)
+
+	var transport ClientConnTransport
+	if client != nil {
+		transport = newGrpcTransport(mailBoxInfo, client)
+	} else {
+		transport = newWebsocketTransport(mailBoxInfo)
+	}
+
 	c := &ClientConn{
-		transport: newWebsocketTransport(mailBoxInfo),
+		transport: transport,
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeout(gbnTimeout),
 			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),

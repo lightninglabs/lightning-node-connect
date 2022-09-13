@@ -229,3 +229,135 @@ func (wt *websocketTransport) CloseSend() error {
 
 	return wt.sendSocket.Close(websocket.StatusNormalClosure, "bye")
 }
+
+// grpcTransport is an implementation of ClientConnTransport that uses grpc
+// streams to connect the the mailbox.
+type grpcTransport struct {
+	*mailboxInfo
+
+	client        hashmailrpc.HashMailClient
+	receiveStream hashmailrpc.HashMail_RecvStreamClient
+	sendStream    hashmailrpc.HashMail_SendStreamClient
+}
+
+// newGrpcTransport constructs a new grpcTransport instance.
+func newGrpcTransport(mbInfo *mailboxInfo,
+	client hashmailrpc.HashMailClient) *grpcTransport {
+
+	return &grpcTransport{
+		client:      client,
+		mailboxInfo: mbInfo,
+	}
+}
+
+// Refresh creates a new ClientConnTransport with no initialised send or receive
+// connections.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) Refresh() ClientConnTransport {
+	return &grpcTransport{
+		client:      gt.client,
+		mailboxInfo: gt.mailboxInfo,
+	}
+}
+
+// ReceiveConnected returns true if the transport is connected to the
+// hashmail-server receive stream.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) ReceiveConnected() bool {
+	return gt.receiveStream != nil
+}
+
+// SendConnected returns true if the transport is connected to the
+// hashmail-server send stream.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) SendConnected() bool {
+	return gt.sendStream != nil
+}
+
+// ConnectSend can be called in order to initialise the send-stream with
+// the hashmail-server.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) ConnectSend(ctx context.Context) error {
+	sendStream, err := gt.client.SendStream(ctx)
+	if err != nil {
+		return err
+	}
+
+	gt.sendStream = sendStream
+	return nil
+}
+
+// ConnectReceive can be called in order to initialise the receive-stream with
+// the hashmail-server.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) ConnectReceive(ctx context.Context) error {
+	receiveInit := &hashmailrpc.CipherBoxDesc{StreamId: gt.recvSID}
+	readStream, err := gt.client.RecvStream(ctx, receiveInit)
+	if err != nil {
+		return err
+	}
+
+	gt.receiveStream = readStream
+	return nil
+}
+
+// Recv will attempt to read data off of the underlying transport's
+// receive stream.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) Recv(_ context.Context) ([]byte, bool, ClientStatus,
+	error) {
+
+	controlMsg, err := gt.receiveStream.Recv()
+	if err != nil {
+		return nil, true, statusFromError(err), err
+	}
+
+	return controlMsg.Msg, false, ClientStatusConnected, nil
+}
+
+// Send will attempt to send data on the underlying transport's send-stream.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) Send(_ context.Context, streamID, payload []byte) (
+	bool, ClientStatus, error) {
+
+	err := gt.sendStream.Send(&hashmailrpc.CipherBox{
+		Desc: &hashmailrpc.CipherBoxDesc{
+			StreamId: streamID,
+		},
+		Msg: payload,
+	})
+	if err != nil {
+		return true, ClientStatusNotConnected, err
+	}
+
+	return false, ClientStatusConnected, nil
+}
+
+// CloseReceive will close the transport's connection to the receive-stream.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) CloseReceive() error {
+	if gt.receiveStream == nil {
+		return nil
+	}
+
+	return gt.receiveStream.CloseSend()
+}
+
+// CloseSend will close the transport's connection to the send-stream.
+//
+// NOTE: this is part of the ClientConnTransport interface.
+func (gt *grpcTransport) CloseSend() error {
+	if gt.sendStream == nil {
+		return nil
+	}
+
+	return gt.sendStream.CloseSend()
+}
