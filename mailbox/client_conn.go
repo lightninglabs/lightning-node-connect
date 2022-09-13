@@ -12,7 +12,6 @@ import (
 	"github.com/lightninglabs/lightning-node-connect/gbn"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/protobuf/encoding/protojson"
-	"nhooyr.io/websocket"
 )
 
 var (
@@ -74,16 +73,6 @@ const (
 	// gbnPongTimout is the time after sending the pong message that we will
 	// timeout if we do not receive any message from our peer.
 	gbnPongTimeout = 3 * time.Second
-
-	// webSocketRecvLimit is used to set the websocket receive limit. The
-	// default value of 32KB is enough due to the fact that grpc has a
-	// default packet maximum of 32KB which we then further wrap in gbn and
-	// hashmail messages.
-	webSocketRecvLimit int64 = 100 * 1024 // 100KB
-
-	// sendSocketTimeout is the timeout used for context cancellation on the
-	// send socket.
-	sendSocketTimeout = 1000 * time.Millisecond
 )
 
 // ClientStatus is a description of the connection status of the client.
@@ -121,37 +110,51 @@ func (c ClientStatus) String() string {
 type ClientConn struct {
 	*connKit
 
-	receiveSocket   *websocket.Conn
-	receiveStreamMu sync.Mutex
-
-	sendSocket   *websocket.Conn
-	sendStreamMu sync.Mutex
+	transport ClientConnTransport
+	receiveMu sync.Mutex
+	sendMu    sync.Mutex
 
 	gbnConn    *gbn.GoBackNConn
 	gbnOptions []gbn.Option
-
-	closeOnce sync.Once
 
 	status      ClientStatus
 	onNewStatus func(status ClientStatus)
 	statusMu    sync.Mutex
 
-	quit chan struct{}
+	quit      chan struct{}
+	cancel    func()
+	closeOnce sync.Once
 }
 
 // NewClientConn creates a new client connection with the given receive and send
 // session identifiers. The context given as the first parameter will be used
 // throughout the connection lifetime.
 func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
+	client hashmailrpc.HashMailClient,
 	onNewStatus func(status ClientStatus)) (*ClientConn, error) {
 
 	receiveSID := GetSID(sid, true)
 	sendSID := GetSID(sid, false)
+	mailBoxInfo := &mailboxInfo{
+		addr:    serverHost,
+		recvSID: receiveSID[:],
+		sendSID: sendSID[:],
+	}
 
 	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
 		receiveSID[:], sendSID[:])
 
+	ctxc, cancel := context.WithCancel(ctx)
+
+	var transport ClientConnTransport
+	if client != nil {
+		transport = newGrpcTransport(mailBoxInfo, client)
+	} else {
+		transport = newWebsocketTransport(mailBoxInfo)
+	}
+
 	c := &ClientConn{
+		transport: transport,
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeout(gbnTimeout),
 			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
@@ -162,9 +165,10 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 		status:      ClientStatusNotConnected,
 		onNewStatus: onNewStatus,
 		quit:        make(chan struct{}),
+		cancel:      cancel,
 	}
 	c.connKit = &connKit{
-		ctx:        ctx,
+		ctx:        ctxc,
 		impl:       c,
 		receiveSID: receiveSID,
 		sendSID:    sendSID,
@@ -172,7 +176,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 	}
 
 	gbnConn, err := gbn.NewClientConn(
-		ctx, gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
+		ctxc, gbnN, c.send, c.recv, c.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err
@@ -188,25 +192,26 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	error) {
 
-	c.sendStreamMu.Lock()
-	defer c.sendStreamMu.Unlock()
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
 
-	c.receiveStreamMu.Lock()
-	defer c.receiveStreamMu.Unlock()
+	c.receiveMu.Lock()
+	defer c.receiveMu.Unlock()
+
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
 
 	log.Debugf("Refreshing client conn, read_stream=%x, write_stream=%x",
 		c.receiveSID[:], c.sendSID[:])
 
 	cc := &ClientConn{
-		receiveSocket: c.receiveSocket,
-		sendSocket:    c.sendSocket,
-		status:        ClientStatusNotConnected,
-		onNewStatus:   c.onNewStatus,
-		gbnOptions:    c.gbnOptions,
-		quit:          make(chan struct{}),
+		transport:   c.transport.Refresh(),
+		status:      ClientStatusNotConnected,
+		onNewStatus: c.onNewStatus,
+		gbnOptions:  c.gbnOptions,
+		cancel:      c.cancel,
+		quit:        make(chan struct{}),
 	}
-	c.sendSocket = nil
-	c.receiveSocket = nil
 
 	cc.connKit = &connKit{
 		ctx:        ctx,
@@ -217,7 +222,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	}
 
 	gbnConn, err := gbn.NewClientConn(
-		ctx, gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
+		ctx, gbnN, cc.send, cc.recv, cc.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err
@@ -233,61 +238,51 @@ func (c *ClientConn) Done() <-chan struct{} {
 	return c.quit
 }
 
-// setStatusByErr parses the given error and sets the connection status
-// accordingly.
-func (c *ClientConn) setStatusByErr(err error) {
-	c.statusMu.Lock()
-	defer c.statusMu.Unlock()
-
-	switch {
-	case strings.Contains(err.Error(), "stream not found"):
-		c.setStatusUnsafe(ClientStatusSessionNotFound)
-
-	case strings.Contains(
-		err.Error(), "stream occupied"):
-
-		c.setStatusUnsafe(ClientStatusSessionInUse)
-
-	default:
-		// We give previously set status priority if it provides more
-		// detail than the NotConnected status.
-		if c.status == ClientStatusSessionInUse ||
-			c.status == ClientStatusSessionNotFound {
-
-			return
-		}
-
-		c.setStatusUnsafe(ClientStatusNotConnected)
-	}
-}
-
 // setStatus is used to set a new connection status and to call the onNewStatus
 // callback function.
 func (c *ClientConn) setStatus(s ClientStatus) {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
 
-	c.setStatusUnsafe(s)
-}
+	// We give previously set status priority if it provides more detail
+	// than the NotConnected status.
+	if s == ClientStatusNotConnected &&
+		(c.status == ClientStatusSessionInUse ||
+			c.status == ClientStatusSessionNotFound) {
 
-// setStatusUnsafe is used to set a new connection status and to call the
-// onNewStatus callback function. Note that this function is not thread safe
-// and must only be called if the statusMu lock is being held.
-func (c *ClientConn) setStatusUnsafe(s ClientStatus) {
+		return
+	}
+
 	c.status = s
 	c.onNewStatus(s)
 }
 
-// recvFromStream is used to receive a payload from the receive socket.
-// The function is passed to and used by the gbn connection.
-// It therefore takes in and reacts on the cancellation of a context so that
-// the gbn connection is able to close independently of the ClientConn.
-func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
-	c.receiveStreamMu.Lock()
-	if c.receiveSocket == nil {
+// statusFromError parses the given error and returns an appropriate Client
+// connection status.
+func statusFromError(err error) ClientStatus {
+	switch {
+	case strings.Contains(err.Error(), "stream not found"):
+		return ClientStatusSessionNotFound
+
+	case strings.Contains(err.Error(), "stream occupied"):
+		return ClientStatusSessionInUse
+
+	default:
+		return ClientStatusNotConnected
+	}
+}
+
+// recv is used to receive a payload from the receive socket. The function is
+// passed to and used by the gbn connection. It therefore takes in and reacts
+// on the cancellation of a context so that the gbn connection is able to close
+// independently of the ClientConn.
+func (c *ClientConn) recv(ctx context.Context) ([]byte, error) {
+	c.receiveMu.Lock()
+	defer c.receiveMu.Unlock()
+
+	if !c.transport.ReceiveConnected() {
 		c.createReceiveMailBox(ctx, 0)
 	}
-	c.receiveStreamMu.Unlock()
 
 	for {
 		select {
@@ -298,53 +293,37 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 		default:
 		}
 
-		c.receiveStreamMu.Lock()
-		_, msg, err := c.receiveSocket.Read(ctx)
+		msg, retry, errStatus, err := c.transport.Recv(ctx)
 		if err != nil {
-			log.Debugf("Client: got failure on receive socket, "+
-				"re-trying: %v", err)
+			if !retry {
+				return nil, err
+			}
 
-			c.setStatus(ClientStatusNotConnected)
+			log.Debugf("Client: got failure on receive "+
+				"socket/stream, re-trying: %v", err)
+
+			c.setStatus(errStatus)
 			c.createReceiveMailBox(ctx, retryWait)
-			c.receiveStreamMu.Unlock()
 			continue
-		}
-		unwrapped, err := stripJSONWrapper(string(msg))
-		if err != nil {
-			log.Debugf("Client: got error message from receive "+
-				"socket: %v", err)
-
-			c.setStatusByErr(err)
-
-			c.createReceiveMailBox(ctx, retryWait)
-			c.receiveStreamMu.Unlock()
-			continue
-		}
-		c.receiveStreamMu.Unlock()
-
-		mailboxMsg := &hashmailrpc.CipherBox{}
-		err = defaultMarshaler.Unmarshal([]byte(unwrapped), mailboxMsg)
-		if err != nil {
-			return nil, err
 		}
 
 		c.setStatus(ClientStatusConnected)
-
-		return mailboxMsg.Msg, nil
+		return msg, nil
 	}
 }
 
-// sendToStream is used to send a payload on the send socket. The function
-// is passed to and used by the gbn connection. It therefore takes in and
-// reacts on the cancellation of a context so that the gbn connection is able to
-// close independently of the ClientConn.
-func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
-	// Set up the send socket if it has not yet been initialized.
-	c.sendStreamMu.Lock()
-	if c.sendSocket == nil {
+// send is used to send a payload on the send socket. The function is passed to
+// and used by the gbn connection. It therefore takes in and reacts on the
+// cancellation of a context so that the gbn connection is able to close
+// independently of the ClientConn.
+func (c *ClientConn) send(ctx context.Context, payload []byte) error {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+
+	// Set up the send-socket if it has not yet been initialized.
+	if !c.transport.SendConnected() {
 		c.createSendMailBox(ctx, 0)
 	}
-	c.sendStreamMu.Unlock()
 
 	// Retry sending the payload to the hashmail server until it succeeds.
 	for {
@@ -356,34 +335,21 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 		default:
 		}
 
-		sendInit := &hashmailrpc.CipherBox{
-			Desc: &hashmailrpc.CipherBoxDesc{
-				StreamId: c.sendSID[:],
-			},
-			Msg: payload,
-		}
-
-		sendInitBytes, err := defaultMarshaler.Marshal(sendInit)
-		if err != nil {
-			return err
-		}
-
-		c.sendStreamMu.Lock()
-		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
-		err = c.sendSocket.Write(
-			ctxt, websocket.MessageText, sendInitBytes,
+		retry, errStatus, err := c.transport.Send(
+			ctx, c.sendSID[:], payload,
 		)
-		cancel()
 		if err != nil {
-			log.Debugf("Client: got failure on send socket, "+
-				"re-trying: %v", err)
+			if !retry {
+				return err
+			}
 
-			c.setStatusByErr(err)
+			log.Debugf("Client: got failure on send "+
+				"socket/stream, re-trying: %v", err)
+
+			c.setStatus(errStatus)
 			c.createSendMailBox(ctx, retryWait)
-			c.sendStreamMu.Unlock()
 			continue
 		}
-		c.sendStreamMu.Unlock()
 
 		return nil
 	}
@@ -410,38 +376,9 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 
 		waiter.Wait()
 
-		receiveAddr := fmt.Sprintf(
-			addrFormat, c.serverAddr, receivePath,
-		)
-		receiveSocket, _, err := websocket.Dial(ctx, receiveAddr, nil)
-		if err != nil {
-			log.Debugf("Client: error creating receive socket %v",
-				err)
-
-			continue
-		}
-		receiveSocket.SetReadLimit(webSocketRecvLimit)
-		c.receiveSocket = receiveSocket
-
-		receiveInit := &hashmailrpc.CipherBoxDesc{
-			StreamId: c.receiveSID[:],
-		}
-		receiveInitBytes, err := defaultMarshaler.Marshal(receiveInit)
-		if err != nil {
-			log.Debugf("Client: error marshaling receive init "+
-				"bytes %w", err)
-
-			continue
-		}
-
-		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
-		err = c.receiveSocket.Write(
-			ctxt, websocket.MessageText, receiveInitBytes,
-		)
-		cancel()
-		if err != nil {
-			log.Debugf("Client: error creating receive stream "+
-				"%v", err)
+		if err := c.transport.ConnectReceive(ctx); err != nil {
+			log.Errorf("Client: error connecting to receive " +
+				"socket/stream: %v")
 
 			continue
 		}
@@ -469,17 +406,14 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		waiter.Wait()
 
-		log.Debugf("Client: Attempting to create send socket")
-		sendAddr := fmt.Sprintf(addrFormat, c.serverAddr, sendPath)
-		sendSocket, _, err := websocket.Dial(ctx, sendAddr, nil)
-		if err != nil {
-			log.Debugf("Client: error creating send socket %v", err)
+		log.Debugf("Client: Attempting to create send socket/stream")
+		if err := c.transport.ConnectSend(ctx); err != nil {
+			log.Debugf("Client: error connecting to send "+
+				"stream/socket %v", err)
 			continue
 		}
 
-		c.sendSocket = sendSocket
-
-		log.Debugf("Client: Send socket created")
+		log.Debugf("Client: Connected to send socket/stream")
 		return
 	}
 }
@@ -528,37 +462,33 @@ func (c *ClientConn) Close() error {
 	c.closeOnce.Do(func() {
 		log.Debugf("Closing client connection")
 
-		if err := c.gbnConn.Close(); err != nil {
-			log.Debugf("Error closing gbn connection: %v", err)
-		}
+		if c.gbnConn != nil {
+			if err := c.gbnConn.Close(); err != nil {
+				log.Debugf("Error closing gbn connection: %v",
+					err)
 
-		c.receiveStreamMu.Lock()
-		if c.receiveSocket != nil {
-			log.Debugf("sending bye on receive socket")
-			returnErr = c.receiveSocket.Close(
-				websocket.StatusNormalClosure, "bye",
-			)
-			if returnErr != nil {
-				log.Errorf("Error closing receive socket: %v",
-					returnErr)
+				returnErr = err
 			}
 		}
-		c.receiveStreamMu.Unlock()
 
-		c.sendStreamMu.Lock()
-		if c.sendSocket != nil {
-			log.Debugf("sending bye on send socket")
-			returnErr = c.sendSocket.Close(
-				websocket.StatusNormalClosure, "bye",
-			)
-			if returnErr != nil {
-				log.Errorf("Error closing send socket: %v",
-					returnErr)
-			}
+		c.receiveMu.Lock()
+		log.Debugf("closing receive stream/socket")
+		if err := c.transport.CloseReceive(); err != nil {
+			log.Errorf("Error closing receive stream/socket: %v", err)
+			returnErr = err
 		}
-		c.sendStreamMu.Unlock()
+		c.receiveMu.Unlock()
+
+		c.sendMu.Lock()
+		log.Debugf("closing send stream/socket")
+		if err := c.transport.CloseSend(); err != nil {
+			log.Errorf("Error closing send stream/socket: %v", err)
+			returnErr = err
+		}
+		c.sendMu.Unlock()
 
 		close(c.quit)
+		c.cancel()
 	})
 
 	return returnErr
