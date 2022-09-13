@@ -121,22 +121,22 @@ func (c ClientStatus) String() string {
 type ClientConn struct {
 	*connKit
 
-	receiveSocket   *websocket.Conn
-	receiveStreamMu sync.Mutex
+	receiveSocket *websocket.Conn
+	receiveMu     sync.Mutex
 
-	sendSocket   *websocket.Conn
-	sendStreamMu sync.Mutex
+	sendSocket *websocket.Conn
+	sendMu     sync.Mutex
 
 	gbnConn    *gbn.GoBackNConn
 	gbnOptions []gbn.Option
-
-	closeOnce sync.Once
 
 	status      ClientStatus
 	onNewStatus func(status ClientStatus)
 	statusMu    sync.Mutex
 
-	quit chan struct{}
+	quit      chan struct{}
+	cancel    func()
+	closeOnce sync.Once
 }
 
 // NewClientConn creates a new client connection with the given receive and send
@@ -151,6 +151,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
 		receiveSID[:], sendSID[:])
 
+	ctxc, cancel := context.WithCancel(ctx)
 	c := &ClientConn{
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeout(gbnTimeout),
@@ -162,9 +163,10 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 		status:      ClientStatusNotConnected,
 		onNewStatus: onNewStatus,
 		quit:        make(chan struct{}),
+		cancel:      cancel,
 	}
 	c.connKit = &connKit{
-		ctx:        ctx,
+		ctx:        ctxc,
 		impl:       c,
 		receiveSID: receiveSID,
 		sendSID:    sendSID,
@@ -172,7 +174,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 	}
 
 	gbnConn, err := gbn.NewClientConn(
-		ctx, gbnN, c.sendToStream, c.recvFromStream, c.gbnOptions...,
+		ctxc, gbnN, c.send, c.recv, c.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err
@@ -188,25 +190,25 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	error) {
 
-	c.sendStreamMu.Lock()
-	defer c.sendStreamMu.Unlock()
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
 
-	c.receiveStreamMu.Lock()
-	defer c.receiveStreamMu.Unlock()
+	c.receiveMu.Lock()
+	defer c.receiveMu.Unlock()
+
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
 
 	log.Debugf("Refreshing client conn, read_stream=%x, write_stream=%x",
 		c.receiveSID[:], c.sendSID[:])
 
 	cc := &ClientConn{
-		receiveSocket: c.receiveSocket,
-		sendSocket:    c.sendSocket,
-		status:        ClientStatusNotConnected,
-		onNewStatus:   c.onNewStatus,
-		gbnOptions:    c.gbnOptions,
-		quit:          make(chan struct{}),
+		status:      ClientStatusNotConnected,
+		onNewStatus: c.onNewStatus,
+		gbnOptions:  c.gbnOptions,
+		cancel:      c.cancel,
+		quit:        make(chan struct{}),
 	}
-	c.sendSocket = nil
-	c.receiveSocket = nil
 
 	cc.connKit = &connKit{
 		ctx:        ctx,
@@ -217,7 +219,7 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	}
 
 	gbnConn, err := gbn.NewClientConn(
-		ctx, gbnN, cc.sendToStream, cc.recvFromStream, cc.gbnOptions...,
+		ctx, gbnN, cc.send, cc.recv, cc.gbnOptions...,
 	)
 	if err != nil {
 		return nil, err
@@ -267,16 +269,16 @@ func statusFromError(err error) ClientStatus {
 	}
 }
 
-// recvFromStream is used to receive a payload from the receive socket.
-// The function is passed to and used by the gbn connection.
-// It therefore takes in and reacts on the cancellation of a context so that
-// the gbn connection is able to close independently of the ClientConn.
-func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
-	c.receiveStreamMu.Lock()
+// recv is used to receive a payload from the receive socket. The function is
+// passed to and used by the gbn connection. It therefore takes in and reacts
+// on the cancellation of a context so that the gbn connection is able to close
+// independently of the ClientConn.
+func (c *ClientConn) recv(ctx context.Context) ([]byte, error) {
+	c.receiveMu.Lock()
 	if c.receiveSocket == nil {
 		c.createReceiveMailBox(ctx, 0)
 	}
-	c.receiveStreamMu.Unlock()
+	c.receiveMu.Unlock()
 
 	for {
 		select {
@@ -287,7 +289,7 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 		default:
 		}
 
-		c.receiveStreamMu.Lock()
+		c.receiveMu.Lock()
 		_, msg, err := c.receiveSocket.Read(ctx)
 		if err != nil {
 			log.Debugf("Client: got failure on receive socket, "+
@@ -295,7 +297,7 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 
 			c.setStatus(ClientStatusNotConnected)
 			c.createReceiveMailBox(ctx, retryWait)
-			c.receiveStreamMu.Unlock()
+			c.receiveMu.Unlock()
 			continue
 		}
 		unwrapped, err := stripJSONWrapper(string(msg))
@@ -305,10 +307,10 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 
 			c.setStatus(statusFromError(err))
 			c.createReceiveMailBox(ctx, retryWait)
-			c.receiveStreamMu.Unlock()
+			c.receiveMu.Unlock()
 			continue
 		}
-		c.receiveStreamMu.Unlock()
+		c.receiveMu.Unlock()
 
 		mailboxMsg := &hashmailrpc.CipherBox{}
 		err = defaultMarshaler.Unmarshal([]byte(unwrapped), mailboxMsg)
@@ -322,17 +324,17 @@ func (c *ClientConn) recvFromStream(ctx context.Context) ([]byte, error) {
 	}
 }
 
-// sendToStream is used to send a payload on the send socket. The function
-// is passed to and used by the gbn connection. It therefore takes in and
-// reacts on the cancellation of a context so that the gbn connection is able to
-// close independently of the ClientConn.
-func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
-	// Set up the send socket if it has not yet been initialized.
-	c.sendStreamMu.Lock()
+// send is used to send a payload on the send socket. The function is passed to
+// and used by the gbn connection. It therefore takes in and reacts on the
+// cancellation of a context so that the gbn connection is able to close
+// independently of the ClientConn.
+func (c *ClientConn) send(ctx context.Context, payload []byte) error {
+	// Set up the send-socket if it has not yet been initialized.
+	c.sendMu.Lock()
 	if c.sendSocket == nil {
 		c.createSendMailBox(ctx, 0)
 	}
-	c.sendStreamMu.Unlock()
+	c.sendMu.Unlock()
 
 	// Retry sending the payload to the hashmail server until it succeeds.
 	for {
@@ -356,7 +358,7 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 			return err
 		}
 
-		c.sendStreamMu.Lock()
+		c.sendMu.Lock()
 		ctxt, cancel := context.WithTimeout(ctx, sendSocketTimeout)
 		err = c.sendSocket.Write(
 			ctxt, websocket.MessageText, sendInitBytes,
@@ -368,10 +370,10 @@ func (c *ClientConn) sendToStream(ctx context.Context, payload []byte) error {
 
 			c.setStatus(statusFromError(err))
 			c.createSendMailBox(ctx, retryWait)
-			c.sendStreamMu.Unlock()
+			c.sendMu.Unlock()
 			continue
 		}
-		c.sendStreamMu.Unlock()
+		c.sendMu.Unlock()
 
 		return nil
 	}
@@ -516,37 +518,46 @@ func (c *ClientConn) Close() error {
 	c.closeOnce.Do(func() {
 		log.Debugf("Closing client connection")
 
-		if err := c.gbnConn.Close(); err != nil {
-			log.Debugf("Error closing gbn connection: %v", err)
+		if c.gbnConn != nil {
+			if err := c.gbnConn.Close(); err != nil {
+				log.Debugf("Error closing gbn connection: %v",
+					err)
+
+				returnErr = err
+			}
 		}
 
-		c.receiveStreamMu.Lock()
+		c.receiveMu.Lock()
 		if c.receiveSocket != nil {
 			log.Debugf("sending bye on receive socket")
-			returnErr = c.receiveSocket.Close(
+			err := c.receiveSocket.Close(
 				websocket.StatusNormalClosure, "bye",
 			)
-			if returnErr != nil {
+			if err != nil {
 				log.Errorf("Error closing receive socket: %v",
-					returnErr)
+					err)
+
+				returnErr = err
 			}
 		}
-		c.receiveStreamMu.Unlock()
+		c.receiveMu.Unlock()
 
-		c.sendStreamMu.Lock()
+		c.sendMu.Lock()
 		if c.sendSocket != nil {
 			log.Debugf("sending bye on send socket")
-			returnErr = c.sendSocket.Close(
+			err := c.sendSocket.Close(
 				websocket.StatusNormalClosure, "bye",
 			)
-			if returnErr != nil {
-				log.Errorf("Error closing send socket: %v",
-					returnErr)
+			if err != nil {
+				log.Errorf("Error closing send socket: %v", err)
+
+				returnErr = err
 			}
 		}
-		c.sendStreamMu.Unlock()
+		c.sendMu.Unlock()
 
 		close(c.quit)
+		c.cancel()
 	})
 
 	return returnErr
