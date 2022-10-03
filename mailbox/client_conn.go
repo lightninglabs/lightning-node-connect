@@ -377,8 +377,8 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		waiter.Wait()
 
 		if err := c.transport.ConnectReceive(ctx); err != nil {
-			log.Errorf("Client: error connecting to receive " +
-				"socket/stream: %v")
+			log.Errorf("Client: error connecting to receive "+
+				"socket/stream: %v", err)
 
 			continue
 		}
