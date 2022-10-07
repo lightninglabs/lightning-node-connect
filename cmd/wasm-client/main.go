@@ -20,6 +20,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/jessevdk/go-flags"
 	"github.com/lightninglabs/faraday/frdrpc"
+	"github.com/lightninglabs/lightning-node-connect/core"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -63,7 +64,7 @@ var (
 		frdrpc.RegisterFaradayServerJSONCallbacks,
 	}
 
-	perms = getAllMethodPermissions()
+	perms = core.GetAllMethodPermissions()
 
 	jsonCBRegex = regexp.MustCompile("(\\w+)\\.(\\w+)\\.(\\w+)")
 )
@@ -209,7 +210,7 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	// in another goroutine here. See https://pkg.go.dev/syscall/js#FuncOf.
 	go func() {
 		var err error
-		statusChecker, lndConnect, err := mailboxRPCConnection(
+		statusChecker, lndConnect, err := core.MailboxRPCConnection(
 			mailboxServer, pairingPhrase, localPriv, remotePub,
 			func(key *btcec.PublicKey) error {
 				return callJsCallback(

@@ -1,7 +1,4 @@
-//go:build js
-// +build js
-
-package main
+package core
 
 import (
 	"context"
@@ -13,7 +10,9 @@ import (
 	"google.golang.org/grpc"
 )
 
-func mailboxRPCConnection(mailboxServer, pairingPhrase string,
+// MailboxRPCConnection returns a merged map of all litd's method
+// permissions.
+func MailboxRPCConnection(mailboxServer, pairingPhrase string,
 	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
 	onRemoteStatic func(key *btcec.PublicKey) error,
 	onAuthData func(data []byte) error) (func() mailbox.ClientStatus,

@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"net"
@@ -43,9 +43,9 @@ var (
 	}
 )
 
-// getAllMethodPermissions returns a merged map of all litd's method
-// permissions.
-func getAllMethodPermissions() map[string][]bakery.Op {
+// GetAllMethodPermissions returns a mailbox client status and
+// a function to create an lnd client connection
+func GetAllMethodPermissions() map[string][]bakery.Op {
 	allPerms := make(map[string][]bakery.Op)
 
 	lndMainPerms := lnd.MainRPCServerPermissions()
