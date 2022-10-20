@@ -62,6 +62,6 @@ secure LNC connection:
   embedded in a website (such as [Lightning
   Terminal](https://terminal.lightning.engineering/)) to communicate with a
   mailbox proxy over WebSockets using the PAKE/Noise encryption protocol. [An
-  example HTML page](example/index.html) shows how the WASM binary can be used
+  example HTML page](example/README.md) shows how the WASM binary can be used
   by JavaScript to initiate a connection and issue gRPC requests.
 
