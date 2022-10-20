@@ -1,6 +1,15 @@
 run:
   # timeout for analysis
   deadline: 4m
+  build-tags:
+    - autopilotrpc
+    - chainrpc
+    - invoicesrpc
+    - neutrinorpc
+    - peersrpc
+    - signrpc
+    - walletrpc
+    - watchtowerrpc
 
 linters-settings:
   govet:
