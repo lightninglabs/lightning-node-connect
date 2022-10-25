@@ -189,8 +189,11 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         }
 
         // Determine if the session is a read only session.
-        let readOnly = window[namespace].wasmClientIsReadOnly();
-        if (readOnly) {
+        let readOnlySession = window[namespace].wasmClientIsReadOnly();
+        let customSession = window[namespace].wasmClientIsCustom();
+        if (customSession) {
+            document.getElementById('sessiontype').textContent = "This is a Custom Session"
+        } else if (readOnlySession) {
             document.getElementById('sessiontype').textContent = "This is a Read-Only Session"
         } else {
             document.getElementById('sessiontype').textContent = "This is an Admin Session"
