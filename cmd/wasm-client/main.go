@@ -35,6 +35,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/watchtowerrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
+	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -119,6 +120,7 @@ func main() {
 	callbacks.Set("wasmClientGetExpiry", js.FuncOf(wc.GetExpiry))
 	callbacks.Set("wasmClientHasPerms", js.FuncOf(wc.HasPermissions))
 	callbacks.Set("wasmClientIsReadOnly", js.FuncOf(wc.IsReadOnly))
+	callbacks.Set("wasmClientIsCustom", js.FuncOf(wc.IsCustom))
 	js.Global().Set(cfg.NameSpace, callbacks)
 
 	for _, registration := range registrations {
@@ -353,6 +355,32 @@ func (w *wasmClient) IsReadOnly(_ js.Value, _ []js.Value) interface{} {
 	return js.ValueOf(isReadOnly(macOps))
 }
 
+func (w *wasmClient) IsCustom(_ js.Value, _ []js.Value) interface{} {
+	if w.mac == nil {
+		log.Errorf("macaroon not obtained yet. IsCustom should " +
+			"only be called once the connection is complete")
+		return js.ValueOf(false)
+	}
+
+	macOps, err := extractMacaroonOps(w.mac)
+	if err != nil {
+		log.Errorf("could not extract macaroon ops: %v", err)
+		return js.ValueOf(false)
+	}
+
+	// We consider a session type to be "custom" if it has any permissions
+	// with the "uri" entity.
+	var isCustom bool
+	for _, op := range macOps {
+		if op.Entity == macaroons.PermissionEntityCustomURI {
+			isCustom = true
+			break
+		}
+	}
+
+	return js.ValueOf(isCustom)
+}
+
 func (w *wasmClient) HasPermissions(_ js.Value, args []js.Value) interface{} {
 	if len(args) != 1 {
 		return js.ValueOf(false)
@@ -385,7 +413,7 @@ func (w *wasmClient) HasPermissions(_ js.Value, args []js.Value) interface{} {
 
 	// Check that the macaroon contains each of the required permissions
 	// for the given URI.
-	return js.ValueOf(hasPermissions(macOps, ops))
+	return js.ValueOf(hasPermissions(uri, macOps, ops))
 }
 
 // extractMacaroonOps is a helper function that extracts operations from the
@@ -421,7 +449,9 @@ func isReadOnly(ops []*lnrpc.Op) bool {
 
 // hasPermissions returns true if all the operations in requiredOps can also be
 // found in macOps.
-func hasPermissions(macOps []*lnrpc.Op, requiredOps []bakery.Op) bool {
+func hasPermissions(uri string, macOps []*lnrpc.Op,
+	requiredOps []bakery.Op) bool {
+
 	// Create a lookup map of the macaroon operations.
 	macOpsMap := make(map[string]map[string]bool)
 	for _, op := range macOps {
@@ -429,6 +459,17 @@ func hasPermissions(macOps []*lnrpc.Op, requiredOps []bakery.Op) bool {
 
 		for _, action := range op.Actions {
 			macOpsMap[op.Entity][action] = true
+
+			// We account here for the special case where the
+			// operation gives access to an entire URI. This is the
+			// case when the Entity is equal to the "uri" keyword
+			// and when the Action is equal to the URI that access
+			// is being granted to.
+			if op.Entity == macaroons.PermissionEntityCustomURI &&
+				action == uri {
+
+				return true
+			}
 		}
 	}
 
