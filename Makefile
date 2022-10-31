@@ -20,6 +20,7 @@ GOLIST := go list $(PKG)/... | grep -v '/vendor/'
 XARGS := xargs -L 1
 
 LDFLAGS := -s -w -buildid=
+LDFLAGS_MOBILE := -ldflags "$(call make_ldflags, ${tags}, -s -w)"
 
 RM := rm -f
 CP := cp
@@ -27,6 +28,18 @@ MAKE := make
 XARGS := xargs -L 1
 
 LINT = $(LINT_BIN) run -v --build-tags itest
+
+PKG := github.com/lightninglabs/lightning-node-connect
+MOBILE_PKG := $(PKG)/mobile
+MOBILE_BUILD_DIR :=${GOPATH}/src/$(PKG)/build
+IOS_BUILD_DIR := $(MOBILE_BUILD_DIR)/ios
+IOS_BUILD := $(IOS_BUILD_DIR)/Lndmobile.xcframework
+ANDROID_BUILD_DIR := $(MOBILE_BUILD_DIR)/android
+ANDROID_BUILD := $(ANDROID_BUILD_DIR)/lnc-mobile.aar
+
+GOMOBILE_BIN := $(GO_BIN)/gomobile
+
+RPC_TAGS := appengine autopilotrpc chainrpc invoicesrpc neutrinorpc peersrpc signrpc wtclientrpc watchtowerrpc routerrpc walletrpc verrpc
 
 include make/testing_flags.mk
 
@@ -48,13 +61,35 @@ $(LINT_BIN):
 
 build:
 	@$(call print, "Building lightning-node-connect.")
-	$(GOBUILD) $(PKG)/...
+	$(GOBUILD) -tags="$(RPC_TAGS)" $(PKG)/...
 
 wasm:
 	# The appengine build tag is needed because of the jessevdk/go-flags library
 	# that has some OS specific terminal code that doesn't compile to WASM.
-	cd cmd/wasm-client; GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="appengine autopilotrpc chainrpc invoicesrpc neutrinorpc peersrpc signrpc wtclientrpc watchtowerrpc routerrpc walletrpc verrpc" -v -o wasm-client.wasm .
+	cd cmd/wasm-client; GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="$(RPC_TAGS)" -v -o wasm-client.wasm .
 	$(CP) cmd/wasm-client/wasm-client.wasm example/wasm-client.wasm
+
+apple:
+	@$(call print, "Building iOS and macOS cxframework ($(IOS_BUILD)).")
+	mkdir -p $(IOS_BUILD_DIR)
+	$(GOMOBILE_BIN) bind -target=ios,iossimulator,macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+
+ios:
+	@$(call print, "Building iOS cxframework ($(IOS_BUILD)).")
+	mkdir -p $(IOS_BUILD_DIR)
+	$(GOMOBILE_BIN) bind -target=ios,iossimulator -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+
+macos:
+	@$(call print, "Building macOS cxframework ($(IOS_BUILD)).")
+	mkdir -p $(IOS_BUILD_DIR)
+	$(GOMOBILE_BIN) bind -target=macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+
+android:
+	@$(call print, "Building Android library ($(ANDROID_BUILD)).")
+	mkdir -p $(ANDROID_BUILD_DIR)
+	GOOS=js $(GOMOBILE_BIN) bind -target=android -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" -androidapi 21 $(LDFLAGS_MOBILE) -v -o $(ANDROID_BUILD) $(MOBILE_PKG)
+
+mobile: ios android
 
 # =======
 # TESTING
@@ -64,11 +99,11 @@ check: unit
 
 unit:
 	@$(call print, "Running unit tests.")
-	$(UNIT)
+	$(UNIT) -tags="$(RPC_TAGS)"
 
 unit-race:
 	@$(call print, "Running unit race tests.")
-	env CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(UNIT_RACE)
+	env CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(UNIT_RACE) -tags="$(RPC_TAGS)"
 
 itest: itest-run
 
