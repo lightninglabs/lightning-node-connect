@@ -181,51 +181,56 @@ func ConnectServer(nameSpace string, mailboxServer string, isDevServer bool,
 		return fmt.Errorf("unknown namespace: %s", nameSpace)
 	}
 
-	statusChecker, lndConnect, err := core.MailboxRPCConnection(
-		mailboxServer, pairingPhrase, localPriv, remotePub,
-		func(key *btcec.PublicKey) error {
-			mc.remoteKeyReceiveCallback.SendResult(
-				hex.EncodeToString(key.SerializeCompressed()),
-			)
+	// Since the connection function is blocking, we need to spin it off
+	// in another goroutine here. See https://pkg.go.dev/syscall/js#FuncOf.
+	go func() {
+		statusChecker, lndConnect, err := core.MailboxRPCConnection(
+			mailboxServer, pairingPhrase, localPriv, remotePub,
+			func(key *btcec.PublicKey) error {
+				mc.remoteKeyReceiveCallback.SendResult(
+					hex.EncodeToString(key.SerializeCompressed()),
+				)
 
-			return nil
-		}, func(data []byte) error {
-			parts := strings.Split(string(data), ": ")
-			if len(parts) != 2 || parts[0] != "Macaroon" {
-				return fmt.Errorf("authdata does " +
-					"not contain a macaroon")
-			}
+				return nil
+			}, func(data []byte) error {
+				parts := strings.Split(string(data), ": ")
+				if len(parts) != 2 || parts[0] != "Macaroon" {
+					return fmt.Errorf("authdata does " +
+						"not contain a macaroon")
+				}
 
-			macBytes, err := hex.DecodeString(parts[1])
-			if err != nil {
-				return err
-			}
+				macBytes, err := hex.DecodeString(parts[1])
+				if err != nil {
+					return err
+				}
 
-			mac := &macaroon.Macaroon{}
-			err = mac.UnmarshalBinary(macBytes)
-			if err != nil {
-				return fmt.Errorf("unable to decode "+
-					"macaroon: %v", err)
-			}
+				mac := &macaroon.Macaroon{}
+				err = mac.UnmarshalBinary(macBytes)
+				if err != nil {
+					return fmt.Errorf("unable to decode "+
+						"macaroon: %v", err)
+				}
 
-			mc.mac = mac
+				mc.mac = mac
 
-			mc.authDataCallback.SendResult(string(data))
+				mc.authDataCallback.SendResult(string(data))
 
-			return nil
-		},
-	)
-	if err != nil {
-		return err
-	}
+				return nil
+			},
+		)
+		if err != nil {
+			log.Errorf("Error running wasm client: %v", err)
+		}
 
-	mc.statusChecker = statusChecker
-	mc.lndConn, err = lndConnect()
-	if err != nil {
-		return err
-	}
+		mc.statusChecker = statusChecker
+		mc.lndConn, err = lndConnect()
+		if err != nil {
+			log.Errorf("Error running wasm client: %v", err)
+		}
 
-	log.Debugf("Mobile client connected to RPC")
+		log.Debugf("Mobile client connected to RPC")
+	}()
+
 	return nil
 }
 
