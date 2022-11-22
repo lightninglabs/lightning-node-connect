@@ -33,7 +33,7 @@ PKG := github.com/lightninglabs/lightning-node-connect
 MOBILE_PKG := $(PKG)/mobile
 MOBILE_BUILD_DIR :=${GOPATH}/src/$(PKG)/build
 IOS_BUILD_DIR := $(MOBILE_BUILD_DIR)/ios
-IOS_BUILD := $(IOS_BUILD_DIR)/Lndmobile.xcframework
+IOS_BUILD := $(IOS_BUILD_DIR)/Lncmobile.xcframework
 ANDROID_BUILD_DIR := $(MOBILE_BUILD_DIR)/android
 ANDROID_BUILD := $(ANDROID_BUILD_DIR)/lnc-mobile.aar
 
