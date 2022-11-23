@@ -41,6 +41,14 @@ GOMOBILE_BIN := $(GO_BIN)/gomobile
 
 RPC_TAGS := appengine autopilotrpc chainrpc invoicesrpc neutrinorpc peersrpc signrpc wtclientrpc watchtowerrpc routerrpc walletrpc verrpc
 
+# iOS library imports
+IOS_STRING1 := @import Foundation;
+IOS_STRING2 := \#import <Foundation\/Foundation.h>
+IOS_FILE1 := $(IOS_BUILD)/ios-arm64/Lncmobile.framework/Headers/Mobile.objc.h
+IOS_FILE2 := $(IOS_BUILD)/ios-arm64/Lncmobile.framework/Headers/Universe.objc.h
+IOS_FILE3 := $(IOS_BUILD)/ios-arm64_x86_64-simulator/Lncmobile.framework/Headers/Mobile.objc.h
+IOS_FILE4 := $(IOS_BUILD)/ios-arm64_x86_64-simulator/Lncmobile.framework/Headers/Universe.objc.h
+
 include make/testing_flags.mk
 
 default: build
@@ -78,6 +86,11 @@ ios:
 	@$(call print, "Building iOS cxframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
 	$(GOMOBILE_BIN) bind -target=ios,iossimulator -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+	# modify library files for import without C++ modules
+	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE1)
+	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE2)
+	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE3)
+	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE4)
 
 macos:
 	@$(call print, "Building macOS cxframework ($(IOS_BUILD)).")
