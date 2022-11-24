@@ -198,14 +198,16 @@ func ConnectServer(nameSpace string, mailboxServer string, isDevServer bool,
 			return
 		}
 
-		mc.mutex.Lock()
-		defer mc.mutex.Unlock()
-
 		statusChecker, lndConnect, err := core.MailboxRPCConnection(
 			mailboxServer, pairingPhrase, localPriv, remotePub,
 			func(key *btcec.PublicKey) error {
+				mc.mutex.Lock()
+				defer mc.mutex.Unlock()
+
 				mc.remoteKeyReceiveCallback.SendResult(
-					hex.EncodeToString(key.SerializeCompressed()),
+					hex.EncodeToString(
+						key.SerializeCompressed(),
+					),
 				)
 
 				return nil
@@ -228,8 +230,10 @@ func ConnectServer(nameSpace string, mailboxServer string, isDevServer bool,
 						"macaroon: %v", err)
 				}
 
-				mc.mac = mac
+				mc.mutex.Lock()
+				defer mc.mutex.Unlock()
 
+				mc.mac = mac
 				mc.authDataCallback.SendResult(string(data))
 
 				return nil
@@ -237,13 +241,22 @@ func ConnectServer(nameSpace string, mailboxServer string, isDevServer bool,
 		)
 		if err != nil {
 			log.Errorf("Error running wasm client: %v", err)
+			return
 		}
 
+		mc.mutex.Lock()
 		mc.statusChecker = statusChecker
-		mc.lndConn, err = lndConnect()
+		mc.mutex.Unlock()
+
+		lndConn, err := lndConnect()
 		if err != nil {
 			log.Errorf("Error running wasm client: %v", err)
+			return
 		}
+
+		mc.mutex.Lock()
+		mc.lndConn = lndConn
+		mc.mutex.Unlock()
 
 		log.Debugf("Mobile client connected to RPC")
 	}()
