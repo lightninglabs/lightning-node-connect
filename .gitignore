@@ -19,5 +19,8 @@ wasm-client.wasm
 # Mobile build output
 build/
 
+# Reproducible build output
+reproducible-builds/
+
 # Misc
 *.DS_Store

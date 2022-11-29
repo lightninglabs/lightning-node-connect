@@ -66,7 +66,7 @@ build:
 wasm:
 	# The appengine build tag is needed because of the jessevdk/go-flags library
 	# that has some OS specific terminal code that doesn't compile to WASM.
-	cd cmd/wasm-client; GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="$(RPC_TAGS)" -v -o wasm-client.wasm .
+	cd cmd/wasm-client; CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="$(RPC_TAGS)" -v -o wasm-client.wasm .
 	$(CP) cmd/wasm-client/wasm-client.wasm example/wasm-client.wasm
 
 apple:
@@ -90,6 +90,23 @@ android:
 	GOOS=js $(GOMOBILE_BIN) bind -target=android -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" -androidapi 21 $(LDFLAGS_MOBILE) -v -o $(ANDROID_BUILD) $(MOBILE_PKG)
 
 mobile: ios android
+
+repro-wasm:
+	#Build the repro-wasm image
+	docker build -f Dockerfile-wasm -t repro-wasm-image --no-cache .
+
+	#Run the repro-wasm-image in a new container called repro-wasm
+	docker run --name repro-wasm  repro-wasm-image
+
+	#Copy the compiled WASM file to the host machine
+	mkdir -p reproducible-builds
+	docker cp repro-wasm:/app/cmd/wasm-client/wasm-client.wasm ./reproducible-builds/
+	
+	#Remove the repro-wasm container
+	docker rm repro-wasm
+
+	#Remove the repro-wasm-image
+	docker image rm repro-wasm-image
 
 # =======
 # TESTING
