@@ -212,7 +212,7 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	// in another goroutine here. See https://pkg.go.dev/syscall/js#FuncOf.
 	go func() {
 		var err error
-		statusChecker, lndConnect, err := core.MailboxRPCConnection(
+		statusChecker, lndConnect, err := mailbox.NewClientWebsocketConn(
 			mailboxServer, pairingPhrase, localPriv, remotePub,
 			func(key *btcec.PublicKey) error {
 				return callJsCallback(

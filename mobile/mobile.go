@@ -198,7 +198,7 @@ func ConnectServer(nameSpace string, mailboxServer string, isDevServer bool,
 			return
 		}
 
-		statusChecker, lndConnect, err := core.MailboxRPCConnection(
+		statusChecker, lndConnect, err := mailbox.NewClientWebsocketConn(
 			mailboxServer, pairingPhrase, localPriv, remotePub,
 			func(key *btcec.PublicKey) error {
 				mc.mutex.Lock()
