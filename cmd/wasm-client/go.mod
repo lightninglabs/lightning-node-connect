@@ -5,13 +5,11 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/golang/protobuf v1.5.2
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/faraday v0.2.8-alpha.0.20220909105059-fea194ffb084
-	github.com/lightninglabs/lightning-node-connect v0.1.9-alpha.0.20220602120524-e9964c685b18
-	github.com/lightninglabs/loop v0.20.1-beta.0.20220916122221-9c3010150016
-	github.com/lightninglabs/pool v0.5.8-alpha
+	github.com/lightninglabs/lightning-node-connect v0.1.12-alpha
+	github.com/lightninglabs/lightning-terminal v0.8.4-alpha.0.20230111161455-fa90690c65d0
 	github.com/lightningnetwork/lnd v0.15.5-beta
 	google.golang.org/grpc v1.39.0
-	gopkg.in/macaroon-bakery.v2 v2.0.1
+	gopkg.in/macaroon-bakery.v2 v2.1.0
 	gopkg.in/macaroon.v2 v2.1.0
 )
 
@@ -76,11 +74,14 @@ require (
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/lib/pq v1.10.3 // indirect
+	github.com/lightninglabs/faraday v0.2.9-alpha // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop/swapserverrpc v1.0.1 // indirect
+	github.com/lightninglabs/loop v0.20.2-beta // indirect
+	github.com/lightninglabs/loop/swapserverrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
-	github.com/lightninglabs/pool/auctioneerrpc v1.0.7 // indirect
+	github.com/lightninglabs/pool v0.6.1-beta.0.20221202155747-aec0aee8d9a1 // indirect
+	github.com/lightninglabs/pool/auctioneerrpc v1.1.0 // indirect
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display // indirect
 	github.com/lightningnetwork/lightning-onion v1.0.2-0.20220211021909-bb84a1ccb0c5 // indirect
 	github.com/lightningnetwork/lnd/cert v1.1.1 // indirect
@@ -139,11 +140,11 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
-	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f // indirect
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
-	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
+	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
+	golang.org/x/text v0.3.8 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	google.golang.org/genproto v0.0.0-20210617175327-b9e0b3197ced // indirect
 	google.golang.org/protobuf v1.27.1 // indirect

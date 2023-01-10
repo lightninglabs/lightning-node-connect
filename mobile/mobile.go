@@ -13,28 +13,37 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/protobuf/proto"
-	"github.com/lightninglabs/faraday/frdrpc"
-	"github.com/lightninglabs/lightning-node-connect/core"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
-	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/lightning-terminal/litclient"
+	"github.com/lightninglabs/lightning-terminal/perms"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/autopilotrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/watchtowerrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 	"gopkg.in/macaroon.v2"
+)
+
+var (
+	// initMu is to be used to guard global variables at initialisation
+	// time.
+	initMu sync.Mutex
+
+	permsMgr *perms.Manager
+
+	jsonCBRegex = regexp.MustCompile(`(\w+)\.(\w+)\.(\w+)`)
+
+	m = make(map[string]*mobileClient)
+
+	// mMutex should always be used to guard the mutex map.
+	mMutex sync.RWMutex
+
+	registry = make(map[string]func(context.Context,
+		*grpc.ClientConn, string, func(string, error)))
+
+	interceptorLogsInitialize = false
 )
 
 type mobileClient struct {
@@ -62,45 +71,9 @@ func newMobileClient() *mobileClient {
 	}
 }
 
-type stubPackageRegistration func(map[string]func(context.Context,
-	*grpc.ClientConn, string, func(string, error)))
-
 type NativeCallback interface {
 	SendResult(json string)
 }
-
-var (
-	registrations = []stubPackageRegistration{
-		lnrpc.RegisterLightningJSONCallbacks,
-		lnrpc.RegisterStateJSONCallbacks,
-		autopilotrpc.RegisterAutopilotJSONCallbacks,
-		chainrpc.RegisterChainNotifierJSONCallbacks,
-		invoicesrpc.RegisterInvoicesJSONCallbacks,
-		routerrpc.RegisterRouterJSONCallbacks,
-		signrpc.RegisterSignerJSONCallbacks,
-		verrpc.RegisterVersionerJSONCallbacks,
-		walletrpc.RegisterWalletKitJSONCallbacks,
-		watchtowerrpc.RegisterWatchtowerJSONCallbacks,
-		wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
-		looprpc.RegisterSwapClientJSONCallbacks,
-		poolrpc.RegisterTraderJSONCallbacks,
-		frdrpc.RegisterFaradayServerJSONCallbacks,
-	}
-
-	perms = core.GetAllMethodPermissions()
-
-	jsonCBRegex = regexp.MustCompile(`(\w+)\.(\w+)\.(\w+)`)
-
-	m = make(map[string]*mobileClient)
-
-	// mMutex should always be used to guard the mutex map.
-	mMutex sync.RWMutex
-
-	registry = make(map[string]func(context.Context,
-		*grpc.ClientConn, string, func(string, error)))
-
-	interceptorLogsInitialize = false
-)
 
 // getClient returns the mobile client for the given namespace or an error if no
 // client exists.
@@ -116,11 +89,32 @@ func getClient(nameSpace string) (*mobileClient, error) {
 	return mc, nil
 }
 
+// initGlobals initialises any global variables that have not yet been
+// initialised.
+func initGlobals() error {
+	initMu.Lock()
+	defer initMu.Unlock()
+
+	if permsMgr != nil {
+		return nil
+	}
+
+	var err error
+	permsMgr, err = perms.NewManager(true)
+
+	return err
+}
+
 // InitLNC sets up everything required for LNC to run including
 // signal interceptor, logs, and an instance of the mobile client.
 func InitLNC(nameSpace, debugLevel string) error {
 	if nameSpace == "" {
 		return errors.New("no namespace specified")
+	}
+
+	// Initialise any global variables that have not yet been initialised.
+	if err := initGlobals(); err != nil {
+		return err
 	}
 
 	mMutex.Lock()
@@ -147,7 +141,7 @@ func InitLNC(nameSpace, debugLevel string) error {
 			return err
 		}
 
-		for _, registration := range registrations {
+		for _, registration := range litclient.Registrations {
 			registration(registry)
 		}
 
@@ -492,7 +486,7 @@ func HasPermissions(nameSpace, permission string) (bool, error) {
 	// first `/` back to a `.` and then we prepend the result with a `/`.
 	uri := jsonCBRegex.ReplaceAllString(permission, "/$1.$2/$3")
 
-	ops, ok := perms[uri]
+	ops, ok := permsMgr.URIPermissions(uri)
 	if !ok {
 		log.Errorf("uri %s not found in known permissions list", uri)
 		return false, nil

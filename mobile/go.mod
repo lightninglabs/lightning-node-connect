@@ -4,10 +4,8 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/golang/protobuf v1.5.2
-	github.com/lightninglabs/faraday v0.2.9-alpha
 	github.com/lightninglabs/lightning-node-connect v0.2.1-alpha
-	github.com/lightninglabs/loop v0.21.0-beta
-	github.com/lightninglabs/pool v0.6.1-beta
+	github.com/lightninglabs/lightning-terminal v0.8.4-alpha.0.20230111161455-fa90690c65d0
 	github.com/lightningnetwork/lnd v0.15.5-beta
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
 	google.golang.org/grpc v1.51.0
@@ -77,11 +75,14 @@ require (
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/lib/pq v1.10.3 // indirect
+	github.com/lightninglabs/faraday v0.2.9-alpha // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop/swapserverrpc v1.0.1 // indirect
+	github.com/lightninglabs/loop v0.21.0-beta // indirect
+	github.com/lightninglabs/loop/swapserverrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
-	github.com/lightninglabs/pool/auctioneerrpc v1.0.7 // indirect
+	github.com/lightninglabs/pool v0.6.1-beta.0.20221202155747-aec0aee8d9a1 // indirect
+	github.com/lightninglabs/pool/auctioneerrpc v1.1.0 // indirect
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display // indirect
 	github.com/lightningnetwork/lightning-onion v1.0.2-0.20220211021909-bb84a1ccb0c5 // indirect
 	github.com/lightningnetwork/lnd/cert v1.1.1 // indirect
