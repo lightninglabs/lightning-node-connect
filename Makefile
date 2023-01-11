@@ -9,7 +9,6 @@ LINT_BIN := $(GO_BIN)/golangci-lint
 
 LINT_COMMIT := v1.18.0
 
-DEPGET := cd /tmp && GO111MODULE=on go get -v
 GOBUILD := go build -v
 GOINSTALL := go install -v
 GOTEST := GO111MODULE=on go test -v
@@ -61,7 +60,7 @@ all: build check
 
 $(LINT_BIN):
 	@$(call print, "Fetching linter")
-	$(DEPGET) $(LINT_PKG)@$(LINT_COMMIT)
+	$(GOINSTALL) $(LINT_PKG)@$(LINT_COMMIT)
 
 # ============
 # INSTALLATION
