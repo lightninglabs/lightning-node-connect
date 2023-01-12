@@ -16,7 +16,7 @@ env:
   # go needs absolute directories, using the $HOME variable doesn't work here.
   GOCACHE: /home/runner/work/go/pkg/build
   GOPATH: /home/runner/work/go
-  GO_VERSION: 1.17.x
+  GO_VERSION: 1.18.x
 
 jobs:
   ########################
@@ -27,10 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: go cache
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: /home/runner/work/go
           key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
@@ -68,13 +68,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
-
-      - name: Fetch all history for linter
-        run: git fetch --prune --unshallow
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: go cache
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: /home/runner/work/go
           key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
@@ -107,10 +106,10 @@ jobs:
           - unit-race
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: go cache
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: /home/runner/work/go
           key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
@@ -136,10 +135,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: go cache
-        uses: actions/cache@v1
+        uses: actions/cache@v3
         with:
           path: /home/runner/work/go
           key: lnc-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}

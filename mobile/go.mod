@@ -1,15 +1,15 @@
-module github.com/lightninglabs/lightning-node-connect/cmd/wasm-client
+module github.com/lightninglabs/lightning-node-connect/mobile
 
 require (
-	github.com/btcsuite/btcd/btcec/v2 v2.2.2
+	github.com/btcsuite/btcd/btcec/v2 v2.3.2
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/golang/protobuf v1.5.2
-	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/lightning-node-connect v0.1.12-alpha
+	github.com/lightninglabs/lightning-node-connect v0.2.1-alpha
 	github.com/lightninglabs/lightning-terminal v0.8.4-alpha.0.20230111161455-fa90690c65d0
 	github.com/lightningnetwork/lnd v0.15.5-beta
-	google.golang.org/grpc v1.39.0
-	gopkg.in/macaroon-bakery.v2 v2.1.0
+	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
+	google.golang.org/grpc v1.51.0
+	gopkg.in/macaroon-bakery.v2 v2.3.0
 	gopkg.in/macaroon.v2 v2.1.0
 )
 
@@ -48,6 +48,7 @@ require (
 	github.com/fergusstrange/embedded-postgres v1.10.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.3+incompatible // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
+	github.com/go-macaroon-bakery/macaroonpb v1.0.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
@@ -66,10 +67,10 @@ require (
 	github.com/jackc/pgx/v4 v4.13.0 // indirect
 	github.com/jackpal/gateway v1.0.5 // indirect
 	github.com/jackpal/go-nat-pmp v0.0.0-20170405195558-28a68d0c24ad // indirect
+	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/jrick/logrotate v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
-	github.com/juju/loggo v0.0.0-20210728185423-eebad3a902c4 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
@@ -77,7 +78,7 @@ require (
 	github.com/lightninglabs/faraday v0.2.9-alpha // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop v0.20.2-beta // indirect
+	github.com/lightninglabs/loop v0.21.0-beta // indirect
 	github.com/lightninglabs/loop/swapserverrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
 	github.com/lightninglabs/pool v0.6.1-beta.0.20221202155747-aec0aee8d9a1 // indirect
@@ -140,12 +141,14 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
+	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde // indirect
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.8 // indirect
+	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
+	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/genproto v0.0.0-20210617175327-b9e0b3197ced // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
@@ -156,8 +159,6 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-replace github.com/lightninglabs/lightning-node-connect => ../../
-
-replace github.com/lightninglabs/lightning-node-connect/hashmailrpc => ../../hashmailrpc
+replace github.com/lightninglabs/lightning-node-connect => ../
 
 go 1.18

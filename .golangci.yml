@@ -41,3 +41,7 @@ linters:
 
     # Gosec is outdated and reports false positives.
     - gosec
+
+issues:
+  # Only show newly introduced problems.
+  new-from-rev: 4008b92d81d4d62e663025c5f79ebe44b53f283c

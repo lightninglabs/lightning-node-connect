@@ -1,5 +1,5 @@
-#Get golang 1.17.3-buster as a base image
-FROM golang:1.17.3-buster@sha256:ee3a388a872237ddb600de3ab9512e73df0043f8878f0f355baeb5b723ef16ec as builder
+#Get golang 1.19 as a base image
+FROM golang:1.19 as builder
 
 #Define the working directory in the container
 WORKDIR /app

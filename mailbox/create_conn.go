@@ -1,42 +1,42 @@
-package core
+package mailbox
 
 import (
 	"context"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 )
 
-// MailboxRPCConnection returns a merged map of all litd's method
-// permissions.
-func MailboxRPCConnection(mailboxServer, pairingPhrase string,
+// NewClientWebsocketConn attempts to create websocket LNC client connection to
+// a server connection listening at the given mailbox server.
+func NewClientWebsocketConn(mailboxServer, pairingPhrase string,
 	localStatic keychain.SingleKeyECDH, remoteStatic *btcec.PublicKey,
 	onRemoteStatic func(key *btcec.PublicKey) error,
-	onAuthData func(data []byte) error) (func() mailbox.ClientStatus,
+	onAuthData func(data []byte) error) (func() ClientStatus,
 	func() (*grpc.ClientConn, error), error) {
 
 	words := strings.Split(pairingPhrase, " ")
-	var mnemonicWords [mailbox.NumPassphraseWords]string
-	copy(mnemonicWords[:], words)
-	entropy := mailbox.PassphraseMnemonicToEntropy(mnemonicWords)
 
-	connData := mailbox.NewConnData(
+	var mnemonicWords [NumPassphraseWords]string
+	copy(mnemonicWords[:], words)
+	entropy := PassphraseMnemonicToEntropy(mnemonicWords)
+
+	connData := NewConnData(
 		localStatic, remoteStatic, entropy[:], nil, onRemoteStatic,
 		onAuthData,
 	)
 
 	ctx := context.Background()
-	transportConn, err := mailbox.NewWebsocketsClient(
+	transportConn, err := NewWebsocketsClient(
 		ctx, mailboxServer, connData,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	noiseConn := mailbox.NewNoiseGrpcConn(connData)
+	noiseConn := NewNoiseGrpcConn(connData)
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithContextDialer(transportConn.Dial),

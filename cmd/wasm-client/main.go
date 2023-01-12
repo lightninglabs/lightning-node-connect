@@ -1,5 +1,4 @@
 //go:build js
-// +build js
 
 package main
 
@@ -14,28 +13,18 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"syscall/js"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/protobuf/proto"
 	"github.com/jessevdk/go-flags"
-	"github.com/lightninglabs/faraday/frdrpc"
-	"github.com/lightninglabs/lightning-node-connect/core"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
-	"github.com/lightninglabs/loop/looprpc"
-	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/lightning-terminal/litclient"
+	"github.com/lightninglabs/lightning-terminal/perms"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/autopilotrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/watchtowerrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/wtclientrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
@@ -44,28 +33,12 @@ import (
 	"gopkg.in/macaroon.v2"
 )
 
-type stubPackageRegistration func(map[string]func(context.Context,
-	*grpc.ClientConn, string, func(string, error)))
-
 var (
-	registrations = []stubPackageRegistration{
-		lnrpc.RegisterLightningJSONCallbacks,
-		lnrpc.RegisterStateJSONCallbacks,
-		autopilotrpc.RegisterAutopilotJSONCallbacks,
-		chainrpc.RegisterChainNotifierJSONCallbacks,
-		invoicesrpc.RegisterInvoicesJSONCallbacks,
-		routerrpc.RegisterRouterJSONCallbacks,
-		signrpc.RegisterSignerJSONCallbacks,
-		verrpc.RegisterVersionerJSONCallbacks,
-		walletrpc.RegisterWalletKitJSONCallbacks,
-		watchtowerrpc.RegisterWatchtowerJSONCallbacks,
-		wtclientrpc.RegisterWatchtowerClientJSONCallbacks,
-		looprpc.RegisterSwapClientJSONCallbacks,
-		poolrpc.RegisterTraderJSONCallbacks,
-		frdrpc.RegisterFaradayServerJSONCallbacks,
-	}
+	// initMu is to be used to guard global variables at initialisation
+	// time.
+	initMu sync.Mutex
 
-	perms = core.GetAllMethodPermissions()
+	permsMgr *perms.Manager
 
 	jsonCBRegex = regexp.MustCompile("(\\w+)\\.(\\w+)\\.(\\w+)")
 )
@@ -77,6 +50,12 @@ func main() {
 			debug.PrintStack()
 		}
 	}()
+
+	// Initialise any global variables if they have not yet been
+	// initialised.
+	if err := initGlobals(); err != nil {
+		exit(err)
+	}
 
 	// Parse command line flags.
 	cfg := config{}
@@ -124,7 +103,7 @@ func main() {
 	callbacks.Set("wasmClientIsCustom", js.FuncOf(wc.IsCustom))
 	js.Global().Set(cfg.NameSpace, callbacks)
 
-	for _, registration := range registrations {
+	for _, registration := range litclient.Registrations {
 		registration(wc.registry)
 	}
 
@@ -136,6 +115,22 @@ func main() {
 		_ = wc.Disconnect(js.ValueOf(nil), nil)
 		log.Debugf("Shutdown of WASM client complete")
 	}
+}
+
+// initGlobals initialises any global variables that have not yet been
+// initialised.
+func initGlobals() error {
+	initMu.Lock()
+	defer initMu.Unlock()
+
+	if permsMgr != nil {
+		return nil
+	}
+
+	var err error
+	permsMgr, err = perms.NewManager(true)
+
+	return err
 }
 
 type wasmClient struct {
@@ -212,7 +207,7 @@ func (w *wasmClient) ConnectServer(_ js.Value, args []js.Value) interface{} {
 	// in another goroutine here. See https://pkg.go.dev/syscall/js#FuncOf.
 	go func() {
 		var err error
-		statusChecker, lndConnect, err := core.MailboxRPCConnection(
+		statusChecker, lndConnect, err := mailbox.NewClientWebsocketConn(
 			mailboxServer, pairingPhrase, localPriv, remotePub,
 			func(key *btcec.PublicKey) error {
 				return callJsCallback(
@@ -400,7 +395,7 @@ func (w *wasmClient) HasPermissions(_ js.Value, args []js.Value) interface{} {
 	// first `/` back to a `.` and then we prepend the result with a `/`.
 	uri := jsonCBRegex.ReplaceAllString(args[0].String(), "/$1.$2/$3")
 
-	ops, ok := perms[uri]
+	ops, ok := permsMgr.URIPermissions(uri)
 	if !ok {
 		log.Errorf("uri %s not found in known permissions list", uri)
 		return js.ValueOf(false)

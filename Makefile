@@ -7,9 +7,8 @@ GOACC_PKG := github.com/ory/go-acc
 GO_BIN := ${GOPATH}/bin
 LINT_BIN := $(GO_BIN)/golangci-lint
 
-LINT_COMMIT := v1.18.0
+LINT_COMMIT := v1.50.0
 
-DEPGET := cd /tmp && GO111MODULE=on go get -v
 GOBUILD := go build -v
 GOINSTALL := go install -v
 GOTEST := GO111MODULE=on go test -v
@@ -61,7 +60,7 @@ all: build check
 
 $(LINT_BIN):
 	@$(call print, "Fetching linter")
-	$(DEPGET) $(LINT_PKG)@$(LINT_COMMIT)
+	$(GOINSTALL) $(LINT_PKG)@$(LINT_COMMIT)
 
 # ============
 # INSTALLATION
@@ -100,7 +99,7 @@ macos:
 android:
 	@$(call print, "Building Android library ($(ANDROID_BUILD)).")
 	mkdir -p $(ANDROID_BUILD_DIR)
-	GOOS=js $(GOMOBILE_BIN) bind -target=android -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" -androidapi 21 $(LDFLAGS_MOBILE) -v -o $(ANDROID_BUILD) $(MOBILE_PKG)
+	cd mobile; GOOS=js $(GOMOBILE_BIN) bind -target=android -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" -androidapi 21 $(LDFLAGS_MOBILE) -v -o $(ANDROID_BUILD) $(MOBILE_PKG)
 
 mobile: ios android
 
