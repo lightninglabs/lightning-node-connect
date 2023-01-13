@@ -156,6 +156,14 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         window[namespace].wasmClientInvokeRPC(rpcName, req, setResult);
     }
 
+    async function callWASMAutopilot(rpcName, req) {
+        window[namespace].wasmClientInvokeRPC('litrpc.Autopilot.' + rpcName, req, setResult);
+    }
+
+    async function callWASMLit(rpcName, req) {
+        window[namespace].wasmClientInvokeRPC('litrpc.Lit.' + rpcName, req, setResult);
+    }
+
     function setResult(result) {
         $('#output').text(result);
     }
@@ -255,6 +263,15 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         if (window[namespace].wasmClientHasPerms("frdrpc.FaradayServer.RevenueReport")) {
             document.getElementById('revenuereport').disabled = false;
         }
+        if (window[namespace].wasmClientHasPerms("litrpc.Autopilot.ListAutopilotFeatures")) {
+            document.getElementById('autopilotfeatures').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("litrpc.Firewall.ListActions")) {
+            document.getElementById('litactions').disabled = false;
+        }
+        if (window[namespace].wasmClientHasPerms("litrpc.Autopilot.ListAutopilotSessions")) {
+            document.getElementById('autopilotsessions').disabled = false;
+        }
 
         return {}
         // In case of an error, return an object with the following structure:
@@ -329,6 +346,14 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     
     <h2>Faraday</h2>
     <button id="revenuereport" onClick="callWASMFaraday('RevenueReport', '{}');" disabled>RevenueReport</button>
+
+    <h2>Autopilot</h2>
+    <button id="autopilotfeatures" onClick="callWASMAutopilot('ListAutopilotFeatures', '{}');" disabled>ListAutopilotFeatures</button>
+    <button id="autopilotsessions" onClick="callWASMAutopilot('ListAutopilotSessions', '{}');" disabled>ListAutopilotSessions</button>
+    <button id="litactions" onClick="callWASMLit('ListActions', '{}');" disabled>ListActions</button>
+
+    <pre id="autopilotfeed">
+    </pre>
 </div>
 </body>
 
