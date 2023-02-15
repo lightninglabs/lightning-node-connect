@@ -6,7 +6,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/lightning-node-connect v0.1.12-alpha
-	github.com/lightninglabs/lightning-terminal v0.8.4-alpha.0.20230111161455-fa90690c65d0
+	github.com/lightninglabs/lightning-terminal v0.8.6-alpha
 	github.com/lightningnetwork/lnd v0.15.5-beta
 	google.golang.org/grpc v1.39.0
 	gopkg.in/macaroon-bakery.v2 v2.1.0
@@ -36,7 +36,7 @@ require (
 	github.com/btcsuite/winsvc v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
-	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
+	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.0 // indirect
@@ -74,10 +74,10 @@ require (
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/lib/pq v1.10.3 // indirect
-	github.com/lightninglabs/faraday v0.2.9-alpha // indirect
+	github.com/lightninglabs/faraday v0.2.9-alpha.0.20230215114316-475a2fe8b5e1 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop v0.20.2-beta // indirect
+	github.com/lightninglabs/loop v0.21.0-beta // indirect
 	github.com/lightninglabs/loop/swapserverrpc v1.0.3 // indirect
 	github.com/lightninglabs/neutrino v0.14.2 // indirect
 	github.com/lightninglabs/pool v0.6.1-beta.0.20221202155747-aec0aee8d9a1 // indirect
@@ -90,7 +90,7 @@ require (
 	github.com/lightningnetwork/lnd/kvdb v1.3.1 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.0 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.0 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.0.3 // indirect
+	github.com/lightningnetwork/lnd/tlv v1.1.0 // indirect
 	github.com/lightningnetwork/lnd/tor v1.0.2 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
@@ -101,7 +101,7 @@ require (
 	github.com/nwaples/rardecode v1.1.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.11.0 // indirect
+	github.com/prometheus/client_golang v1.11.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.26.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
@@ -147,7 +147,7 @@ require (
 	golang.org/x/text v0.3.8 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	google.golang.org/genproto v0.0.0-20210617175327-b9e0b3197ced // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
