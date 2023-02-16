@@ -79,12 +79,12 @@ wasm:
 apple:
 	@$(call print, "Building iOS and macOS cxframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
-	$(GOMOBILE_BIN) bind -target=ios,iossimulator,macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+	cd mobile; $(GOMOBILE_BIN) bind -target=ios,iossimulator,macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
 
 ios:
 	@$(call print, "Building iOS cxframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
-	$(GOMOBILE_BIN) bind -target=ios,iossimulator -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+	cd mobile; $(GOMOBILE_BIN) bind -target=ios,iossimulator -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
 	# modify library files for import without C++ modules
 	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE1)
 	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE2)
@@ -94,7 +94,7 @@ ios:
 macos:
 	@$(call print, "Building macOS cxframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
-	$(GOMOBILE_BIN) bind -target=macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
+	cd mobile; $(GOMOBILE_BIN) bind -target=macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
 
 android:
 	@$(call print, "Building Android library ($(ANDROID_BUILD)).")
