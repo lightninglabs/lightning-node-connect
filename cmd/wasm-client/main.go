@@ -90,18 +90,32 @@ func main() {
 	}
 
 	// Setup JS callbacks.
-	callbacks := js.ValueOf(make(map[string]interface{}))
-	callbacks.Set("wasmClientIsReady", js.FuncOf(wc.IsReady))
-	callbacks.Set("wasmClientConnectServer", js.FuncOf(wc.ConnectServer))
-	callbacks.Set("wasmClientIsConnected", js.FuncOf(wc.IsConnected))
-	callbacks.Set("wasmClientDisconnect", js.FuncOf(wc.Disconnect))
-	callbacks.Set("wasmClientInvokeRPC", js.FuncOf(wc.InvokeRPC))
-	callbacks.Set("wasmClientStatus", js.FuncOf(wc.Status))
-	callbacks.Set("wasmClientGetExpiry", js.FuncOf(wc.GetExpiry))
-	callbacks.Set("wasmClientHasPerms", js.FuncOf(wc.HasPermissions))
-	callbacks.Set("wasmClientIsReadOnly", js.FuncOf(wc.IsReadOnly))
-	callbacks.Set("wasmClientIsCustom", js.FuncOf(wc.IsCustom))
-	js.Global().Set(cfg.NameSpace, callbacks)
+	callbacks := make(map[string]interface{})
+	callbacks["wasmClientIsReady"] = js.FuncOf(wc.IsReady)
+	callbacks["wasmClientConnectServer"] = js.FuncOf(wc.ConnectServer)
+	callbacks["wasmClientIsConnected"] = js.FuncOf(wc.IsConnected)
+	callbacks["wasmClientDisconnect"] = js.FuncOf(wc.Disconnect)
+	callbacks["wasmClientInvokeRPC"] = js.FuncOf(wc.InvokeRPC)
+	callbacks["wasmClientStatus"] = js.FuncOf(wc.Status)
+	callbacks["wasmClientGetExpiry"] = js.FuncOf(wc.GetExpiry)
+	callbacks["wasmClientHasPerms"] = js.FuncOf(wc.HasPermissions)
+	callbacks["wasmClientIsReadOnly"] = js.FuncOf(wc.IsReadOnly)
+	callbacks["wasmClientIsCustom"] = js.FuncOf(wc.IsCustom)
+
+	// Check if a JS object for the namespace already exists on the global
+	// scope.
+	nsObj := js.Global().Get(cfg.NameSpace)
+	if !isEmptyObject(nsObj) {
+		// If it exists, set the callbacks on the existing object. This
+		// prevents overwriting the existing object, removing any
+		// vars/funcs that may have been set by the user.
+		for cb, name := range callbacks {
+			nsObj.Set(cb, name)
+		}
+	} else {
+		// If not, create the JS object and set the callbacks.
+		js.Global().Set(cfg.NameSpace, js.ValueOf(callbacks))
+	}
 
 	for _, registration := range litclient.Registrations {
 		registration(wc.registry)
@@ -572,7 +586,17 @@ func parseKeys(onLocalPrivCreate, localPrivKey, remotePubKey string) (
 }
 
 func callJsCallback(callbackName string, value string) error {
-	retValue := js.Global().Call(callbackName, value)
+	// callbackName can be in the form of "namespace.callbackName" or just
+	// "callbackName". If it is in the former form, we need to get the
+	// namespace object and call the callback on that object.
+	jsScope := js.Global()
+	parts := strings.Split(callbackName, ".")
+	if len(parts) > 1 {
+		jsScope = jsScope.Get(parts[0])
+		callbackName = parts[1]
+	}
+
+	retValue := jsScope.Call(callbackName, value)
 
 	if isEmptyObject(retValue) || isEmptyObject(retValue.Get("err")) {
 		return nil
