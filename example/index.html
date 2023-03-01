@@ -41,14 +41,21 @@ Add the following polyfill for Microsoft Edge 17/18 support:
             }
         }
 
+        // Set the callbacks on the namespace object
+        window[namespace] = {
+            onAuthData: onAuthData,
+            onLocalKeyCreate: onLocalKeyCreate,
+            onRemoteKeyReceive: onRemoteKeyReceive,
+        };
+
         console.clear();
         go.argv = [
             'wasm-client',
             '--debuglevel=trace',
-            '--namespace='+namespace,
-            '--onlocalprivcreate=onLocalKeyCreate',
-            '--onremotekeyreceive=onRemoteKeyReceive',
-            '--onauthdata=onAuthData',
+            '--namespace=' + namespace,
+            '--onlocalprivcreate=' + namespace + '.onLocalKeyCreate',
+            '--onremotekeyreceive=' + namespace + '.onRemoteKeyReceive',
+            '--onauthdata=' + namespace + '.onAuthData',
         ];
         let readyTicker = null;
         let isReady = function () {
