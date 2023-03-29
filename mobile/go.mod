@@ -174,4 +174,4 @@ require (
 
 replace github.com/lightninglabs/lightning-node-connect => ../
 
-go 1.18
+go 1.19

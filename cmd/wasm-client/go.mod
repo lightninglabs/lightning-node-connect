@@ -181,4 +181,4 @@ replace github.com/lightninglabs/lightning-node-connect => ../../
 
 replace github.com/lightninglabs/lightning-node-connect/hashmailrpc => ../../hashmailrpc
 
-go 1.18
+go 1.19
