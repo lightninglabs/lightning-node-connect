@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lightningnetwork/lnd/lntest"
-	"github.com/lightningnetwork/lnd/lntest/wait"
-
 	"github.com/lightninglabs/aperture"
+	"github.com/lightningnetwork/lnd/lntest/node"
+	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 
 type hashmailHarness struct {
@@ -22,7 +21,7 @@ func newHashmailHarness() *hashmailHarness {
 	return &hashmailHarness{
 		apertureCfg: &aperture.Config{
 			ListenAddr: fmt.Sprintf("127.0.0.1:%d",
-				lntest.NextAvailablePort()),
+				node.NextAvailablePort()),
 			Authenticator: &aperture.AuthConfig{
 				Disable: true,
 			},
