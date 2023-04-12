@@ -30,7 +30,8 @@ LINT = $(LINT_BIN) run -v --build-tags itest
 
 PKG := github.com/lightninglabs/lightning-node-connect
 MOBILE_PKG := $(PKG)/mobile
-MOBILE_BUILD_DIR :=${GOPATH}/src/$(PKG)/build
+MKFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+MOBILE_BUILD_DIR := $(MKFILE_DIR)/build
 IOS_BUILD_DIR := $(MOBILE_BUILD_DIR)/ios
 IOS_BUILD := $(IOS_BUILD_DIR)/Lncmobile.xcframework
 ANDROID_BUILD_DIR := $(MOBILE_BUILD_DIR)/android
@@ -76,13 +77,18 @@ wasm:
 	cd cmd/wasm-client; CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags="$(LDFLAGS)" -tags="$(RPC_TAGS)" -v -o wasm-client.wasm .
 	$(CP) cmd/wasm-client/wasm-client.wasm example/wasm-client.wasm
 
+clean:
+	@$(call print, "Cleaning up.")
+	$(RM) -r $(MOBILE_BUILD_DIR)
+	$(RM) -r ./reproducible-builds/
+
 apple:
-	@$(call print, "Building iOS and macOS cxframework ($(IOS_BUILD)).")
+	@$(call print, "Building iOS and macOS xcframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
 	cd mobile; $(GOMOBILE_BIN) bind -target=ios,iossimulator,macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
 
 ios:
-	@$(call print, "Building iOS cxframework ($(IOS_BUILD)).")
+	@$(call print, "Building iOS xcframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
 	cd mobile; $(GOMOBILE_BIN) bind -target=ios,iossimulator -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
 	# modify library files for import without C++ modules
@@ -92,7 +98,7 @@ ios:
 	sed -i.bak -E "s|$(IOS_STRING1)|$(IOS_STRING2)|g" $(IOS_FILE4)
 
 macos:
-	@$(call print, "Building macOS cxframework ($(IOS_BUILD)).")
+	@$(call print, "Building macOS xcframework ($(IOS_BUILD)).")
 	mkdir -p $(IOS_BUILD_DIR)
 	cd mobile; $(GOMOBILE_BIN) bind -target=macos -tags="mobile $(DEV_TAGS) $(RPC_TAGS)" $(LDFLAGS_MOBILE) -v -o $(IOS_BUILD) $(MOBILE_PKG)
 
@@ -119,6 +125,10 @@ repro-wasm:
 
 	#Remove the repro-wasm-image
 	docker image rm repro-wasm-image
+
+release: clean mobile repro-wasm
+	@$(call print, "Building release binaries for $(tag).")
+	./scripts/release.sh $(tag)
 
 # =======
 # TESTING
