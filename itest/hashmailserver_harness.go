@@ -12,14 +12,17 @@ import (
 	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 
-type hashmailHarness struct {
-	aperture    *aperture.Aperture
-	apertureCfg *aperture.Config
+type HashmailHarness struct {
+	aperture *aperture.Aperture
+
+	// ApertureCfg is the configuration aperture uses when being initialized.
+	ApertureCfg *aperture.Config
 }
 
-func newHashmailHarness() *hashmailHarness {
-	return &hashmailHarness{
-		apertureCfg: &aperture.Config{
+// NewHashmailHarness creates a new instance of the HashmailHarness.
+func NewHashmailHarness() *HashmailHarness {
+	return &HashmailHarness{
+		ApertureCfg: &aperture.Config{
 			ListenAddr: fmt.Sprintf("127.0.0.1:%d",
 				node.NextAvailablePort()),
 			Authenticator: &aperture.AuthConfig{
@@ -39,8 +42,8 @@ func newHashmailHarness() *hashmailHarness {
 }
 
 // initAperture starts the aperture proxy.
-func (hm *hashmailHarness) initAperture() error {
-	hm.aperture = aperture.NewAperture(hm.apertureCfg)
+func (hm *HashmailHarness) initAperture() error {
+	hm.aperture = aperture.NewAperture(hm.ApertureCfg)
 	errChan := make(chan error)
 
 	if err := hm.aperture.Start(errChan); err != nil {
@@ -60,7 +63,7 @@ func (hm *hashmailHarness) initAperture() error {
 	}
 	return wait.NoError(func() error {
 		apertureAddr := fmt.Sprintf("https://%s/dummy",
-			hm.apertureCfg.ListenAddr)
+			hm.ApertureCfg.ListenAddr)
 
 		resp, err := http.Get(apertureAddr)
 		if err != nil {
@@ -75,7 +78,8 @@ func (hm *hashmailHarness) initAperture() error {
 	}, 3*time.Second)
 }
 
-func (hm *hashmailHarness) start() error {
+// Start attempts to start the aperture proxy.
+func (hm *HashmailHarness) Start() error {
 	if err := hm.initAperture(); err != nil {
 		return fmt.Errorf("could not start aperture: %v", err)
 	}
@@ -83,6 +87,7 @@ func (hm *hashmailHarness) start() error {
 	return nil
 }
 
-func (hm *hashmailHarness) stop() error {
+// Stop attempts to stop the aperture proxy.
+func (hm *HashmailHarness) Stop() error {
 	return hm.aperture.Stop()
 }
