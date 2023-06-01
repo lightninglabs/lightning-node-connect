@@ -60,11 +60,14 @@ func newHarnessTest(t *testing.T, cfg *testConfig) *harnessTest {
 
 	mailboxAddr := testnetMailbox
 	var insecure bool
+
 	if !cfg.stagingMailbox {
 		ht.hmserver = NewHashmailHarness()
+
 		if err := ht.hmserver.Start(); err != nil {
 			t.Fatalf("could not start hashmail server: %v", err)
 		}
+
 		mailboxAddr = ht.hmserver.ApertureCfg.ListenAddr
 		insecure = true
 	}
