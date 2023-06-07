@@ -19,9 +19,13 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/protobuf/proto"
 	"github.com/jessevdk/go-flags"
+	faraday "github.com/lightninglabs/faraday/frdrpcserver/perms"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightninglabs/lightning-terminal/litclient"
 	"github.com/lightninglabs/lightning-terminal/perms"
+	loop "github.com/lightninglabs/loop/loopd/perms"
+	pool "github.com/lightninglabs/pool/perms"
+	tap "github.com/lightninglabs/taproot-assets/perms"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -143,6 +147,14 @@ func initGlobals() error {
 
 	var err error
 	permsMgr, err = perms.NewManager(true)
+	if err != nil {
+		return err
+	}
+
+	permsMgr.RegisterSubServer("taproot-assets", tap.RequiredPermissions)
+	permsMgr.RegisterSubServer("loop", loop.RequiredPermissions)
+	permsMgr.RegisterSubServer("pool", pool.RequiredPermissions)
+	permsMgr.RegisterSubServer("faraday", faraday.RequiredPermissions)
 
 	return err
 }

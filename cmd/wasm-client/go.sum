@@ -482,6 +482,8 @@ github.com/lightninglabs/pool/auctioneerrpc v1.1.0 h1:XOhmaFKRvQ1smwkY9SRTA0+FCl
 github.com/lightninglabs/pool/auctioneerrpc v1.1.0/go.mod h1:F9uND5Kpj2eYeYe0RLi8IWQHsRjQ88FUp8itkYmX1Mo=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display h1:RZJ8H4ueU/aQ9pFtx5wqsuD3B/DezrewJeVwDKKYY8E=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display/go.mod h1:2oKOBU042GKFHrdbgGiKax4xVrFiZu51lhacUZQ9MnE=
+github.com/lightninglabs/taproot-assets v0.2.0-lit-0 h1:ZiA5+hhUnlciZrssMd+iYAzwL4Y052s7W//9jGgiek8=
+github.com/lightninglabs/taproot-assets v0.2.0-lit-0/go.mod h1:F5wkRu25T1zS+BI31sxK0L989vZ8nSGGqcPvCn0/t1Q=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1 h1:Wm0g70gkcAu2pGpNZwfWPSVOY21j8IyYsNewwK4OkT4=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1/go.mod h1:7dDx73ApjEZA0kcknI799m2O5kkpfg4/gr7N092ojNo=
 github.com/lightningnetwork/lnd v0.16.3-beta h1:+wGzJUeooBR4vyALkgVp81dJoXyTjpzRykKBX4uktls=

@@ -5,8 +5,12 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/golang/protobuf v1.5.2
 	github.com/jessevdk/go-flags v1.4.0
+	github.com/lightninglabs/faraday v0.2.11-alpha
 	github.com/lightninglabs/lightning-node-connect v0.2.3-alpha
 	github.com/lightninglabs/lightning-terminal v0.10.1-alpha.0.20230612093826-ee04747e4a34
+	github.com/lightninglabs/loop v0.24.1-beta
+	github.com/lightninglabs/pool v0.6.4-beta
+	github.com/lightninglabs/taproot-assets v0.2.0-lit-0
 	github.com/lightningnetwork/lnd v0.16.3-beta
 	google.golang.org/grpc v1.45.0
 	gopkg.in/macaroon-bakery.v2 v2.1.0
@@ -86,14 +90,11 @@ require (
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
-	github.com/lightninglabs/faraday v0.2.11-alpha // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop v0.24.1-beta // indirect
 	github.com/lightninglabs/loop/swapserverrpc v1.0.4 // indirect
 	github.com/lightninglabs/neutrino v0.15.0 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.1 // indirect
-	github.com/lightninglabs/pool v0.6.4-beta // indirect
 	github.com/lightninglabs/pool/auctioneerrpc v1.1.0 // indirect
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display // indirect
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1 // indirect
