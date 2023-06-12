@@ -17,7 +17,6 @@ import (
 	"syscall/js"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/golang/protobuf/proto"
 	"github.com/jessevdk/go-flags"
 	faraday "github.com/lightninglabs/faraday/frdrpcserver/perms"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
@@ -32,6 +31,7 @@ import (
 	"github.com/lightningnetwork/lnd/macaroons"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 	"gopkg.in/macaroon.v2"
