@@ -158,7 +158,11 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     async function callWASMFaraday(rpcName, req) {
         window[namespace].wasmClientInvokeRPC('frdrpc.FaradayServer.' + rpcName, req, setResult);
     }
-    
+
+    async function callWASMTaprootAssets(rpcName, req) {
+        window[namespace].wasmClientInvokeRPC('taprpc.TaprootAssets.' + rpcName, req, setResult);
+    }
+
     async function callWASMDirect(rpcName, req) {
         window[namespace].wasmClientInvokeRPC(rpcName, req, setResult);
     }
@@ -270,6 +274,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         if (window[namespace].wasmClientHasPerms("frdrpc.FaradayServer.RevenueReport")) {
             document.getElementById('revenuereport').disabled = false;
         }
+        if (window[namespace].wasmClientHasPerms("taprpc.TaprootAssets.ListAssets")) {
+            document.getElementById('listassets').disabled = false;
+        }
         if (window[namespace].wasmClientHasPerms("litrpc.Autopilot.ListAutopilotFeatures")) {
             document.getElementById('autopilotfeatures').disabled = false;
         }
@@ -353,6 +360,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     
     <h2>Faraday</h2>
     <button id="revenuereport" onClick="callWASMFaraday('RevenueReport', '{}');" disabled>RevenueReport</button>
+
+    <h2>Taproot Assets</h2>
+    <button id="listassets" onClick="callWASMTaprootAssets('ListAssets', '{}');" disabled>List Assets</button>
 
     <h2>Autopilot</h2>
     <button id="autopilotfeatures" onClick="callWASMAutopilot('ListAutopilotFeatures', '{}');" disabled>ListAutopilotFeatures</button>
