@@ -18,6 +18,16 @@ linters-settings:
   gofmt:
     # simplify code: gofmt with `-s` option, true by default
     simplify: true
+  funlen:
+    # Checks the number of lines in a function.
+    # If lower than 0, disable the check.
+    lines: 200
+    # Checks the number of statements in a function.
+    statements: 80
+  gosec:
+    excludes:
+      - G402 # Look for bad TLS connection settings.
+      - G306 # Poor file permissions used when writing to a new file.
 
 linters:
   enable-all: true
@@ -32,16 +42,49 @@ linters:
     # them even longer by marking them as 'nolint'.
     - lll
 
-    # We don't care (enough) about misaligned structs to lint that.
+    # We don't require that all structs have all fields initialized when new
+    # instances are created.
+    - exhaustruct
+
+    # Deprecated linters. See https://golangci-lint.run/usage/linters/.
+    - interfacer
+    - golint
     - maligned
-
-    # We have long functions, especially in tests. Moving or renaming those
-    # would trigger funlen problems that we may not want to solve at that time.
-    - funlen
-
-    # Gosec is outdated and reports false positives.
-    - gosec
+    - scopelint
+    - exhaustivestruct
+    - bodyclose
+    - contextcheck
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - structcheck
+    - tparallel
+    - unparam
+    - wastedassign
+    - ifshort
+    - varcheck
+    - deadcode
+    - nosnakecase
 
 issues:
   # Only show newly introduced problems.
   new-from-rev: 4008b92d81d4d62e663025c5f79ebe44b53f283c
+
+  exclude-rules:
+    # Exclude gosec from running for tests so that tests with weak randomness
+    # (math/rand) will pass the linter. We also exclude funlen from tests as
+    # have test functions that are intentionally long.
+    - path: _test\.go
+      linters:
+        - gosec
+        - funlen
+
+    - path: test*
+      linters:
+        - gosec
+        - funlen
+
+    - path: itest/.*
+      linters:
+        - paralleltest

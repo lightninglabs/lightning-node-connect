@@ -44,7 +44,7 @@ type harnessTest struct {
 
 	server *serverHarness
 
-	hmserver *hashmailHarness
+	hmserver *HashmailHarness
 }
 
 // testConfig determines the way in which the test will be set up.
@@ -60,12 +60,15 @@ func newHarnessTest(t *testing.T, cfg *testConfig) *harnessTest {
 
 	mailboxAddr := testnetMailbox
 	var insecure bool
+
 	if !cfg.stagingMailbox {
-		ht.hmserver = newHashmailHarness()
-		if err := ht.hmserver.start(); err != nil {
+		ht.hmserver = NewHashmailHarness()
+
+		if err := ht.hmserver.Start(); err != nil {
 			t.Fatalf("could not start hashmail server: %v", err)
 		}
-		mailboxAddr = ht.hmserver.apertureCfg.ListenAddr
+
+		mailboxAddr = ht.hmserver.ApertureCfg.ListenAddr
 		insecure = true
 	}
 
@@ -186,7 +189,7 @@ func (h *harnessTest) shutdown() error {
 	h.server.stop()
 
 	if h.hmserver != nil {
-		err := h.hmserver.stop()
+		err := h.hmserver.Stop()
 		if err != nil {
 			returnErr = err
 		}
