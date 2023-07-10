@@ -147,6 +147,10 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         window[namespace].wasmClientInvokeRPC('lnrpc.Lightning.' + rpcName, req, setResult);
     }
 
+    async function callWASMStatus(rpcName, req) {
+        window[namespace].wasmClientInvokeRPC('litrpc.Status.' + rpcName, req, setResult);
+    }
+
     async function callWASMLoop(rpcName, req) {
         window[namespace].wasmClientInvokeRPC('looprpc.SwapClient.' + rpcName, req, setResult);
     }
@@ -265,6 +269,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
         if (window[namespace].wasmClientHasPerms("wtclientrpc.WatchtowerClient.ListTowers")) {
             document.getElementById('wtclientrpc').disabled = false;
         }
+        if (window[namespace].wasmClientHasPerms("litrpc.Status.SubServerStatus")) {
+            document.getElementById('getstatus').disabled = false;
+        }
         if (window[namespace].wasmClientHasPerms("looprpc.SwapClient.LoopOutTerms")) {
             document.getElementById('loopoutterms').disabled = false;
         }
@@ -351,6 +358,9 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     <button id="walletrpc" onClick="callWASMDirect('walletrpc.WalletKit.ListUnspent', '{}');" disabled>ListUnspent</button>
     <button id="watchtowerrpc" onClick="callWASMDirect('watchtowerrpc.Watchtower.GetInfo', '{}');" disabled>GetInfo</button>
     <button id="wtclientrpc" onClick="callWASMDirect('wtclientrpc.WatchtowerClient.ListTowers', '{}');" disabled>ListTowers</button>
+
+    <h2>Status</h2>
+    <button id="getstatus" onClick="callWASMStatus('SubServerStatus', '{}');" disabled>SubServerStatus</button>
 
     <h2>Loop</h2>
     <button id="loopoutterms" onClick="callWASMLoop('LoopOutTerms', '{}');" disabled>LoopOutTerms</button>
