@@ -151,10 +151,10 @@ func initGlobals() error {
 		return err
 	}
 
-	permsMgr.RegisterSubServer("taproot-assets", tap.RequiredPermissions)
-	permsMgr.RegisterSubServer("loop", loop.RequiredPermissions)
-	permsMgr.RegisterSubServer("pool", pool.RequiredPermissions)
-	permsMgr.RegisterSubServer("faraday", faraday.RequiredPermissions)
+	permsMgr.RegisterSubServer("taproot-assets", tap.RequiredPermissions, tap.MacaroonWhitelist(false, false))
+	permsMgr.RegisterSubServer("loop", loop.RequiredPermissions, nil)
+	permsMgr.RegisterSubServer("pool", pool.RequiredPermissions, nil)
+	permsMgr.RegisterSubServer("faraday", faraday.RequiredPermissions, nil)
 
 	return err
 }
