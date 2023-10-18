@@ -3,9 +3,9 @@ module github.com/lightninglabs/lightning-node-connect/mobile
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
-	github.com/lightninglabs/lightning-node-connect v0.2.4-alpha
-	github.com/lightninglabs/lightning-terminal v0.10.5-alpha
-	github.com/lightningnetwork/lnd v0.16.4-beta
+	github.com/lightninglabs/lightning-node-connect v0.2.6-alpha
+	github.com/lightninglabs/lightning-terminal v0.11.0-alpha
+	github.com/lightningnetwork/lnd v0.17.0-beta
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.31.0
@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/NebulousLabs/fastrand v0.0.0-20181203155948-6fb6489aac4e // indirect
 	github.com/NebulousLabs/go-upnp v0.0.0-20180202185039-29b680b06c82 // indirect
 	github.com/Yawning/aez v0.0.0-20211027044916-e49e68abd344 // indirect
@@ -21,11 +22,11 @@ require (
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/andybalholm/brotli v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/btcsuite/btcd v0.23.5-0.20230228185050-38331963bddd // indirect
-	github.com/btcsuite/btcd/btcutil v1.1.3 // indirect
+	github.com/btcsuite/btcd v0.23.5-0.20230905170901-80f5a0ffdf36 // indirect
+	github.com/btcsuite/btcd/btcutil v1.1.4-0.20230904040416-d4f519f5dc05 // indirect
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.8 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2 // indirect
-	github.com/btcsuite/btcwallet v0.16.10-0.20230621165747-9c21f464ce13 // indirect
+	github.com/btcsuite/btcwallet v0.16.10-0.20230804184612-07be54bc22cf // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.2 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.0 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.3 // indirect
@@ -46,8 +47,9 @@ require (
 	github.com/dsnet/compress v0.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/fergusstrange/embedded-postgres v1.10.0 // indirect
+	github.com/frankban/quicktest v1.14.3 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
-	github.com/go-logr/logr v1.2.2 // indirect
+	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0 // indirect
 	github.com/gofrs/uuid v4.2.0+incompatible // indirect
@@ -63,13 +65,14 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
-	github.com/jackc/pgconn v1.12.0 // indirect
+	github.com/jackc/pgconn v1.14.0 // indirect
+	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgproto3/v2 v2.3.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
-	github.com/jackc/pgtype v1.11.0 // indirect
-	github.com/jackc/pgx/v4 v4.16.0 // indirect
+	github.com/jackc/pgproto3/v2 v2.3.2 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/pgtype v1.14.0 // indirect
+	github.com/jackc/pgx/v4 v4.18.1 // indirect
 	github.com/jackpal/gateway v1.0.5 // indirect
 	github.com/jackpal/go-nat-pmp v0.0.0-20170405195558-28a68d0c24ad // indirect
 	github.com/jessevdk/go-flags v1.4.0 // indirect
@@ -80,29 +83,29 @@ require (
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
-	github.com/lib/pq v1.10.3 // indirect
-	github.com/lightninglabs/faraday v0.2.11-alpha // indirect
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/lib/pq v1.10.7 // indirect
+	github.com/lightninglabs/faraday v0.2.11-alpha.0.20231003174141-945b7188032f // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop v0.26.2-beta // indirect
+	github.com/lightninglabs/loop v0.26.3-beta.0.20231003175035-71c3e651ff4d // indirect
 	github.com/lightninglabs/loop/swapserverrpc v1.0.5 // indirect
-	github.com/lightninglabs/neutrino v0.15.0 // indirect
+	github.com/lightninglabs/neutrino v0.16.0 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.1 // indirect
-	github.com/lightninglabs/pool v0.6.4-beta // indirect
-	github.com/lightninglabs/pool/auctioneerrpc v1.1.0 // indirect
-	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display // indirect
-	github.com/lightninglabs/taproot-assets v0.2.3 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.1-0.20221202012345-ca23184850a1 // indirect
-	github.com/lightningnetwork/lnd/cert v1.2.1 // indirect
-	github.com/lightningnetwork/lnd/clock v1.1.0 // indirect
-	github.com/lightningnetwork/lnd/healthcheck v1.2.2 // indirect
-	github.com/lightningnetwork/lnd/kvdb v1.4.1 // indirect
-	github.com/lightningnetwork/lnd/queue v1.1.0 // indirect
-	github.com/lightningnetwork/lnd/ticker v1.1.0 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.1.0 // indirect
-	github.com/lightningnetwork/lnd/tor v1.1.0 // indirect
+	github.com/lightninglabs/pool v0.6.4-beta.0.20231003174306-80d8854a0c4b // indirect
+	github.com/lightninglabs/pool/auctioneerrpc v1.1.1 // indirect
+	github.com/lightninglabs/taproot-assets v0.2.4-0.20231003174254-dc19aad3ae77 // indirect
+	github.com/lightningnetwork/lightning-onion v1.2.1-0.20230823005744-06182b1d7d2f // indirect
+	github.com/lightningnetwork/lnd/cert v1.2.2 // indirect
+	github.com/lightningnetwork/lnd/clock v1.1.1 // indirect
+	github.com/lightningnetwork/lnd/healthcheck v1.2.3 // indirect
+	github.com/lightningnetwork/lnd/kvdb v1.4.4 // indirect
+	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
+	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
+	github.com/lightningnetwork/lnd/tlv v1.1.1 // indirect
+	github.com/lightningnetwork/lnd/tor v1.1.2 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
-	github.com/mattn/go-isatty v0.0.16 // indirect
+	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mholt/archiver/v3 v3.5.0 // indirect
 	github.com/miekg/dns v1.1.50 // indirect
@@ -110,7 +113,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nwaples/rardecode v1.1.2 // indirect
 	github.com/onsi/ginkgo v1.16.4 // indirect
-	github.com/onsi/gomega v1.15.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.11.1 // indirect
@@ -119,19 +121,19 @@ require (
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/fastuuid v1.2.0 // indirect
-	github.com/sirupsen/logrus v1.8.1 // indirect
+	github.com/sirupsen/logrus v1.9.2 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
-	github.com/stretchr/testify v1.8.1 // indirect
+	github.com/stretchr/testify v1.8.2 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02 // indirect
-	github.com/ulikunitz/xz v0.5.10 // indirect
+	github.com/ulikunitz/xz v0.5.11 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
-	go.etcd.io/bbolt v1.3.6 // indirect
+	go.etcd.io/bbolt v1.3.7 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.7 // indirect
@@ -151,15 +153,15 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
 	golang.org/x/crypto v0.7.0 // indirect
-	golang.org/x/exp v0.0.0-20221111094246-ab4555d3164f // indirect
-	golang.org/x/mod v0.9.0 // indirect
-	golang.org/x/net v0.8.0 // indirect
-	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.7.0 // indirect
-	golang.org/x/term v0.6.0 // indirect
-	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
+	golang.org/x/mod v0.10.0 // indirect
+	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/sync v0.2.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/term v0.8.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/time v0.1.0 // indirect
-	golang.org/x/tools v0.7.0 // indirect
+	golang.org/x/tools v0.9.1 // indirect
 	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
