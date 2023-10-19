@@ -5,8 +5,8 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/faraday v0.2.11-alpha.0.20231003174141-945b7188032f
-	github.com/lightninglabs/lightning-node-connect v0.2.6-alpha
-	github.com/lightninglabs/lightning-terminal v0.11.0-alpha
+	github.com/lightninglabs/lightning-node-connect v0.2.7-alpha
+	github.com/lightninglabs/lightning-terminal v0.12.0-alpha
 	github.com/lightninglabs/loop v0.26.4-beta
 	github.com/lightninglabs/pool v0.6.4-beta.0.20231003174306-80d8854a0c4b
 	github.com/lightninglabs/taproot-assets v0.3.0
@@ -155,14 +155,14 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
-	golang.org/x/crypto v0.7.0 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
-	golang.org/x/sys v0.8.0 // indirect
-	golang.org/x/term v0.8.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.1.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
 	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
