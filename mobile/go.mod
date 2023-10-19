@@ -3,8 +3,8 @@ module github.com/lightninglabs/lightning-node-connect/mobile
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
-	github.com/lightninglabs/lightning-node-connect v0.2.6-alpha
-	github.com/lightninglabs/lightning-terminal v0.11.0-alpha
+	github.com/lightninglabs/lightning-node-connect v0.2.7-alpha
+	github.com/lightninglabs/lightning-terminal v0.12.0-alpha
 	github.com/lightningnetwork/lnd v0.17.0-beta
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
 	google.golang.org/grpc v1.53.0
@@ -45,14 +45,13 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/decred/dcrd/lru v1.0.0 // indirect
 	github.com/dsnet/compress v0.0.1 // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fergusstrange/embedded-postgres v1.10.0 // indirect
 	github.com/frankban/quicktest v1.14.3 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0 // indirect
-	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -60,7 +59,7 @@ require (
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3 // indirect
@@ -88,13 +87,14 @@ require (
 	github.com/lightninglabs/faraday v0.2.11-alpha.0.20231003174141-945b7188032f // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/loop v0.26.3-beta.0.20231003175035-71c3e651ff4d // indirect
+	github.com/lightninglabs/lndclient v0.17.0-1 // indirect
+	github.com/lightninglabs/loop v0.26.4-beta // indirect
 	github.com/lightninglabs/loop/swapserverrpc v1.0.5 // indirect
 	github.com/lightninglabs/neutrino v0.16.0 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.1 // indirect
 	github.com/lightninglabs/pool v0.6.4-beta.0.20231003174306-80d8854a0c4b // indirect
 	github.com/lightninglabs/pool/auctioneerrpc v1.1.1 // indirect
-	github.com/lightninglabs/taproot-assets v0.2.4-0.20231003174254-dc19aad3ae77 // indirect
+	github.com/lightninglabs/taproot-assets v0.3.0 // indirect
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20230823005744-06182b1d7d2f // indirect
 	github.com/lightningnetwork/lnd/cert v1.2.2 // indirect
 	github.com/lightningnetwork/lnd/clock v1.1.1 // indirect
@@ -115,10 +115,10 @@ require (
 	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.11.1 // indirect
-	github.com/prometheus/client_model v0.2.0 // indirect
-	github.com/prometheus/common v0.30.0 // indirect
-	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/prometheus/client_golang v1.14.0 // indirect
+	github.com/prometheus/client_model v0.3.0 // indirect
+	github.com/prometheus/common v0.37.0 // indirect
+	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/fastuuid v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.2 // indirect
@@ -152,14 +152,14 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
-	golang.org/x/crypto v0.7.0 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
-	golang.org/x/sys v0.8.0 // indirect
-	golang.org/x/term v0.8.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.1.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
 	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
@@ -170,11 +170,11 @@ require (
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect
 	modernc.org/ccgo/v3 v3.16.13 // indirect
-	modernc.org/libc v1.22.3 // indirect
+	modernc.org/libc v1.24.1 // indirect
 	modernc.org/mathutil v1.5.0 // indirect
-	modernc.org/memory v1.5.0 // indirect
+	modernc.org/memory v1.6.0 // indirect
 	modernc.org/opt v0.1.3 // indirect
-	modernc.org/sqlite v1.21.0 // indirect
+	modernc.org/sqlite v1.25.0 // indirect
 	modernc.org/strutil v1.1.3 // indirect
 	modernc.org/token v1.0.1 // indirect
 	nhooyr.io/websocket v1.8.7 // indirect
