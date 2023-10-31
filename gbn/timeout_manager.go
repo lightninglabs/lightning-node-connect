@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	defaultHandshakeTimeout       = 100 * time.Millisecond
-	defaultResendTimeout          = 100 * time.Millisecond
-	minimumResendTimeout          = 100 * time.Millisecond
+	defaultHandshakeTimeout       = 1000 * time.Millisecond
+	defaultResendTimeout          = 1000 * time.Millisecond
+	minimumResendTimeout          = 1000 * time.Millisecond
 	defaultFinSendTimeout         = 1000 * time.Millisecond
 	defaultResendMultiplier       = 5
 	defaultTimeoutUpdateFrequency = 100
