@@ -335,6 +335,8 @@ func (g *GoBackNConn) Close() error {
 		// initialisation.
 		g.cancel()
 
+		g.sendQueue.stop()
+
 		g.wg.Wait()
 
 		if g.pingTicker != nil {
@@ -374,7 +376,28 @@ func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
 func (g *GoBackNConn) sendPacketsForever() error {
 	// resendQueue re-sends the current contents of the queue.
 	resendQueue := func() error {
-		return g.sendQueue.resend()
+		err := g.sendQueue.resend()
+		if err != nil {
+			return err
+		}
+
+		// After resending the queue, we reset the resend ticker.
+		// This is so that we don't immediately resend the queue again,
+		// if the sendQueue.resend call above took a long time to
+		// execute. That can happen if the function was awaiting the
+		// expected ACK for a long time, or times out while awaiting the
+		// catch up.
+		g.resendTicker.Reset(g.cfg.resendTimeout)
+
+		// Also drain the resend signal channel, as resendTicker.Reset
+		// doesn't drain the channel if the ticker ticked during the
+		// sendQueue.resend() call above.
+		select {
+		case <-g.resendTicker.C:
+		default:
+		}
+
+		return nil
 	}
 
 	for {

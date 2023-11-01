@@ -51,7 +51,11 @@ type queue struct {
 	// topMtx is used to guard sequenceTop.
 	topMtx sync.RWMutex
 
+	syncer *syncer
+
 	lastResend time.Time
+
+	quit chan struct{}
 }
 
 // newQueue creates a new queue.
@@ -60,10 +64,19 @@ func newQueue(cfg *queueCfg) *queue {
 		cfg.log = log
 	}
 
-	return &queue{
+	q := &queue{
 		cfg:     cfg,
 		content: make([]*PacketData, cfg.s),
+		quit:    make(chan struct{}),
 	}
+
+	q.syncer = newSyncer(cfg.s, cfg.log, cfg.timeout, q.quit)
+
+	return q
+}
+
+func (q *queue) stop() {
+	close(q.quit)
 }
 
 // size is used to calculate the current sender queueSize.
@@ -91,7 +104,9 @@ func (q *queue) addPacket(packet *PacketData) {
 	q.sequenceTop = (q.sequenceTop + 1) % q.cfg.s
 }
 
-// resend invokes the callback for each packet that needs to be re-sent.
+// resend resends the current contents of the queue. It allows some time for the
+// two parties to be seen as synced; this may fail in which case the caller is
+// expected to call resend again.
 func (q *queue) resend() error {
 	if time.Since(q.lastResend) < q.cfg.timeout {
 		q.cfg.log.Tracef("Resent the queue recently.")
@@ -117,6 +132,9 @@ func (q *queue) resend() error {
 		return nil
 	}
 
+	// Prepare the queue for awaiting the resend catch up.
+	q.syncer.initResendUpTo(top)
+
 	q.cfg.log.Tracef("Resending the queue")
 
 	for base != top {
@@ -125,10 +143,14 @@ func (q *queue) resend() error {
 		if err := q.cfg.sendPkt(packet); err != nil {
 			return err
 		}
+
 		base = (base + 1) % q.cfg.s
 
 		q.cfg.log.Tracef("Resent %d", packet.Seq)
 	}
+
+	// Then wait until we know that both parties are in sync.
+	q.syncer.waitForSync()
 
 	return nil
 }
@@ -137,7 +159,6 @@ func (q *queue) resend() error {
 // returns true if the passed seq is an ACK for a packet we have sent but not
 // yet received an ACK for.
 func (q *queue) processACK(seq uint8) bool {
-
 	// If our queue is empty, an ACK should not have any effect.
 	if q.size() == 0 {
 		q.cfg.log.Tracef("Received ack %d, but queue is empty. "+
@@ -145,6 +166,8 @@ func (q *queue) processACK(seq uint8) bool {
 
 		return false
 	}
+
+	q.syncer.processACK(seq)
 
 	q.baseMtx.Lock()
 	defer q.baseMtx.Unlock()
@@ -204,6 +227,8 @@ func (q *queue) processNACK(seq uint8) (bool, bool) {
 	defer q.topMtx.RUnlock()
 
 	q.cfg.log.Tracef("Received NACK %d", seq)
+
+	q.syncer.processNACK(seq)
 
 	// If the NACK is the same as sequenceTop, it probably means that queue
 	// was sent successfully, but due to latency we timed out and resent the
