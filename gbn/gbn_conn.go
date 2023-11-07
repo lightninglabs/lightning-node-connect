@@ -514,6 +514,8 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			g.pongTicker.Pause()
 		}
 
+		g.resendTicker.Reset(g.cfg.resendTimeout)
+
 		switch m := msg.(type) {
 		case *PacketData:
 			switch m.Seq == g.recvSeq {
@@ -588,8 +590,6 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 		case *PacketACK:
 			gotValidACK := g.sendQueue.processACK(m.Seq)
 			if gotValidACK {
-				g.resendTicker.Reset(g.cfg.resendTimeout)
-
 				// Send a signal to indicate that new
 				// ACKs have been received.
 				select {
