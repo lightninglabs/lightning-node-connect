@@ -564,9 +564,19 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 
 				// If we recently sent a NACK for the same
 				// sequence number then back off.
-				if lastNackSeq == g.recvSeq &&
-					time.Since(lastNackTime) <
-						g.cfg.resendTimeout {
+				// We wait 2 times the resendTimeout before
+				// sending a new nack, as this case is likely
+				// hit if the sender is currently resending
+				// the queue, and therefore the threads that
+				// are resending the queue is likely busy with
+				// the resend, and therefore won't react to the
+				// NACK we send here in time.
+				sinceSent := time.Since(lastNackTime)
+				recentlySent := sinceSent <
+					g.cfg.resendTimeout*2
+
+				if lastNackSeq == g.recvSeq && recentlySent {
+					g.log.Tracef("Recently sent NACK")
 
 					continue
 				}
