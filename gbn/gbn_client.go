@@ -41,13 +41,13 @@ func NewClientConn(ctx context.Context, n uint8, sendFunc sendBytesFunc,
 
 // clientHandshake initiates the client side GBN handshake.
 // The handshake sequence from the client side is as follows:
-// 1.  The client sends SYN to the server along with the N value that the
-//     client wishes to use for the connection.
-// 2.  The client then waits for the server to respond with SYN.
-// 3a. If the client receives SYN from the server then the client sends back
-//     SYNACK.
+// 1. The client sends SYN to the server along with the N value that the
+// client wishes to use for the connection.
+// 2. The client then waits for the server to respond with SYN.
+// 3a. If the client receives SYN from the server, then the client sends back
+// SYNACK.
 // 3b. If the client does not receive SYN from the server within a given
-//     timeout, then the client restarts the handshake from step 1.
+// timeout, then the client restarts the handshake from step 1.
 func (g *GoBackNConn) clientHandshake() error {
 	// Spin off the recv function in a goroutine so that we can use
 	// a select to choose to timeout waiting for data from the receive
@@ -94,7 +94,10 @@ func (g *GoBackNConn) clientHandshake() error {
 		}
 	}()
 
-	var resp Message
+	var (
+		resp    Message
+		respSYN *PacketSYN
+	)
 handshake:
 	for {
 		// start Handshake
@@ -142,8 +145,10 @@ handshake:
 			}
 
 			log.Debugf("Client got %T", resp)
-			switch resp.(type) {
+			switch r := resp.(type) {
 			case *PacketSYN:
+				respSYN = r
+
 				break handshake
 			default:
 			}
@@ -155,7 +160,8 @@ handshake:
 	}
 
 	log.Debugf("Client got SYN")
-	if resp.(*PacketSYN).N != g.n {
+
+	if respSYN.N != g.n {
 		return io.EOF
 	}
 
