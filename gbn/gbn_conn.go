@@ -33,27 +33,7 @@ type sendBytesFunc func(ctx context.Context, b []byte) error
 type recvBytesFunc func(ctx context.Context) ([]byte, error)
 
 type GoBackNConn struct {
-	// n is the window size. The sender can send a maximum of n packets
-	// before requiring an ack from the receiver for the first packet in
-	// the window. The value of n is chosen by the client during the
-	// GoBN handshake.
-	n uint8
-
-	// s is the maximum sequence number used to label packets. Packets
-	// are labelled with incrementing sequence numbers modulo s.
-	// s must be strictly larger than the window size, n. This
-	// is so that the receiver can tell if the sender is resending the
-	// previous window (maybe the sender did not receive the acks) or if
-	// they are sending the next window. If s <= n then there would be
-	// no way to tell.
-	s uint8
-
-	// maxChunkSize is the maximum payload size in bytes allowed per
-	// message. If the payload to be sent is larger than maxChunkSize then
-	// the payload will be split between multiple packets.
-	// If maxChunkSize is zero then it is disabled and data won't be split
-	// between packets.
-	maxChunkSize int
+	cfg *config
 
 	sendQueue *queue
 
@@ -61,29 +41,16 @@ type GoBackNConn struct {
 	// sequence that we have received.
 	recvSeq uint8
 
-	// resendTimeout is the duration that will be waited before resending
-	// the packets in the current queue.
-	resendTimeout time.Duration
-	resendTicker  *time.Ticker
-
-	recvFromStream recvBytesFunc
-	sendToStream   sendBytesFunc
+	resendTicker *time.Ticker
 
 	recvDataChan chan *PacketData
 	sendDataChan chan *PacketData
 
-	sendTimeout   time.Duration
-	sendTimeoutMu sync.RWMutex
-
-	recvTimeout   time.Duration
-	recvTimeoutMu sync.RWMutex
+	sendTimeout time.Duration
+	recvTimeout time.Duration
+	timeoutsMu  sync.RWMutex
 
 	log btclog.Logger
-
-	// handshakeTimeout is the time after which the server or client
-	// will abort and restart the handshake if the expected response is
-	// not received from the peer.
-	handshakeTimeout time.Duration
 
 	// receivedACKSignal channel is used to signal that the queue size has
 	// been decreased.
@@ -94,11 +61,8 @@ type GoBackNConn struct {
 	// that this channel should only be listened on in one place.
 	resendSignal chan struct{}
 
-	pingTime   time.Duration
-	pongTime   time.Duration
 	pingTicker *IntervalAwareForceTicker
 	pongTicker *IntervalAwareForceTicker
-	pongWait   chan struct{}
 
 	ctx    context.Context //nolint:containedctx
 	cancel func()
@@ -116,29 +80,22 @@ type GoBackNConn struct {
 
 // newGoBackNConn creates a GoBackNConn instance with all the members which
 // are common between client and server initialised.
-func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
-	recvFunc recvBytesFunc, isServer bool, n uint8) *GoBackNConn {
+func newGoBackNConn(ctx context.Context, cfg *config,
+	loggerPrefix string) *GoBackNConn {
 
 	ctxc, cancel := context.WithCancel(ctx)
 
 	// Construct a new prefixed logger.
-	identifier := "client"
-	if isServer {
-		identifier = "server"
-	}
-	prefix := fmt.Sprintf("(%s)", identifier)
+	prefix := fmt.Sprintf("(%s)", loggerPrefix)
 	plog := build.NewPrefixLog(prefix, log)
 
 	return &GoBackNConn{
-		n:                 n,
-		s:                 n + 1,
-		resendTimeout:     defaultResendTimeout,
-		recvFromStream:    recvFunc,
-		sendToStream:      sendFunc,
-		recvDataChan:      make(chan *PacketData, n),
-		sendDataChan:      make(chan *PacketData),
-		sendQueue:         newQueue(n+1, defaultHandshakeTimeout, plog),
-		handshakeTimeout:  defaultHandshakeTimeout,
+		cfg:          cfg,
+		recvDataChan: make(chan *PacketData, cfg.n),
+		sendDataChan: make(chan *PacketData),
+		sendQueue: newQueue(
+			cfg.n+1, defaultHandshakeTimeout, plog,
+		),
 		recvTimeout:       DefaultRecvTimeout,
 		sendTimeout:       DefaultSendTimeout,
 		receivedACKSignal: make(chan struct{}),
@@ -154,24 +111,24 @@ func newGoBackNConn(ctx context.Context, sendFunc sendBytesFunc,
 // setN sets the current N to use. This _must_ be set before the handshake is
 // completed.
 func (g *GoBackNConn) setN(n uint8) {
-	g.n = n
-	g.s = n + 1
+	g.cfg.n = n
+	g.cfg.s = n + 1
 	g.recvDataChan = make(chan *PacketData, n)
 	g.sendQueue = newQueue(n+1, defaultHandshakeTimeout, g.log)
 }
 
 // SetSendTimeout sets the timeout used in the Send function.
 func (g *GoBackNConn) SetSendTimeout(timeout time.Duration) {
-	g.sendTimeoutMu.Lock()
-	defer g.sendTimeoutMu.Unlock()
+	g.timeoutsMu.Lock()
+	defer g.timeoutsMu.Unlock()
 
 	g.sendTimeout = timeout
 }
 
 // SetRecvTimeout sets the timeout used in the Recv function.
 func (g *GoBackNConn) SetRecvTimeout(timeout time.Duration) {
-	g.recvTimeoutMu.Lock()
-	defer g.recvTimeoutMu.Unlock()
+	g.timeoutsMu.Lock()
+	defer g.timeoutsMu.Unlock()
 
 	g.recvTimeout = timeout
 }
@@ -185,9 +142,9 @@ func (g *GoBackNConn) Send(data []byte) error {
 	default:
 	}
 
-	g.sendTimeoutMu.RLock()
+	g.timeoutsMu.RLock()
 	ticker := time.NewTimer(g.sendTimeout)
-	g.sendTimeoutMu.RUnlock()
+	g.timeoutsMu.RUnlock()
 	defer ticker.Stop()
 
 	sendPacket := func(packet *PacketData) error {
@@ -201,7 +158,7 @@ func (g *GoBackNConn) Send(data []byte) error {
 		}
 	}
 
-	if g.maxChunkSize == 0 {
+	if g.cfg.maxChunkSize == 0 {
 		// Splitting is disabled.
 		return sendPacket(&PacketData{
 			Payload:    data,
@@ -210,18 +167,21 @@ func (g *GoBackNConn) Send(data []byte) error {
 	}
 
 	// Splitting is enabled. Split into packets no larger than maxChunkSize.
-	sentBytes := 0
+	var (
+		sentBytes = 0
+		maxChunk  = g.cfg.maxChunkSize
+	)
 	for sentBytes < len(data) {
 		packet := &PacketData{}
 
 		remainingBytes := len(data) - sentBytes
-		if remainingBytes <= g.maxChunkSize {
+		if remainingBytes <= maxChunk {
 			packet.Payload = data[sentBytes:]
 			sentBytes += remainingBytes
 			packet.FinalChunk = true
 		} else {
-			packet.Payload = data[sentBytes : sentBytes+g.maxChunkSize]
-			sentBytes += g.maxChunkSize
+			packet.Payload = data[sentBytes : sentBytes+maxChunk]
+			sentBytes += maxChunk
 		}
 
 		if err := sendPacket(packet); err != nil {
@@ -246,9 +206,9 @@ func (g *GoBackNConn) Recv() ([]byte, error) {
 		msg *PacketData
 	)
 
-	g.recvTimeoutMu.RLock()
+	g.timeoutsMu.RLock()
 	ticker := time.NewTimer(g.recvTimeout)
-	g.recvTimeoutMu.RUnlock()
+	g.timeoutsMu.RUnlock()
 	defer ticker.Stop()
 
 	for {
@@ -276,21 +236,21 @@ func (g *GoBackNConn) start() {
 	g.log.Debugf("Starting")
 
 	pingTime := time.Duration(math.MaxInt64)
-	if g.pingTime != 0 {
-		pingTime = g.pingTime
+	if g.cfg.pingTime != 0 {
+		pingTime = g.cfg.pingTime
 	}
 
 	g.pingTicker = NewIntervalAwareForceTicker(pingTime)
 	g.pingTicker.Resume()
 
 	pongTime := time.Duration(math.MaxInt64)
-	if g.pongTime != 0 {
-		pongTime = g.pongTime
+	if g.cfg.pongTime != 0 {
+		pongTime = g.cfg.pongTime
 	}
 
 	g.pongTicker = NewIntervalAwareForceTicker(pongTime)
 
-	g.resendTicker = time.NewTicker(g.resendTimeout)
+	g.resendTicker = time.NewTicker(g.cfg.resendTimeout)
 
 	g.wg.Add(1)
 	go func() {
@@ -382,7 +342,7 @@ func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
 		return fmt.Errorf("serialize error: %s", err)
 	}
 
-	err = g.sendToStream(ctx, b)
+	err = g.cfg.sendToStream(ctx, b)
 	if err != nil {
 		return fmt.Errorf("error calling sendToStream: %s", err)
 	}
@@ -456,7 +416,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 		for {
 			// If the queue size is still less than N, we can
 			// continue to add more packets to the queue.
-			if g.sendQueue.size() < g.n {
+			if g.sendQueue.size() < g.cfg.n {
 				break
 			}
 
@@ -500,7 +460,7 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 		default:
 		}
 
-		b, err := g.recvFromStream(g.ctx)
+		b, err := g.cfg.recvFromStream(g.ctx)
 		if err != nil {
 			return fmt.Errorf("error receiving "+
 				"from recvFromStream: %s", err)
@@ -537,7 +497,7 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 					return err
 				}
 
-				g.recvSeq = (g.recvSeq + 1) % g.s
+				g.recvSeq = (g.recvSeq + 1) % g.cfg.s
 
 				// If the packet was a ping, then there is no
 				// data to return to the above layer.
@@ -567,7 +527,8 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 				// If we recently sent a NACK for the same
 				// sequence number then back off.
 				if lastNackSeq == g.recvSeq &&
-					time.Since(lastNackTime) < g.resendTimeout {
+					time.Since(lastNackTime) <
+						g.cfg.resendTimeout {
 
 					continue
 				}
@@ -591,7 +552,7 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 		case *PacketACK:
 			gotValidACK := g.sendQueue.processACK(m.Seq)
 			if gotValidACK {
-				g.resendTicker.Reset(g.resendTimeout)
+				g.resendTicker.Reset(g.cfg.resendTimeout)
 
 				// Send a signal to indicate that new
 				// ACKs have been received.

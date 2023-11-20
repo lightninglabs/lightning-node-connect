@@ -14,12 +14,14 @@ import (
 func NewServerConn(ctx context.Context, sendFunc sendBytesFunc,
 	recvFunc recvBytesFunc, opts ...Option) (*GoBackNConn, error) {
 
-	conn := newGoBackNConn(ctx, sendFunc, recvFunc, true, DefaultN)
+	cfg := newConfig(sendFunc, recvFunc, DefaultN)
 
 	// Apply functional options
 	for _, o := range opts {
-		o(conn)
+		o(cfg)
 	}
+
+	conn := newGoBackNConn(ctx, cfg, "server")
 
 	if err := conn.serverHandshake(); err != nil {
 		if err := conn.Close(); err != nil {
@@ -61,7 +63,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 			case <-recvNext:
 			}
 
-			b, err := g.recvFromStream(g.ctx)
+			b, err := g.cfg.recvFromStream(g.ctx)
 			if err != nil {
 				errChan <- err
 				return
@@ -125,7 +127,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 			return err
 		}
 
-		if err = g.sendToStream(g.ctx, b); err != nil {
+		if err = g.cfg.sendToStream(g.ctx, b); err != nil {
 			return err
 		}
 
@@ -141,7 +143,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		}
 
 		select {
-		case <-time.After(g.handshakeTimeout):
+		case <-time.After(g.cfg.handshakeTimeout):
 			g.log.Debugf("SYNCACK resendTimeout. Abort and wait " +
 				"for client to re-initiate")
 			continue

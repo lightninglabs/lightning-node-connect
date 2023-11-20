@@ -21,16 +21,18 @@ func NewClientConn(ctx context.Context, n uint8, sendFunc sendBytesFunc,
 			math.MaxUint8)
 	}
 
-	conn := newGoBackNConn(ctx, sendFunc, receiveFunc, false, n)
+	cfg := newConfig(sendFunc, receiveFunc, n)
 
 	// Apply functional options
 	for _, o := range opts {
-		o(conn)
+		o(cfg)
 	}
+
+	conn := newGoBackNConn(ctx, cfg, "client")
 
 	if err := conn.clientHandshake(); err != nil {
 		if err := conn.Close(); err != nil {
-			log.Errorf("error closing gbn ClientConn: %v", err)
+			conn.log.Errorf("error closing gbn ClientConn: %v", err)
 		}
 		return nil, err
 	}
@@ -76,7 +78,7 @@ func (g *GoBackNConn) clientHandshake() error {
 			case <-recvNext:
 			}
 
-			b, err := g.recvFromStream(g.ctx)
+			b, err := g.cfg.recvFromStream(g.ctx)
 			if err != nil {
 				errChan <- err
 				return
@@ -101,7 +103,7 @@ func (g *GoBackNConn) clientHandshake() error {
 handshake:
 	for {
 		// start Handshake
-		msg := &PacketSYN{N: g.n}
+		msg := &PacketSYN{N: g.cfg.n}
 		msgBytes, err := msg.Serialize()
 		if err != nil {
 			return err
@@ -109,7 +111,7 @@ handshake:
 
 		// Send SYN
 		g.log.Debugf("Sending SYN")
-		if err := g.sendToStream(g.ctx, msgBytes); err != nil {
+		if err := g.cfg.sendToStream(g.ctx, msgBytes); err != nil {
 			return err
 		}
 
@@ -128,7 +130,7 @@ handshake:
 
 			var b []byte
 			select {
-			case <-time.After(g.handshakeTimeout):
+			case <-time.After(g.cfg.handshakeTimeout):
 				g.log.Debugf("SYN resendTimeout. Resending " +
 					"SYN.")
 
@@ -165,7 +167,7 @@ handshake:
 
 	g.log.Debugf("Got SYN")
 
-	if respSYN.N != g.n {
+	if respSYN.N != g.cfg.n {
 		return io.EOF
 	}
 
@@ -176,7 +178,7 @@ handshake:
 		return err
 	}
 
-	if err := g.sendToStream(g.ctx, synack); err != nil {
+	if err := g.cfg.sendToStream(g.ctx, synack); err != nil {
 		return err
 	}
 
