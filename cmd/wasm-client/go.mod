@@ -11,8 +11,8 @@ require (
 	github.com/lightninglabs/pool v0.6.4-beta.0.20231003174306-80d8854a0c4b
 	github.com/lightninglabs/taproot-assets v0.3.0
 	github.com/lightningnetwork/lnd v0.17.0-beta
-	google.golang.org/grpc v1.56.3
-	google.golang.org/protobuf v1.30.0
+	google.golang.org/grpc v1.59.0
+	google.golang.org/protobuf v1.31.0
 	gopkg.in/macaroon-bakery.v2 v2.1.0
 	gopkg.in/macaroon.v2 v2.1.0
 )
@@ -60,7 +60,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
@@ -128,7 +128,7 @@ require (
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
-	github.com/stretchr/testify v1.8.3 // indirect
+	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02 // indirect
@@ -159,13 +159,15 @@ require (
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
-	golang.org/x/sync v0.2.0 // indirect
+	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
-	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
+	google.golang.org/genproto v0.0.0-20230822172742-b8732ec3820d // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20230822172742-b8732ec3820d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
