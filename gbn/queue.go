@@ -3,6 +3,8 @@ package gbn
 import (
 	"sync"
 	"time"
+
+	"github.com/btcsuite/btclog"
 )
 
 // queue is a fixed size queue with a sliding window that has a base and a top
@@ -41,14 +43,24 @@ type queue struct {
 
 	lastResend       time.Time
 	handshakeTimeout time.Duration
+
+	log btclog.Logger
 }
 
 // newQueue creates a new queue.
-func newQueue(s uint8, handshakeTimeout time.Duration) *queue {
+func newQueue(s uint8, handshakeTimeout time.Duration,
+	logger btclog.Logger) *queue {
+
+	log := log
+	if logger != nil {
+		log = logger
+	}
+
 	return &queue{
 		content:          make([]*PacketData, s),
 		s:                s,
 		handshakeTimeout: handshakeTimeout,
+		log:              log,
 	}
 }
 
@@ -80,7 +92,7 @@ func (q *queue) addPacket(packet *PacketData) {
 // resend invokes the callback for each packet that needs to be re-sent.
 func (q *queue) resend(cb func(packet *PacketData) error) error {
 	if time.Since(q.lastResend) < q.handshakeTimeout {
-		log.Tracef("Resent the queue recently.")
+		q.log.Tracef("Resent the queue recently.")
 
 		return nil
 	}
@@ -103,7 +115,7 @@ func (q *queue) resend(cb func(packet *PacketData) error) error {
 		return nil
 	}
 
-	log.Tracef("Resending the queue")
+	q.log.Tracef("Resending the queue")
 
 	for base != top {
 		packet := q.content[base]
@@ -113,7 +125,7 @@ func (q *queue) resend(cb func(packet *PacketData) error) error {
 		}
 		base = (base + 1) % q.s
 
-		log.Tracef("Resent %d", packet.Seq)
+		q.log.Tracef("Resent %d", packet.Seq)
 	}
 
 	return nil
@@ -124,8 +136,9 @@ func (q *queue) processACK(seq uint8) bool {
 
 	// If our queue is empty, an ACK should not have any effect.
 	if q.size() == 0 {
-		log.Tracef("Received ack %d, but queue is empty. Ignoring.",
+		q.log.Tracef("Received ack %d, but queue is empty. Ignoring.",
 			seq)
+
 		return false
 	}
 
@@ -137,7 +150,7 @@ func (q *queue) processACK(seq uint8) bool {
 		// equal to the one we were expecting. So we increase our base
 		// accordingly and send a signal to indicate that the queue size
 		// has decreased.
-		log.Tracef("Received correct ack %d", seq)
+		q.log.Tracef("Received correct ack %d", seq)
 
 		q.sequenceBase = (q.sequenceBase + 1) % q.s
 
@@ -149,7 +162,7 @@ func (q *queue) processACK(seq uint8) bool {
 	// This could be a duplicate ACK before or it could be that we just
 	// missed the ACK for the current base and this is actually an ACK for
 	// another packet in the queue.
-	log.Tracef("Received wrong ack %d, expected %d", seq, q.sequenceBase)
+	q.log.Tracef("Received wrong ack %d, expected %d", seq, q.sequenceBase)
 
 	q.topMtx.RLock()
 	defer q.topMtx.RUnlock()
@@ -158,7 +171,7 @@ func (q *queue) processACK(seq uint8) bool {
 	// just missed a previous ACK. We can bump the base to be equal to this
 	// sequence number.
 	if containsSequence(q.sequenceBase, q.sequenceTop, seq) {
-		log.Tracef("Sequence %d is in the queue. Bump the base.", seq)
+		q.log.Tracef("Sequence %d is in the queue. Bump the base.", seq)
 
 		q.sequenceBase = (seq + 1) % q.s
 
@@ -178,7 +191,7 @@ func (q *queue) processNACK(seq uint8) (bool, bool) {
 	q.topMtx.RLock()
 	defer q.topMtx.RUnlock()
 
-	log.Tracef("Received NACK %d", seq)
+	q.log.Tracef("Received NACK %d", seq)
 
 	// If the NACK is the same as sequenceTop, it probably means that queue
 	// was sent successfully, but we just missed the necessary ACKs. So we

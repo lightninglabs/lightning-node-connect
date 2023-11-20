@@ -7,7 +7,7 @@ import (
 )
 
 func TestQueueSize(t *testing.T) {
-	q := newQueue(4, 0)
+	q := newQueue(4, 0, nil)
 
 	require.Equal(t, uint8(0), q.size())
 

@@ -23,7 +23,7 @@ func NewServerConn(ctx context.Context, sendFunc sendBytesFunc,
 
 	if err := conn.serverHandshake(); err != nil {
 		if err := conn.Close(); err != nil {
-			log.Errorf("error closing ServerConn: %v", err)
+			conn.log.Errorf("Error closing ServerConn: %v", err)
 		}
 
 		return nil, err
@@ -38,9 +38,10 @@ func NewServerConn(ctx context.Context, sendFunc sendBytesFunc,
 // 1.  The server waits for a SYN message from the client.
 // 2.  The server then responds with a SYN message.
 // 3.  The server waits for a SYNACK message from the client.
-// 4a. If the server receives the SYNACK message before a resendTimeout, the hand
-//     is considered complete.
-// 4b. If SYNACK is not received before a certain resendTimeout
+// 4a. If the server receives the SYNACK message before a resendTimeout, the
+// handshake is considered complete.
+// 4b. If SYNACK is not received before a certain resendTimeout, then the
+// handshake is aborted and the process is started from step 1 again.
 func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 	recvChan := make(chan []byte)
 	recvNext := make(chan int, 1)
@@ -81,7 +82,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 	var n uint8
 
 	for {
-		log.Debugf("Waiting for client SYN")
+		g.log.Debugf("Waiting for client SYN")
 		select {
 		case <-g.ctx.Done():
 			return nil
@@ -108,13 +109,13 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		switch msg.(type) {
 		case *PacketSYN:
 		default:
-			log.Tracef("Expected SYN, got %T", msg)
+			g.log.Tracef("Expected SYN, got %T", msg)
 			continue
 		}
 
 	recvClientSYN:
 
-		log.Debugf("Received client SYN. Sending back.")
+		g.log.Debugf("Received client SYN. Sending back.")
 		n = msg.(*PacketSYN).N
 
 		// Send SYN back
@@ -129,7 +130,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		}
 
 		// Wait for SYNACK
-		log.Debugf("Waiting for client SYNACK")
+		g.log.Debugf("Waiting for client SYNACK")
 		select {
 		case recvNext <- 1:
 		case <-g.ctx.Done():
@@ -141,7 +142,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 
 		select {
 		case <-time.After(g.handshakeTimeout):
-			log.Debugf("SYNCACK resendTimeout. Abort and wait " +
+			g.log.Debugf("SYNCACK resendTimeout. Abort and wait " +
 				"for client to re-initiate")
 			continue
 		case err := <-errChan:
@@ -162,7 +163,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		case *PacketSYNACK:
 			break
 		case *PacketSYN:
-			log.Debugf("Received SYN. Resend SYN.")
+			g.log.Debugf("Received SYN. Resend SYN.")
 			goto recvClientSYN
 		default:
 			return io.EOF
@@ -170,12 +171,13 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		break
 	}
 
-	log.Debugf("Received SYNACK")
+	g.log.Debugf("Received SYNACK")
 
 	// Set all variables that are dependent on the value of N that we get
 	// from the client
 	g.setN(n)
 
-	log.Debugf("Handshake complete (Server)")
+	g.log.Debugf("Handshake complete (Server)")
+
 	return nil
 }

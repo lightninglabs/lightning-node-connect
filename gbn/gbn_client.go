@@ -108,14 +108,15 @@ handshake:
 		}
 
 		// Send SYN
-		log.Debugf("Client sending SYN")
+		g.log.Debugf("Sending SYN")
 		if err := g.sendToStream(g.ctx, msgBytes); err != nil {
 			return err
 		}
 
 		for {
 			// Wait for SYN
-			log.Debugf("Client waiting for SYN")
+			g.log.Debugf("Waiting for SYN")
+
 			select {
 			case recvNext <- 1:
 			case <-g.quit:
@@ -128,7 +129,9 @@ handshake:
 			var b []byte
 			select {
 			case <-time.After(g.handshakeTimeout):
-				log.Debugf("SYN resendTimeout. Resending SYN.")
+				g.log.Debugf("SYN resendTimeout. Resending " +
+					"SYN.")
+
 				continue handshake
 			case <-g.quit:
 				return nil
@@ -144,7 +147,8 @@ handshake:
 				return err
 			}
 
-			log.Debugf("Client got %T", resp)
+			g.log.Debugf("Got %T", resp)
+
 			switch r := resp.(type) {
 			case *PacketSYN:
 				respSYN = r
@@ -159,14 +163,14 @@ handshake:
 		}
 	}
 
-	log.Debugf("Client got SYN")
+	g.log.Debugf("Got SYN")
 
 	if respSYN.N != g.n {
 		return io.EOF
 	}
 
 	// Send SYNACK
-	log.Debugf("Client sending SYNACK")
+	g.log.Debugf("Sending SYNACK")
 	synack, err := new(PacketSYNACK).Serialize()
 	if err != nil {
 		return err
@@ -176,7 +180,7 @@ handshake:
 		return err
 	}
 
-	log.Debugf("Client Handshake complete")
+	g.log.Debugf("Handshake complete")
 
 	return nil
 }
