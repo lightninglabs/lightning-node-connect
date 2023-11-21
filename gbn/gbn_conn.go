@@ -21,12 +21,7 @@ var (
 )
 
 const (
-	DefaultN                = 20
-	defaultHandshakeTimeout = 100 * time.Millisecond
-	defaultResendTimeout    = 100 * time.Millisecond
-	finSendTimeout          = 1000 * time.Millisecond
-	DefaultSendTimeout      = math.MaxInt64
-	DefaultRecvTimeout      = math.MaxInt64
+	DefaultN = 20
 )
 
 type sendBytesFunc func(ctx context.Context, b []byte) error
@@ -322,7 +317,7 @@ func (g *GoBackNConn) Close() error {
 			g.log.Tracef("Try sending FIN")
 
 			ctxc, cancel := context.WithTimeout(
-				g.ctx, finSendTimeout,
+				g.ctx, defaultFinSendTimeout,
 			)
 			defer cancel()
 			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {

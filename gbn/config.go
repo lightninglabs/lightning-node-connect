@@ -2,6 +2,70 @@ package gbn
 
 import "time"
 
+// TimeoutOptions can be used to modify the default timeout values used within
+// the TimeoutManager.
+type TimeoutOptions func(manager *TimeoutManager)
+
+// WithStaticResendTimeout is used to set a static resend timeout. This is the
+// time to wait for ACKs before resending the queue.
+func WithStaticResendTimeout(timeout time.Duration) TimeoutOptions {
+	return func(manager *TimeoutManager) {
+		manager.useStaticTimeout = true
+		manager.resendTimeout = timeout
+	}
+}
+
+// WithResendMultiplier is used to set the resend multiplier. This is the
+// multiplier we use when dynamically setting the resend timeout, based on how
+// long it took for other party to respond.
+// Note that when setting the resend timeout manually with the
+// WithStaticResendTimeout option, this option will have no effect.
+// Note that the passed multiplier must be greater than zero or this option will
+// have no effect.
+func WithResendMultiplier(multiplier int) TimeoutOptions {
+	return func(manager *TimeoutManager) {
+		if multiplier > 0 {
+			manager.resendMultiplier = multiplier
+		}
+	}
+}
+
+// WithTimeoutUpdateFrequency is used to set the frequency of how many
+// corresponding responses we need to receive until updating the resend timeout.
+// Note that when setting the resend timeout manually with the WithTimeout
+// option, this option will have no effect.
+// Also note that the passed frequency must be greater than zero or this option
+// will have no effect.
+func WithTimeoutUpdateFrequency(frequency int) TimeoutOptions {
+	return func(manager *TimeoutManager) {
+		if frequency > 0 {
+			manager.timeoutUpdateFrequency = frequency
+		}
+	}
+}
+
+// WithTMHandshakeTimeout is used to set the timeout used during the handshake.
+// If the timeout is reached without response from the peer then the handshake
+// will be aborted and restarted.
+func WithTMHandshakeTimeout(timeout time.Duration) TimeoutOptions {
+	return func(manager *TimeoutManager) {
+		manager.handshakeTimeout = timeout
+	}
+}
+
+// WithTMKeepalivePing is used to send a ping packet if no packets have been
+// received from the other side for the given duration. This helps keep the
+// connection alive and also ensures that the connection is closed if the
+// other side does not respond to the ping in a timely manner. After the ping
+// the connection will be closed if the other side does not respond within
+// time duration.
+func WithTMKeepalivePing(ping, pong time.Duration) TimeoutOptions {
+	return func(manager *TimeoutManager) {
+		manager.pingTime = ping
+		manager.pongTime = pong
+	}
+}
+
 // config holds the configuration values for an instance of GoBackNConn.
 type config struct {
 	// n is the window size. The sender can send a maximum of n packets
