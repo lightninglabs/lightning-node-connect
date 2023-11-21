@@ -15,23 +15,42 @@ linters-settings:
   govet:
     # Don't report about shadowed variables
     check-shadowing: false
+
   gofmt:
     # simplify code: gofmt with `-s` option, true by default
     simplify: true
+
   funlen:
     # Checks the number of lines in a function.
     # If lower than 0, disable the check.
     lines: 200
     # Checks the number of statements in a function.
     statements: 80
+
   gosec:
     excludes:
       - G402 # Look for bad TLS connection settings.
       - G306 # Poor file permissions used when writing to a new file.
 
+  whitespace:
+    multi-func: true
+    multi-if: true
+
 linters:
   enable-all: true
   disable:
+    # Allow dynamic errors.
+    - goerr113
+
+    # We want to allow short variable names.
+    - varnamelen
+
+    # Allow tests to be put in the same package.
+    - testpackage
+
+    # We want to allow TODOs.
+    - godox
+
     # Init functions are used by loggers throughout the codebase.
     - gochecknoinits
 
@@ -45,6 +64,17 @@ linters:
     # We don't require that all structs have all fields initialized when new
     # instances are created.
     - exhaustruct
+
+    # Disable gofumpt as it has weird behavior regarding formatting multiple
+    # lines for a function which is in conflict with our contribution
+    # guidelines. See https://github.com/mvdan/gofumpt/issues/235.
+    - gofumpt
+
+    # Disable whitespace linter as it has conflict rules against our
+    # contribution guidelines. See https://github.com/bombsimon/wsl/issues/109.
+    #
+    # TODO: bring it back when the above issue is fixed.
+    - wsl
 
     # Deprecated linters. See https://golangci-lint.run/usage/linters/.
     - interfacer

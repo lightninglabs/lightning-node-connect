@@ -97,7 +97,7 @@ type GoBackNConn struct {
 	pongTicker *IntervalAwareForceTicker
 	pongWait   chan struct{}
 
-	ctx    context.Context
+	ctx    context.Context //nolint:containedctx
 	cancel func()
 
 	// remoteClosed is closed if the remote party initiated the FIN sequence.

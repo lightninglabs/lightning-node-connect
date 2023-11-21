@@ -26,7 +26,7 @@ type Server struct {
 
 	sid [64]byte
 
-	ctx context.Context
+	ctx context.Context //nolint:containedctx
 
 	quit   chan struct{}
 	cancel func()
