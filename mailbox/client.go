@@ -11,6 +11,17 @@ import (
 	"google.golang.org/grpc"
 )
 
+// ClientOption is the signature of a Client functional option.
+type ClientOption func(*Client)
+
+// WithGrpcConn initialised the grpc client of the Client using the given
+// connection.
+func WithGrpcConn(conn *grpc.ClientConn) ClientOption {
+	return func(client *Client) {
+		client.grpcClient = hashmailrpc.NewHashMailClient(conn)
+	}
+}
+
 // Client manages the mailboxConn it holds and refreshes it on connection
 // retries.
 type Client struct {
@@ -26,7 +37,33 @@ type Client struct {
 
 	sid [64]byte
 
-	ctx context.Context
+	ctx context.Context //nolint:containedctx
+}
+
+// NewClient creates a new Client object which will handle the mailbox
+// connection.
+func NewClient(ctx context.Context, serverHost string, connData *ConnData,
+	opts ...ClientOption) (*Client, error) {
+
+	sid, err := connData.SID()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{
+		ctx:        ctx,
+		serverHost: serverHost,
+		connData:   connData,
+		status:     ClientStatusNotConnected,
+		sid:        sid,
+	}
+
+	// Apply functional options.
+	for _, o := range opts {
+		o(c)
+	}
+
+	return c, nil
 }
 
 // NewGrpcClient creates a new Client object which will handle the mailbox
@@ -36,23 +73,13 @@ func NewGrpcClient(ctx context.Context, serverHost string, connData *ConnData,
 
 	mailboxGrpcConn, err := grpc.Dial(serverHost, dialOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to RPC server: %v",
+		return nil, fmt.Errorf("unable to connect to RPC server: %w",
 			err)
 	}
 
-	sid, err := connData.SID()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{
-		ctx:        ctx,
-		serverHost: serverHost,
-		connData:   connData,
-		grpcClient: hashmailrpc.NewHashMailClient(mailboxGrpcConn),
-		status:     ClientStatusNotConnected,
-		sid:        sid,
-	}, nil
+	return NewClient(
+		ctx, serverHost, connData, WithGrpcConn(mailboxGrpcConn),
+	)
 }
 
 // NewWebsocketsClient creates a new Client object which will handle the mailbox
@@ -60,18 +87,7 @@ func NewGrpcClient(ctx context.Context, serverHost string, connData *ConnData,
 func NewWebsocketsClient(ctx context.Context, serverHost string,
 	connData *ConnData) (*Client, error) {
 
-	sid, err := connData.SID()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{
-		ctx:        ctx,
-		serverHost: serverHost,
-		connData:   connData,
-		status:     ClientStatusNotConnected,
-		sid:        sid,
-	}, nil
+	return NewClient(ctx, serverHost, connData)
 }
 
 // Dial returns a net.Conn abstraction over the mailbox connection. Dial is
