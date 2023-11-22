@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btclog"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lightninglabs/lightning-node-connect/gbn"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
@@ -124,13 +125,15 @@ type ClientConn struct {
 	quit      chan struct{}
 	cancel    func()
 	closeOnce sync.Once
+
+	log btclog.Logger
 }
 
 // NewClientConn creates a new client connection with the given receive and send
 // session identifiers. The context given as the first parameter will be used
 // throughout the connection lifetime.
 func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
-	client hashmailrpc.HashMailClient,
+	client hashmailrpc.HashMailClient, logger btclog.Logger,
 	onNewStatus func(status ClientStatus)) (*ClientConn, error) {
 
 	receiveSID := GetSID(sid, true)
@@ -141,7 +144,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 		sendSID: sendSID[:],
 	}
 
-	log.Debugf("New client conn, read_stream=%x, write_stream=%x",
+	logger.Debugf("New conn, read_stream=%x, write_stream=%x",
 		receiveSID[:], sendSID[:])
 
 	ctxc, cancel := context.WithCancel(ctx)
@@ -166,6 +169,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 		onNewStatus: onNewStatus,
 		quit:        make(chan struct{}),
 		cancel:      cancel,
+		log:         logger,
 	}
 	c.connKit = &connKit{
 		ctx:        ctxc,
@@ -201,10 +205,11 @@ func RefreshClientConn(ctx context.Context, c *ClientConn) (*ClientConn,
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
 
-	log.Debugf("Refreshing client conn, read_stream=%x, write_stream=%x",
+	c.log.Debugf("Refreshing client conn, read_stream=%x, write_stream=%x",
 		c.receiveSID[:], c.sendSID[:])
 
 	cc := &ClientConn{
+		log:         c.log,
 		transport:   c.transport.Refresh(),
 		status:      ClientStatusNotConnected,
 		onNewStatus: c.onNewStatus,
@@ -299,7 +304,7 @@ func (c *ClientConn) recv(ctx context.Context) ([]byte, error) {
 				return nil, err
 			}
 
-			log.Debugf("Client: got failure on receive "+
+			c.log.Debugf("Got failure on receive "+
 				"socket/stream, re-trying: %v", err)
 
 			c.setStatus(errStatus)
@@ -343,8 +348,8 @@ func (c *ClientConn) send(ctx context.Context, payload []byte) error {
 				return err
 			}
 
-			log.Debugf("Client: got failure on send "+
-				"socket/stream, re-trying: %v", err)
+			c.log.Debugf("Got failure on send socket/stream, "+
+				"re-trying: %v", err)
 
 			c.setStatus(errStatus)
 			c.createSendMailBox(ctx, retryWait)
@@ -377,13 +382,14 @@ func (c *ClientConn) createReceiveMailBox(ctx context.Context,
 		waiter.Wait()
 
 		if err := c.transport.ConnectReceive(ctx); err != nil {
-			log.Errorf("Client: error connecting to receive "+
+			c.log.Errorf("Error connecting to receive "+
 				"socket/stream: %v", err)
 
 			continue
 		}
 
-		log.Debugf("Client: receive mailbox initialized")
+		c.log.Debugf("Receive mailbox initialized")
+
 		return
 	}
 }
@@ -406,14 +412,17 @@ func (c *ClientConn) createSendMailBox(ctx context.Context,
 
 		waiter.Wait()
 
-		log.Debugf("Client: Attempting to create send socket/stream")
+		c.log.Debugf("Attempting to create send socket/stream")
+
 		if err := c.transport.ConnectSend(ctx); err != nil {
-			log.Debugf("Client: error connecting to send "+
+			c.log.Debugf("Error connecting to send "+
 				"stream/socket %v", err)
+
 			continue
 		}
 
-		log.Debugf("Client: Connected to send socket/stream")
+		c.log.Debugf("Connected to send socket/stream")
+
 		return
 	}
 }
@@ -460,11 +469,11 @@ func (c *ClientConn) SetSendTimeout(timeout time.Duration) {
 func (c *ClientConn) Close() error {
 	var returnErr error
 	c.closeOnce.Do(func() {
-		log.Debugf("Closing client connection")
+		c.log.Debugf("Closing connection")
 
 		if c.gbnConn != nil {
 			if err := c.gbnConn.Close(); err != nil {
-				log.Debugf("Error closing gbn connection: %v",
+				c.log.Debugf("Error closing gbn connection: %v",
 					err)
 
 				returnErr = err
@@ -472,17 +481,21 @@ func (c *ClientConn) Close() error {
 		}
 
 		c.receiveMu.Lock()
-		log.Debugf("closing receive stream/socket")
+		c.log.Debugf("Closing receive stream/socket")
 		if err := c.transport.CloseReceive(); err != nil {
-			log.Errorf("Error closing receive stream/socket: %v", err)
+			c.log.Errorf("Error closing receive stream/socket: %v",
+				err)
+
 			returnErr = err
 		}
 		c.receiveMu.Unlock()
 
 		c.sendMu.Lock()
-		log.Debugf("closing send stream/socket")
+		c.log.Debugf("Closing send stream/socket")
 		if err := c.transport.CloseSend(); err != nil {
-			log.Errorf("Error closing send stream/socket: %v", err)
+			c.log.Errorf("Error closing send stream/socket: %v",
+				err)
+
 			returnErr = err
 		}
 		c.sendMu.Unlock()

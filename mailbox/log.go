@@ -1,6 +1,8 @@
 package mailbox
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btclog"
 	"github.com/lightningnetwork/lnd/build"
 	"google.golang.org/grpc/grpclog"
@@ -27,6 +29,17 @@ func init() {
 // using btclog.
 func UseLogger(logger btclog.Logger) {
 	log = logger
+}
+
+// nePrefixedLogger constructs a new prefixed logger.
+func newPrefixedLogger(isServer bool) *build.PrefixLog {
+	identifier := "client"
+	if isServer {
+		identifier = "server"
+	}
+	prefix := fmt.Sprintf("(%s)", identifier)
+
+	return build.NewPrefixLog(prefix, log)
 }
 
 // GrpcLogLogger is a wrapper around a btclog logger to make it compatible with

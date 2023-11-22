@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lightning-node-connect/gbn"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc/codes"
@@ -55,6 +56,8 @@ type ServerConn struct {
 	onNewStatus func(status ServerStatus)
 	statusMu    sync.Mutex
 
+	log btclog.Logger
+
 	cancel func()
 
 	quit      chan struct{}
@@ -64,7 +67,7 @@ type ServerConn struct {
 // NewServerConn creates a new net.Conn compatible server connection that uses
 // a gRPC based connection to tunnel traffic over a mailbox server.
 func NewServerConn(ctx context.Context, serverHost string,
-	client hashmailrpc.HashMailClient, sid [64]byte,
+	client hashmailrpc.HashMailClient, sid [64]byte, logger btclog.Logger,
 	onNewStatus func(status ServerStatus)) (*ServerConn, error) {
 
 	ctxc, cancel := context.WithCancel(ctx)
@@ -84,6 +87,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 			),
 		},
 		status:      ServerStatusNotConnected,
+		log:         logger,
 		onNewStatus: onNewStatus,
 	}
 	c.connKit = &connKit{
@@ -94,7 +98,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 		sendSID:    sendSID,
 	}
 
-	log.Debugf("ServerConn: creating gbn, waiting for sync")
+	logger.Debugf("Creating gbn, waiting for sync")
 	var err error
 	c.gbnConn, err = gbn.NewServerConn(
 		ctxc, c.sendToStream, c.recvFromStream, c.gbnOptions...,
@@ -102,7 +106,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("ServerConn: done creating gbn")
+	logger.Debugf("Done creating gbn")
 
 	return c, nil
 }
@@ -128,6 +132,7 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 		cancel:            s.cancel,
 		status:            ServerStatusNotConnected,
 		onNewStatus:       s.onNewStatus,
+		log:               s.log,
 		quit:              make(chan struct{}),
 	}
 
@@ -140,7 +145,7 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 		sendSID:    s.connKit.sendSID,
 	}
 
-	log.Debugf("ServerConn: creating gbn")
+	s.log.Debugf("ServerConn: creating gbn")
 	var err error
 	sc.gbnConn, err = gbn.NewServerConn(
 		sc.ctx, sc.sendToStream, sc.recvFromStream, sc.gbnOptions...,
@@ -149,7 +154,7 @@ func RefreshServerConn(s *ServerConn) (*ServerConn, error) {
 		return nil, err
 	}
 
-	log.Debugf("ServerConn: done creating gbn")
+	s.log.Debugf("ServerConn: done creating gbn")
 
 	return sc, nil
 }
@@ -174,7 +179,7 @@ func (c *ServerConn) recvFromStream(ctx context.Context) ([]byte, error) {
 		c.receiveStreamMu.Lock()
 		controlMsg, err := c.receiveStream.Recv()
 		if err != nil {
-			log.Debugf("Server: got failure on receive socket, "+
+			c.log.Debugf("Got failure on receive socket, "+
 				"re-trying: %v", err)
 
 			c.setStatus(ServerStatusNotConnected)
@@ -215,7 +220,7 @@ func (c *ServerConn) sendToStream(ctx context.Context, payload []byte) error {
 			Msg: payload,
 		})
 		if err != nil {
-			log.Debugf("Server: got failure on send socket, "+
+			c.log.Debugf("Got failure on send socket, "+
 				"re-trying: %v", err)
 
 			c.setStatus(ServerStatusNotConnected)
@@ -289,8 +294,8 @@ func (c *ServerConn) createReceiveMailBox(ctx context.Context,
 		// Create receive mailbox and get receive stream.
 		err := initAccountCipherBox(ctx, c.client, c.receiveSID)
 		if err != nil && !isErrAlreadyExists(err) {
-			log.Debugf("Server: failed to re-create read stream "+
-				"mbox: %v", err)
+			c.log.Debugf("Failed to re-create read stream mbox: %v",
+				err)
 
 			continue
 		}
@@ -306,8 +311,7 @@ func (c *ServerConn) createReceiveMailBox(ctx context.Context,
 		}
 		readStream, err := c.client.RecvStream(ctx, streamDesc)
 		if err != nil {
-			log.Debugf("Server: failed to create read stream: %w",
-				err)
+			c.log.Debugf("Failed to create read stream: %w", err)
 
 			continue
 		}
@@ -315,7 +319,8 @@ func (c *ServerConn) createReceiveMailBox(ctx context.Context,
 		c.setStatus(ServerStatusIdle)
 		c.receiveStream = readStream
 
-		log.Debugf("Server: receive mailbox created")
+		c.log.Debugf("Receive mailbox created")
+
 		return
 	}
 }
@@ -341,7 +346,8 @@ func (c *ServerConn) createSendMailBox(ctx context.Context,
 		// Create send mailbox and get send stream.
 		err := initAccountCipherBox(ctx, c.client, c.sendSID)
 		if err != nil && !isErrAlreadyExists(err) {
-			log.Debugf("error creating send cipher box: %v", err)
+			c.log.Debugf("Error creating send cipher box: %v", err)
+
 			continue
 		}
 		c.sendBoxCreated = true
@@ -353,12 +359,14 @@ func (c *ServerConn) createSendMailBox(ctx context.Context,
 		// and exit if needed.
 		writeStream, err := c.client.SendStream(ctx)
 		if err != nil {
-			log.Debugf("unable to create send stream: %w", err)
+			c.log.Debugf("Unable to create send stream: %w", err)
+
 			continue
 		}
 		c.sendStream = writeStream
 
-		log.Debugf("Server: Send mailbox created")
+		c.log.Debugf("Send mailbox created")
+
 		return
 	}
 }
@@ -368,19 +376,23 @@ func (c *ServerConn) createSendMailBox(ctx context.Context,
 func (c *ServerConn) Stop() error {
 	var returnErr error
 	if err := c.Close(); err != nil {
-		log.Errorf("error closing mailbox")
+		c.log.Errorf("Error closing mailbox")
+
 		returnErr = err
 	}
 
 	if c.receiveBoxCreated {
-		if err := delCipherBox(c.ctx, c.client, c.receiveSID); err != nil {
-			log.Errorf("error removing receive cipher box: %v", err)
+		err := delCipherBox(c.ctx, c.client, c.receiveSID)
+		if err != nil {
+			c.log.Errorf("Error removing receive cipher box: %v",
+				err)
+
 			returnErr = err
 		}
 	}
 	if c.sendBoxCreated {
 		if err := delCipherBox(c.ctx, c.client, c.sendSID); err != nil {
-			log.Errorf("error removing send cipher box: %v", err)
+			c.log.Errorf("Error removing send cipher box: %v", err)
 			returnErr = err
 		}
 	}
@@ -403,34 +415,39 @@ func (c *ServerConn) Close() error {
 	var returnErr error
 
 	c.closeOnce.Do(func() {
-		log.Debugf("Server connection is closing")
+		c.log.Debugf("Connection is closing")
 
 		if c.gbnConn != nil {
 			if err := c.gbnConn.Close(); err != nil {
-				log.Debugf("Error closing gbn connection in " +
-					"server conn")
+				c.log.Debugf("Error closing gbn connection " +
+					"in server conn")
+
 				returnErr = err
 			}
 		}
 
 		if c.receiveStream != nil {
-			log.Debugf("closing receive stream")
+			c.log.Debugf("Closing receive stream")
 			if err := c.receiveStream.CloseSend(); err != nil {
-				log.Errorf("error closing receive stream: %v", err)
+				c.log.Errorf("Error closing receive stream: %v",
+					err)
+
 				returnErr = err
 			}
 		}
 
 		if c.sendStream != nil {
-			log.Debugf("closing send stream")
+			c.log.Debugf("Closing send stream")
 			if err := c.sendStream.CloseSend(); err != nil {
-				log.Errorf("error closing send stream: %v", err)
+				c.log.Errorf("Error closing send stream: %v",
+					err)
+
 				returnErr = err
 			}
 		}
 
 		close(c.quit)
-		log.Debugf("Server connection closed")
+		c.log.Debugf("Connection closed")
 	})
 
 	return returnErr

@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc"
 )
@@ -38,6 +39,8 @@ type Client struct {
 	sid [64]byte
 
 	ctx context.Context //nolint:containedctx
+
+	log btclog.Logger
 }
 
 // NewClient creates a new Client object which will handle the mailbox
@@ -56,6 +59,7 @@ func NewClient(ctx context.Context, serverHost string, connData *ConnData,
 		connData:   connData,
 		status:     ClientStatusNotConnected,
 		sid:        sid,
+		log:        newPrefixedLogger(false),
 	}
 
 	// Apply functional options.
@@ -98,12 +102,12 @@ func (c *Client) Dial(_ context.Context, _ string) (net.Conn, error) {
 	// If there is currently an active connection, block here until the
 	// previous connection as been closed.
 	if c.mailboxConn != nil {
-		log.Debugf("Dial: have existing mailbox connection, waiting")
+		c.log.Debugf("Dial: have existing mailbox connection, waiting")
 		<-c.mailboxConn.Done()
-		log.Debugf("Dial: done with existing conn")
+		c.log.Debugf("Dial: done with existing conn")
 	}
 
-	log.Debugf("Client: Dialing...")
+	c.log.Debugf("Dialing...")
 
 	sid, err := c.connData.SID()
 	if err != nil {
@@ -115,7 +119,7 @@ func (c *Client) Dial(_ context.Context, _ string) (net.Conn, error) {
 	if !bytes.Equal(c.sid[:], sid[:]) && c.mailboxConn != nil {
 		err := c.mailboxConn.Close()
 		if err != nil {
-			log.Errorf("could not close mailbox conn: %v", err)
+			c.log.Errorf("Could not close mailbox conn: %v", err)
 		}
 
 		c.mailboxConn = nil
@@ -126,7 +130,7 @@ func (c *Client) Dial(_ context.Context, _ string) (net.Conn, error) {
 	if c.mailboxConn == nil {
 		mailboxConn, err := NewClientConn(
 			c.ctx, c.sid, c.serverHost, c.grpcClient,
-			func(status ClientStatus) {
+			c.log, func(status ClientStatus) {
 				c.statusMu.Lock()
 				c.status = status
 				c.statusMu.Unlock()
