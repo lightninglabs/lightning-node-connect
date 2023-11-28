@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc"
 )
@@ -30,6 +31,8 @@ type Server struct {
 
 	quit   chan struct{}
 	cancel func()
+
+	log btclog.Logger
 }
 
 func NewServer(serverHost string, connData *ConnData,
@@ -55,6 +58,7 @@ func NewServer(serverHost string, connData *ConnData,
 		connData:    connData,
 		sid:         sid,
 		onNewStatus: onNewStatus,
+		log:         newPrefixedLogger(true),
 		quit:        make(chan struct{}),
 	}
 
@@ -79,12 +83,14 @@ func (s *Server) Accept() (net.Conn, error) {
 	// If there is currently an active connection, block here until the
 	// previous connection as been closed.
 	if s.mailboxConn != nil {
-		log.Debugf("Accept: have existing mailbox connection, waiting")
+		s.log.Debugf("Accept: have existing mailbox connection, " +
+			"waiting")
+
 		select {
 		case <-s.quit:
 			return nil, io.EOF
 		case <-s.mailboxConn.Done():
-			log.Debugf("Accept: done with existing conn")
+			s.log.Debugf("Accept: done with existing conn")
 		}
 	}
 
@@ -98,7 +104,7 @@ func (s *Server) Accept() (net.Conn, error) {
 	if !bytes.Equal(s.sid[:], sid[:]) && s.mailboxConn != nil {
 		err := s.mailboxConn.Stop()
 		if err != nil {
-			log.Errorf("could not close mailbox conn: %v", err)
+			s.log.Errorf("Could not close mailbox conn: %v", err)
 		}
 
 		s.mailboxConn = nil
@@ -110,7 +116,8 @@ func (s *Server) Accept() (net.Conn, error) {
 	// otherwise, we just refresh the ServerConn.
 	if s.mailboxConn == nil {
 		mailboxConn, err := NewServerConn(
-			s.ctx, s.serverHost, s.client, sid, s.onNewStatus,
+			s.ctx, s.serverHost, s.client, sid, s.log,
+			s.onNewStatus,
 		)
 		if err != nil {
 			return nil, &temporaryError{err}
@@ -143,13 +150,13 @@ func (e *temporaryError) Temporary() bool {
 }
 
 func (s *Server) Close() error {
-	log.Debugf("conn being closed")
+	s.log.Debugf("Conn being closed")
 
 	close(s.quit)
 
 	if s.mailboxConn != nil {
 		if err := s.mailboxConn.Stop(); err != nil {
-			log.Errorf("error closing mailboxConn %v", err)
+			s.log.Errorf("Error closing mailboxConn %v", err)
 		}
 	}
 	s.cancel()
