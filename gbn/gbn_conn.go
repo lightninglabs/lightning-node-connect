@@ -89,13 +89,10 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 	prefix := fmt.Sprintf("(%s)", loggerPrefix)
 	plog := build.NewPrefixLog(prefix, log)
 
-	return &GoBackNConn{
-		cfg:          cfg,
-		recvDataChan: make(chan *PacketData, cfg.n),
-		sendDataChan: make(chan *PacketData),
-		sendQueue: newQueue(
-			cfg.n+1, defaultHandshakeTimeout, plog,
-		),
+	g := &GoBackNConn{
+		cfg:               cfg,
+		recvDataChan:      make(chan *PacketData, cfg.n),
+		sendDataChan:      make(chan *PacketData),
 		recvTimeout:       DefaultRecvTimeout,
 		sendTimeout:       DefaultSendTimeout,
 		receivedACKSignal: make(chan struct{}),
@@ -106,6 +103,17 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 		log:               plog,
 		quit:              make(chan struct{}),
 	}
+
+	g.sendQueue = newQueue(&queueCfg{
+		s:       cfg.n + 1,
+		timeout: cfg.resendTimeout,
+		log:     plog,
+		sendPkt: func(packet *PacketData) error {
+			return g.sendPacket(g.ctx, packet)
+		},
+	})
+
+	return g
 }
 
 // setN sets the current N to use. This _must_ be set before the handshake is
@@ -114,7 +122,14 @@ func (g *GoBackNConn) setN(n uint8) {
 	g.cfg.n = n
 	g.cfg.s = n + 1
 	g.recvDataChan = make(chan *PacketData, n)
-	g.sendQueue = newQueue(n+1, defaultHandshakeTimeout, g.log)
+	g.sendQueue = newQueue(&queueCfg{
+		s:       n + 1,
+		timeout: g.cfg.resendTimeout,
+		log:     g.log,
+		sendPkt: func(packet *PacketData) error {
+			return g.sendPacket(g.ctx, packet)
+		},
+	})
 }
 
 // SetSendTimeout sets the timeout used in the Send function.
@@ -359,9 +374,7 @@ func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
 func (g *GoBackNConn) sendPacketsForever() error {
 	// resendQueue re-sends the current contents of the queue.
 	resendQueue := func() error {
-		return g.sendQueue.resend(func(packet *PacketData) error {
-			return g.sendPacket(g.ctx, packet)
-		})
+		return g.sendQueue.resend()
 	}
 
 	for {
