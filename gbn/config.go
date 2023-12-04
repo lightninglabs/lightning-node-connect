@@ -66,6 +66,18 @@ func WithKeepalivePing(ping, pong time.Duration) TimeoutOptions {
 	}
 }
 
+// WithBoostPercent is used to set the boost percent that the timeout manager
+// will use to boost the resend timeout & handshake timeout every time a resend
+// is required due to not receiving a response within the current timeout.
+func WithBoostPercent(boostPercent float32) TimeoutOptions {
+	return func(manager *TimeoutManager) {
+		if boostPercent > 0 {
+			manager.resendBoostPercent = boostPercent
+			manager.handshakeBoostPercent = boostPercent
+		}
+	}
+}
+
 // config holds the configuration values for an instance of GoBackNConn.
 type config struct {
 	// n is the window size. The sender can send a maximum of n packets

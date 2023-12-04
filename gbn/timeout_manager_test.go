@@ -129,11 +129,22 @@ func TestSYNDynamicTimeout(t *testing.T) {
 	require.Equal(t, minimumResendTimeout, newTimeout)
 
 	// Then we'll test that the resend timeout isn't dynamically set if
-	// when simulating a that the SYN message has been resent.
+	// when simulating a that the SYN message has been resent, but that the
+	// handshake timeout is boosted.
+	tm.handshakeBooster.boostPercent = 0.2
+	originalHandshakeTimeout := tm.GetHandshakeTimeout()
+
 	sendAndReceive(t, tm, synMsg, synMsg, true)
 
 	unchangedResendTimeout := tm.GetResendTimeout()
 	require.Equal(t, newTimeout, unchangedResendTimeout)
+
+	newHandshakeTimeout := tm.GetHandshakeTimeout()
+	require.Equal(
+		t,
+		time.Duration(float32(originalHandshakeTimeout)*1.2),
+		newHandshakeTimeout,
+	)
 }
 
 // TestDataPackageDynamicTimeout ensures that the resend timeout is dynamically
@@ -187,7 +198,9 @@ func TestDataPackageDynamicTimeout(t *testing.T) {
 	require.NotEqual(t, resendTimeout, newResendTimeout)
 
 	// Finally let's test that the resend timeout isn't dynamically set when
-	// simulating that the data packet has been resent.
+	// simulating that the data packet has been resent. The resend timeout
+	// shouldn't be boosted either, as the resend timeout is only boosted
+	// if we resend a packet after the duration of the previous resend time.
 	tm.timeoutUpdateFrequency = 1
 	tm.resendMultiplier = 100
 
@@ -195,6 +208,124 @@ func TestDataPackageDynamicTimeout(t *testing.T) {
 
 	unchangedResendTimeout = tm.GetResendTimeout()
 	require.Equal(t, newResendTimeout, unchangedResendTimeout)
+}
+
+// TestResendBooster tests that the resend timeout booster works as expected,
+// and that timeout manager's resendTimeout get's boosted when we need to resend
+// a packet again due to not receiving a response within the resend timeout.
+func TestResendBooster(t *testing.T) {
+	t.Parallel()
+
+	tm := NewTimeOutManager(nil)
+	setResendTimeout := time.Millisecond * 1000
+	tm.resendTimeout = setResendTimeout
+
+	initialResendTimeout := tm.GetResendTimeout()
+	msg := &PacketData{Seq: 20}
+	response := &PacketACK{Seq: 20}
+
+	// As the resend timeout won't be dynamically set when we are resending
+	// packets, we'll first test that the resend timeout didn't get
+	// dynamically updated by a resent data packet. This will however
+	// boost the resend timeout, so let's initially set the boost percent
+	// to 0 so we can test that the resend timeout wasn't set.
+	tm.timeoutUpdateFrequency = 1
+	tm.resendMultiplier = 1
+
+	tm.resendBooster.boostPercent = 0
+
+	sendAndReceiveWithDuration(
+		t, tm, time.Millisecond, msg, response, true,
+	)
+
+	unchangedResendTimeout := tm.GetResendTimeout()
+	require.Equal(t, initialResendTimeout, unchangedResendTimeout)
+
+	// Now let's change the boost percent to a non-zero value and test that
+	// the resend timeout was boosted as expected.
+	tm.resendBooster.boostPercent = 0.1
+
+	changedResendTimeout := tm.GetResendTimeout()
+
+	require.Equal(
+		t,
+		time.Duration(float32(initialResendTimeout)*1.1),
+		changedResendTimeout,
+	)
+
+	// Now let's resend another packet again, which shouldn't boost the
+	// resend timeout again, as the duration of the previous resend timeout
+	// hasn't passed.
+	sendAndReceiveWithDuration(
+		t, tm, time.Millisecond, msg, response, true,
+	)
+
+	unchangedResendTimeout = tm.GetResendTimeout()
+
+	require.Equal(
+		t,
+		time.Duration(float32(initialResendTimeout)*1.1),
+		unchangedResendTimeout,
+	)
+
+	// Now let's wait for the duration of the previous resend timeout and
+	// then resend another packet. This should boost the resend timeout
+	// once more, as the duration of the previous resend timeout has passed.
+	err := wait.Invariant(func() bool {
+		currentResendTimeout := tm.GetResendTimeout()
+
+		return unchangedResendTimeout == currentResendTimeout
+	}, setResendTimeout)
+	require.NoError(t, err)
+
+	sendAndReceiveWithDuration(
+		t, tm, time.Millisecond, msg, response, true,
+	)
+
+	changedResendTimeout = tm.GetResendTimeout()
+
+	require.Equal(
+		t,
+		time.Duration(float32(initialResendTimeout)*1.2),
+		changedResendTimeout,
+	)
+
+	// Now let's verify that in case the resend timeout is dynamically set,
+	// the boost of the resend timeout is reset. Note that we're not
+	// simulating a resend here, as that will dynamically set the resend
+	// timeout as the timeout update frequency is set to 1.
+	sendAndReceiveWithDuration(
+		t, tm, time.Second, msg, response, false,
+	)
+
+	newResendTimeout := tm.GetResendTimeout()
+
+	require.NotEqual(t, changedResendTimeout, newResendTimeout)
+	require.Equal(t, 0, tm.resendBooster.boostCount)
+
+	// Finally let's check that the resend timeout isn't boosted if we
+	// simulate a resend before the duration of the newly set resend
+	// timeout hasn't passed.
+	sendAndReceiveWithDuration(
+		t, tm, time.Millisecond, msg, response, true,
+	)
+
+	require.Equal(t, 0, tm.resendBooster.boostCount)
+
+	// But if we wait for the duration of the newly set resend timeout and
+	// then simulate a resend, then the resend timeout should be boosted.
+	err = wait.Invariant(func() bool {
+		currentResendTimeout := tm.GetResendTimeout()
+
+		return newResendTimeout == currentResendTimeout
+	}, newResendTimeout)
+	require.NoError(t, err)
+
+	sendAndReceiveWithDuration(
+		t, tm, time.Millisecond, msg, response, true,
+	)
+
+	require.Equal(t, 1, tm.resendBooster.boostCount)
 }
 
 // TestStaticTimeout ensures that the resend timeout isn't dynamically set if a

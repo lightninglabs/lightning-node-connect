@@ -82,6 +82,12 @@ const (
 	// gbnPongTimout is the time after sending the pong message that we will
 	// timeout if we do not receive any message from our peer.
 	gbnPongTimeout = 3 * time.Second
+
+	// gbnBoostPercent is the percentage value that the resend and handshake
+	// timeout will be boosted any time we need to resend a packet due to
+	// the corresponding response not being received within the previous
+	// timeout.
+	gbnBoostPercent = 0.5
 )
 
 // ClientStatus is a description of the connection status of the client.
@@ -183,6 +189,7 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 			gbn.WithKeepalivePing(
 				gbnClientPingTimeout, gbnPongTimeout,
 			),
+			gbn.WithBoostPercent(gbnBoostPercent),
 		),
 		gbn.WithOnFIN(func() {
 			// We force the connection to set a new status after

@@ -89,6 +89,7 @@ func NewServerConn(ctx context.Context, serverHost string,
 				gbn.WithKeepalivePing(
 					gbnServerPingTimeout, gbnPongTimeout,
 				),
+				gbn.WithBoostPercent(gbnBoostPercent),
 			),
 		},
 		status:      ServerStatusNotConnected,

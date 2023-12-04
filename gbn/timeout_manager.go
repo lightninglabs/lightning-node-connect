@@ -15,6 +15,7 @@ const (
 	defaultFinSendTimeout         = 1000 * time.Millisecond
 	defaultResendMultiplier       = 5
 	defaultTimeoutUpdateFrequency = 100
+	defaultBoostPercent           = 0.5
 	DefaultSendTimeout            = math.MaxInt64
 	DefaultRecvTimeout            = math.MaxInt64
 )
@@ -143,6 +144,32 @@ type TimeoutManager struct {
 	// latestSentSYNTime field.
 	latestSentSYNTimeMu sync.Mutex
 
+	// resendBooster is used to boost the resend timeout when we timeout
+	// when sending a data packet before receiving a response. The resend
+	// timeout will remain boosted until it is updated dynamically, as the
+	// timeout set during the dynamic update most accurately reflects the
+	// current response time.
+	resendBooster *TimeoutBooster
+
+	// resendBoostPercent is the percentage value the resend timeout will be
+	// boosted by, any time the Boost function is called for the
+	// resendBooster.
+	resendBoostPercent float32
+
+	// handshakeBooster is used to boost the handshake timeout if we timeout
+	// when sending the SYN message before receiving the corresponding
+	// response. The handshake timeout will remain boosted throughout the
+	// lifespan of the connection if it's boosted.
+	// The handshake timeout is the time after which the server or client
+	// will abort and restart the handshake if the expected response is
+	// not received from the peer.
+	handshakeBooster *TimeoutBooster
+
+	// handshakeBoostPercent is the percentage value the handshake timeout
+	// will be by boosted, any time the Boost function is called for the
+	// handshakeBooster.
+	handshakeBoostPercent float32
+
 	// handshakeTimeout is the time after which the server or client
 	// will abort and restart the handshake if the expected response is
 	// not received from the peer.
@@ -206,6 +233,8 @@ func NewTimeOutManager(logger btclog.Logger,
 		log:                    logger,
 		resendTimeout:          defaultResendTimeout,
 		handshakeTimeout:       defaultHandshakeTimeout,
+		resendBoostPercent:     defaultBoostPercent,
+		handshakeBoostPercent:  defaultBoostPercent,
 		useStaticTimeout:       false,
 		resendMultiplier:       defaultResendMultiplier,
 		finSendTimeout:         defaultFinSendTimeout,
@@ -218,6 +247,23 @@ func NewTimeOutManager(logger btclog.Logger,
 	for _, opt := range timeoutOpts {
 		opt(m)
 	}
+
+	// When we are resending packets, it's likely that we'll resend a range
+	// of packets. As we don't want every packet in that range to boost the
+	// resend timeout, we'll initialize the resend booster with a ticker,
+	// which will ensure that only the first resent packet in the range will
+	// boost the resend timeout.
+	m.resendBooster = NewTimeoutBooster(
+		m.resendTimeout,
+		m.resendBoostPercent,
+		true,
+	)
+
+	m.handshakeBooster = NewTimeoutBooster(
+		m.handshakeTimeout,
+		m.handshakeBoostPercent,
+		false,
+	)
 
 	return m
 }
@@ -256,6 +302,11 @@ func (m *TimeoutManager) Sent(msg Message, resent bool) {
 		// if the response is for the resent SYN or the original SYN.
 		m.latestSentSYNTime = time.Time{}
 
+		// We'll also temporarily boost the handshake timeout while
+		// we're resending the SYN message. This might occur multiple
+		// times until we receive the corresponding response.
+		m.handshakeBooster.Boost()
+
 	case *PacketData:
 		m.sentTimesMu.Lock()
 		defer m.sentTimesMu.Unlock()
@@ -266,6 +317,8 @@ func (m *TimeoutManager) Sent(msg Message, resent bool) {
 			// update the resend timeout when we receive the
 			// corresponding response.
 			delete(m.sentTimes, msg.Seq)
+
+			m.resendBooster.Boost()
 
 			return
 		}
@@ -361,6 +414,11 @@ func (m *TimeoutManager) updateResendTimeoutUnsafe(responseTime time.Duration) {
 	m.log.Tracef("Updating resendTimeout to %v", multipliedTimeout)
 
 	m.resendTimeout = multipliedTimeout
+
+	// Also update and reset the resend booster, as the new dynamic
+	// resend timeout most accurately reflects the current response
+	// time.
+	m.resendBooster.Reset(multipliedTimeout)
 }
 
 // GetResendTimeout returns the current resend timeout.
@@ -368,7 +426,11 @@ func (m *TimeoutManager) GetResendTimeout() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return m.resendTimeout
+	resendTimeout := m.resendBooster.GetCurrentTimeout()
+
+	m.log.Debugf("Returning resendTimeout %v", resendTimeout)
+
+	return resendTimeout
 }
 
 // GetHandshakeTimeout returns the handshake timeout.
@@ -376,7 +438,11 @@ func (m *TimeoutManager) GetHandshakeTimeout() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return m.handshakeTimeout
+	handshake := m.handshakeBooster.GetCurrentTimeout()
+
+	m.log.Debugf("Returning handshakeTimeout %v", handshake)
+
+	return handshake
 }
 
 // GetFinSendTimeout returns the fin send timeout.
