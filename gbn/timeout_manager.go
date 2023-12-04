@@ -19,6 +19,97 @@ const (
 	DefaultRecvTimeout            = math.MaxInt64
 )
 
+// TimeoutBooster is used to boost a timeout by a given percentage value.
+// The timeout will be boosted by the percentage value of the boostPercent any
+// time the Boost function is called, and is cumulative.
+type TimeoutBooster struct {
+	// boostPercent defines the percentage value the original timeout will
+	// be boosted any time the Boost function is called.
+	boostPercent float32
+
+	// boostCount defines the number of times the timeout has been boosted.
+	boostCount int
+
+	// originalTimeout defines the base timeout value that is boosted.
+	originalTimeout time.Duration
+
+	// withBoostFrequencyLimit is used to indicate whether there is a cap to
+	// how often the timeout can be boosted, which is the duration of the
+	// original timeout.
+	withBoostFrequencyLimit bool
+
+	// lastBoost defines the time when the last boost that had any affect
+	// was applied.
+	lastBoost time.Time
+
+	mu sync.Mutex
+}
+
+// NewTimeoutBooster creates a new timeout booster. The originalTimeout defines
+// the base timeout value that is boosted. The timeout will be boosted by the
+// percentage value of the boostPercent any time the Boost function is called.
+// Finally if the withBoostFrequencyLimit is set, then there is a cap to how
+// often the timeout can be boosted, which is the duration of the original
+// timeout.
+func NewTimeoutBooster(originalTimeout time.Duration, boostPercent float32,
+	withBoostFrequencyLimit bool) *TimeoutBooster {
+
+	return &TimeoutBooster{
+		boostPercent:            boostPercent,
+		originalTimeout:         originalTimeout,
+		boostCount:              0,
+		withBoostFrequencyLimit: withBoostFrequencyLimit,
+	}
+}
+
+// Boost boosts the timeout by the boost percent. If the withBoostFrequencyLimit
+// is set, then the boost will only be applied if the duration of the original
+// timeout has passed since the last boost that had any affect was applied.
+func (b *TimeoutBooster) Boost() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.withBoostFrequencyLimit {
+		if time.Since(b.lastBoost) < b.originalTimeout {
+			return
+		}
+	}
+
+	b.lastBoost = time.Now()
+	b.boostCount++
+}
+
+// Reset removes the current applied boost, and sets the original timeout to the
+// passed timeout. It also restarts the frequency limit timeout if the
+// withBoostFrequencyLimit was set to true when initializing the TimeoutBooster.
+func (b *TimeoutBooster) Reset(newTimeout time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.boostCount = 0
+	b.originalTimeout = newTimeout
+
+	// We'll also restart the frequency timeout, to ensure that any message
+	// we immediately resend after resetting the booster won't boost the
+	// timeout.
+	if b.withBoostFrequencyLimit {
+		b.lastBoost = time.Now()
+	}
+}
+
+// GetCurrentTimeout returns the value of the timeout, with the boost applied.
+func (b *TimeoutBooster) GetCurrentTimeout() time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	increase := time.Duration(
+		float32(b.originalTimeout) * b.boostPercent *
+			float32(b.boostCount),
+	)
+
+	return b.originalTimeout + increase
+}
+
 // TimeoutManager manages the different timeouts used by the gbn package.
 type TimeoutManager struct {
 	// useStaticTimeout is used to indicate whether the resendTimeout
