@@ -81,7 +81,10 @@ func NewServerConn(ctx context.Context, serverHost string,
 		quit:   make(chan struct{}),
 		gbnOptions: []gbn.Option{
 			gbn.WithTimeoutOptions(
-				gbn.WithStaticResendTimeout(gbnTimeout),
+				gbn.WithResendMultiplier(gbnResendMultiplier),
+				gbn.WithTimeoutUpdateFrequency(
+					gbnTimeoutUpdateFrequency,
+				),
 				gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
 				gbn.WithKeepalivePing(
 					gbnServerPingTimeout, gbnPongTimeout,

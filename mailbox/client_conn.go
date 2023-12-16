@@ -46,6 +46,14 @@ const (
 	// to receive ACKS from the peer before resending the queue.
 	gbnTimeout = 1000 * time.Millisecond
 
+	// gbnResendMultiplier is the multiplier that we want the gbn
+	// connection to use when dynamically setting the resend timeout.
+	gbnResendMultiplier = 5
+
+	// gbnTimeoutUpdateFrequency is the frequency representing the number of
+	// packages + responses we want, before we update the resend timeout.
+	gbnTimeoutUpdateFrequency = 200
+
 	// gbnN is the queue size, N, that the gbn server will use. The gbn
 	// server will send up to N packets before requiring an ACK for the
 	// first packet in the queue.
@@ -167,7 +175,10 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 
 	c.gbnOptions = []gbn.Option{
 		gbn.WithTimeoutOptions(
-			gbn.WithStaticResendTimeout(gbnTimeout),
+			gbn.WithResendMultiplier(gbnResendMultiplier),
+			gbn.WithTimeoutUpdateFrequency(
+				gbnTimeoutUpdateFrequency,
+			),
 			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
 			gbn.WithKeepalivePing(
 				gbnClientPingTimeout, gbnPongTimeout,
