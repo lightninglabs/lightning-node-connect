@@ -17,8 +17,6 @@ type queueCfg struct {
 	// no way to tell.
 	s uint8
 
-	timeout time.Duration
-
 	log btclog.Logger
 
 	sendPkt func(packet *PacketData) error
@@ -28,6 +26,8 @@ type queueCfg struct {
 // modulo s.
 type queue struct {
 	cfg *queueCfg
+
+	timeoutManager *TimeoutManager
 
 	// content is the current content of the queue. This is always a slice
 	// of length s but can contain nil elements if the queue isn't full.
@@ -59,18 +59,19 @@ type queue struct {
 }
 
 // newQueue creates a new queue.
-func newQueue(cfg *queueCfg) *queue {
+func newQueue(cfg *queueCfg, timeoutManager *TimeoutManager) *queue {
 	if cfg.log == nil {
 		cfg.log = log
 	}
 
 	q := &queue{
-		cfg:     cfg,
-		content: make([]*PacketData, cfg.s),
-		quit:    make(chan struct{}),
+		cfg:            cfg,
+		content:        make([]*PacketData, cfg.s),
+		quit:           make(chan struct{}),
+		timeoutManager: timeoutManager,
 	}
 
-	q.syncer = newSyncer(cfg.s, cfg.log, cfg.timeout, q.quit)
+	q.syncer = newSyncer(cfg.s, cfg.log, timeoutManager, q.quit)
 
 	return q
 }
@@ -108,7 +109,7 @@ func (q *queue) addPacket(packet *PacketData) {
 // two parties to be seen as synced; this may fail in which case the caller is
 // expected to call resend again.
 func (q *queue) resend() error {
-	if time.Since(q.lastResend) < q.cfg.timeout {
+	if time.Since(q.lastResend) < q.timeoutManager.GetHandshakeTimeout() {
 		q.cfg.log.Tracef("Resent the queue recently.")
 
 		return nil

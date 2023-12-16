@@ -19,7 +19,10 @@ func TestSyncer(t *testing.T) {
 	syncTimeout := time.Second * 1
 	expectedNACK := uint8(3)
 
-	syncer := newSyncer(5, nil, syncTimeout, make(chan struct{}))
+	tm := NewTimeOutManager(nil)
+	tm.resendTimeout = syncTimeout
+
+	syncer := newSyncer(5, nil, tm, make(chan struct{}))
 
 	// Let's first test the scenario where we don't receive the expected
 	// ACK/NACK after initiating the resend. This should trigger a timeout

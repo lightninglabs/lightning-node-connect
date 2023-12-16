@@ -143,7 +143,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		}
 
 		select {
-		case <-time.After(g.cfg.handshakeTimeout):
+		case <-time.After(g.timeoutManager.GetHandshakeTimeout()):
 			g.log.Debugf("SYNCACK resendTimeout. Abort and wait " +
 				"for client to re-initiate")
 			continue

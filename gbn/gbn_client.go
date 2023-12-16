@@ -128,9 +128,11 @@ handshake:
 			default:
 			}
 
+			timeout := g.timeoutManager.GetHandshakeTimeout()
+
 			var b []byte
 			select {
-			case <-time.After(g.cfg.handshakeTimeout):
+			case <-time.After(timeout):
 				g.log.Debugf("SYN resendTimeout. Resending " +
 					"SYN.")
 

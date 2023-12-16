@@ -99,9 +99,9 @@ const (
 // When either of the 3 conditions above are met, we will consider both parties
 // to be in sync.
 type syncer struct {
-	s       uint8
-	log     btclog.Logger
-	timeout time.Duration
+	s              uint8
+	log            btclog.Logger
+	timeoutManager *TimeoutManager
 
 	state syncState
 
@@ -127,20 +127,20 @@ type syncer struct {
 }
 
 // newSyncer creates a new syncer instance.
-func newSyncer(s uint8, prefixLogger btclog.Logger, timeout time.Duration,
-	quit chan struct{}) *syncer {
+func newSyncer(s uint8, prefixLogger btclog.Logger,
+	timeoutManager *TimeoutManager, quit chan struct{}) *syncer {
 
 	if prefixLogger == nil {
 		prefixLogger = log
 	}
 
 	return &syncer{
-		s:       s,
-		log:     prefixLogger,
-		timeout: timeout,
-		state:   syncStateIdle,
-		cancel:  make(chan struct{}),
-		quit:    quit,
+		s:              s,
+		log:            prefixLogger,
+		timeoutManager: timeoutManager,
+		state:          syncStateIdle,
+		cancel:         make(chan struct{}),
+		quit:           quit,
 	}
 }
 
@@ -210,7 +210,9 @@ func (c *syncer) waitForSync() {
 	case <-c.cancel:
 		c.log.Tracef("sync canceled or reset")
 
-	case <-time.After(c.timeout * awaitingTimeoutMultiplier):
+	case <-time.After(
+		c.timeoutManager.GetResendTimeout() * awaitingTimeoutMultiplier,
+	):
 		c.log.Tracef("Timed out while waiting for sync")
 	}
 
@@ -291,7 +293,7 @@ func (c *syncer) proceedAfterTime() {
 
 		return
 
-	case <-time.After(c.timeout):
+	case <-time.After(c.timeoutManager.GetResendTimeout()):
 		c.mu.Lock()
 		defer c.mu.Unlock()
 
