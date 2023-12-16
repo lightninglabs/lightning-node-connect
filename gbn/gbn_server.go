@@ -82,6 +82,7 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 	}()
 
 	var n uint8
+	var resent bool
 
 	for {
 		g.log.Debugf("Waiting for client SYN")
@@ -131,6 +132,9 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 			return err
 		}
 
+		// Notify the timeout manager that we sent a SYN.
+		g.timeoutManager.Sent(msg, resent)
+
 		// Wait for SYNACK
 		g.log.Debugf("Waiting for client SYNACK")
 		select {
@@ -146,6 +150,8 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		case <-time.After(g.timeoutManager.GetHandshakeTimeout()):
 			g.log.Debugf("SYNCACK resendTimeout. Abort and wait " +
 				"for client to re-initiate")
+			resent = true
+
 			continue
 		case err := <-errChan:
 			return err
@@ -163,9 +169,15 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 
 		switch msg.(type) {
 		case *PacketSYNACK:
+			// Notify the timeout manager we've received the SYNACK
+			// response from the counterparty.
+			g.timeoutManager.Received(msg)
+
 			break
 		case *PacketSYN:
 			g.log.Debugf("Received SYN. Resend SYN.")
+			resent = true
+
 			goto recvClientSYN
 		default:
 			return io.EOF

@@ -104,7 +104,7 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 			s:   cfg.n + 1,
 			log: plog,
 			sendPkt: func(packet *PacketData) error {
-				return g.sendPacket(g.ctx, packet)
+				return g.sendPacket(g.ctx, packet, true)
 			},
 		},
 		timeoutManager,
@@ -134,7 +134,7 @@ func (g *GoBackNConn) setN(n uint8) {
 			s:   n + 1,
 			log: g.log,
 			sendPkt: func(packet *PacketData) error {
-				return g.sendPacket(g.ctx, packet)
+				return g.sendPacket(g.ctx, packet, true)
 			},
 		},
 		g.timeoutManager,
@@ -308,7 +308,9 @@ func (g *GoBackNConn) Close() error {
 				g.ctx, g.timeoutManager.GetFinSendTimeout(),
 			)
 			defer cancel()
-			if err := g.sendPacket(ctxc, &PacketFIN{}); err != nil {
+
+			err := g.sendPacket(ctxc, &PacketFIN{}, false)
+			if err != nil {
 				g.log.Errorf("Error sending FIN: %v", err)
 			}
 		}
@@ -336,7 +338,9 @@ func (g *GoBackNConn) Close() error {
 }
 
 // sendPacket serializes a message and writes it to the underlying send stream.
-func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
+func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message,
+	isResend bool) error {
+
 	b, err := msg.Serialize()
 	if err != nil {
 		return fmt.Errorf("serialize error: %s", err)
@@ -346,6 +350,9 @@ func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
 	if err != nil {
 		return fmt.Errorf("error calling sendToStream: %s", err)
 	}
+
+	// Notify the timeout manager that a message has been sent.
+	g.timeoutManager.Sent(msg, isResend)
 
 	return nil
 }
@@ -428,7 +435,7 @@ func (g *GoBackNConn) sendPacketsForever() error {
 		g.sendQueue.addPacket(packet)
 
 		g.log.Tracef("Sending data %d", packet.Seq)
-		if err := g.sendPacket(g.ctx, packet); err != nil {
+		if err := g.sendPacket(g.ctx, packet, false); err != nil {
 			return err
 		}
 
@@ -490,6 +497,9 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			return fmt.Errorf("deserialize error: %s", err)
 		}
 
+		// Notify the timeout manager that a message has been received.
+		g.timeoutManager.Received(msg)
+
 		// Reset the ping & pong timer if any packet is received.
 		// If ping/pong is disabled, this is a no-op.
 		g.pingTicker.Reset()
@@ -514,7 +524,8 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 					Seq: m.Seq,
 				}
 
-				if err = g.sendPacket(g.ctx, ack); err != nil {
+				err = g.sendPacket(g.ctx, ack, false)
+				if err != nil {
 					return err
 				}
 
@@ -573,7 +584,8 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 					Seq: g.recvSeq,
 				}
 
-				if err = g.sendPacket(g.ctx, nack); err != nil {
+				err = g.sendPacket(g.ctx, nack, false)
+				if err != nil {
 					return err
 				}
 
