@@ -83,7 +83,7 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 	prefix := fmt.Sprintf("(%s)", loggerPrefix)
 	plog := build.NewPrefixLog(prefix, log)
 
-	timeoutManager := NewTimeOutManager(plog)
+	timeoutManager := NewTimeOutManager(plog, cfg.timeoutOptions...)
 
 	g := &GoBackNConn{
 		cfg:               cfg,

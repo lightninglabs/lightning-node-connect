@@ -166,10 +166,12 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 	}
 
 	c.gbnOptions = []gbn.Option{
-		gbn.WithTimeout(gbnTimeout),
-		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-		gbn.WithKeepalivePing(
-			gbnClientPingTimeout, gbnPongTimeout,
+		gbn.WithTimeoutOptions(
+			gbn.WithStaticResendTimeout(gbnTimeout),
+			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+			gbn.WithKeepalivePing(
+				gbnClientPingTimeout, gbnPongTimeout,
+			),
 		),
 		gbn.WithOnFIN(func() {
 			// We force the connection to set a new status after

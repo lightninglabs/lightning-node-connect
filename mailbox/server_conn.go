@@ -80,10 +80,12 @@ func NewServerConn(ctx context.Context, serverHost string,
 		cancel: cancel,
 		quit:   make(chan struct{}),
 		gbnOptions: []gbn.Option{
-			gbn.WithTimeout(gbnTimeout),
-			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-			gbn.WithKeepalivePing(
-				gbnServerPingTimeout, gbnPongTimeout,
+			gbn.WithTimeoutOptions(
+				gbn.WithStaticResendTimeout(gbnTimeout),
+				gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+				gbn.WithKeepalivePing(
+					gbnServerPingTimeout, gbnPongTimeout,
+				),
 			),
 		},
 		status:      ServerStatusNotConnected,

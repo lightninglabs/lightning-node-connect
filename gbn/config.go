@@ -44,22 +44,22 @@ func WithTimeoutUpdateFrequency(frequency int) TimeoutOptions {
 	}
 }
 
-// WithTMHandshakeTimeout is used to set the timeout used during the handshake.
+// WithHandshakeTimeout is used to set the timeout used during the handshake.
 // If the timeout is reached without response from the peer then the handshake
 // will be aborted and restarted.
-func WithTMHandshakeTimeout(timeout time.Duration) TimeoutOptions {
+func WithHandshakeTimeout(timeout time.Duration) TimeoutOptions {
 	return func(manager *TimeoutManager) {
 		manager.handshakeTimeout = timeout
 	}
 }
 
-// WithTMKeepalivePing is used to send a ping packet if no packets have been
+// WithKeepalivePing is used to send a ping packet if no packets have been
 // received from the other side for the given duration. This helps keep the
 // connection alive and also ensures that the connection is closed if the
 // other side does not respond to the ping in a timely manner. After the ping
 // the connection will be closed if the other side does not respond within
 // time duration.
-func WithTMKeepalivePing(ping, pong time.Duration) TimeoutOptions {
+func WithKeepalivePing(ping, pong time.Duration) TimeoutOptions {
 	return func(manager *TimeoutManager) {
 		manager.pingTime = ping
 		manager.pongTime = pong
@@ -90,10 +90,6 @@ type config struct {
 	// between packets.
 	maxChunkSize int
 
-	// resendTimeout is the duration that will be waited before resending
-	// the packets in the current queue.
-	resendTimeout time.Duration
-
 	// recvFromStream is the function that will be used to acquire the next
 	// available packet.
 	recvFromStream recvBytesFunc
@@ -106,13 +102,7 @@ type config struct {
 	// been received and processed.
 	onFIN func()
 
-	// handshakeTimeout is the time after which the server or client
-	// will abort and restart the handshake if the expected response is
-	// not received from the peer.
-	handshakeTimeout time.Duration
-
-	pingTime time.Duration
-	pongTime time.Duration
+	timeoutOptions []TimeoutOptions
 }
 
 // newConfig constructs a new config struct.
@@ -120,11 +110,9 @@ func newConfig(sendFunc sendBytesFunc, recvFunc recvBytesFunc,
 	n uint8) *config {
 
 	return &config{
-		n:                n,
-		s:                n + 1,
-		recvFromStream:   recvFunc,
-		sendToStream:     sendFunc,
-		resendTimeout:    defaultResendTimeout,
-		handshakeTimeout: defaultHandshakeTimeout,
+		n:              n,
+		s:              n + 1,
+		recvFromStream: recvFunc,
+		sendToStream:   sendFunc,
 	}
 }
