@@ -188,6 +188,12 @@ func (q *queue) processACK(seq uint8) bool {
 }
 
 // processNACK processes an incoming NACK of a given sequence number.
+// The function returns two booleans. The first boolean is set to true if we
+// should resend the queue after processing the NACK. The second boolean is set
+// to true if the NACK sequence number is a packet in the queue which isn't the
+// queue base, and we therefore don't need to resend any of the packets before
+// the NACK sequence number. This equivalent to receiving the ACKs for the
+// packets before the NACK sequence number.
 func (q *queue) processNACK(seq uint8) (bool, bool) {
 	q.baseMtx.Lock()
 	defer q.baseMtx.Unlock()
@@ -203,11 +209,15 @@ func (q *queue) processNACK(seq uint8) (bool, bool) {
 	// trigger a resend.
 	if seq == q.sequenceTop {
 		q.sequenceBase = q.sequenceTop
-		return true, false
+
+		return false, true
 	}
 
 	// Is the NACKed sequence even in our queue?
 	if !containsSequence(q.sequenceBase, q.sequenceTop, seq) {
+		q.cfg.log.Tracef("NACK seq %d is not in the queue. Ignoring.",
+			seq)
+
 		return false, false
 	}
 

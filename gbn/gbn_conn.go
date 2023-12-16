@@ -582,15 +582,12 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			// sent was dropped, or maybe we sent a duplicate
 			// message. The NACK message contains the sequence
 			// number that the receiver was expecting.
-			inQueue, bumped := g.sendQueue.processNACK(m.Seq)
+			shouldResend, bumped := g.sendQueue.processNACK(m.Seq)
 
-			// If the NACK sequence number is not in our queue
-			// then we ignore it. We must have received the ACK
-			// for the sequence number in the meantime.
-			if !inQueue {
-				g.log.Tracef("NACK seq %d is not in the "+
-					"queue. Ignoring", m.Seq)
-
+			// If we don't need to resend the queue after processing
+			// the NACK, we can continue without sending the resend
+			// signal.
+			if !shouldResend {
 				continue
 			}
 
