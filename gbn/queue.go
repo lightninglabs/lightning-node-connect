@@ -133,7 +133,9 @@ func (q *queue) resend() error {
 	return nil
 }
 
-// processACK processes an incoming ACK of a given sequence number.
+// processACK processes an incoming ACK of a given sequence number. The function
+// returns true if the passed seq is an ACK for a packet we have sent but not
+// yet received an ACK for.
 func (q *queue) processACK(seq uint8) bool {
 
 	// If our queue is empty, an ACK should not have any effect.
@@ -204,8 +206,10 @@ func (q *queue) processNACK(seq uint8) (bool, bool) {
 	q.cfg.log.Tracef("Received NACK %d", seq)
 
 	// If the NACK is the same as sequenceTop, it probably means that queue
-	// was sent successfully, but we just missed the necessary ACKs. So we
-	// can empty the queue here by bumping the base and we dont need to
+	// was sent successfully, but due to latency we timed out and resent the
+	// queue before we received the ACKs for the sent packages.
+	// Alternatively, we might have just missed the necessary ACKs. So we
+	// can empty the queue here by bumping the base and we don't need to
 	// trigger a resend.
 	if seq == q.sequenceTop {
 		q.sequenceBase = q.sequenceTop
