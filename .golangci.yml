@@ -70,6 +70,10 @@ linters:
     # guidelines. See https://github.com/mvdan/gofumpt/issues/235.
     - gofumpt
 
+    # Disable gomnd even though we generally don't use magic numbers, but there
+    # are exceptions where this improves readability.
+    - gomnd
+
     # Disable whitespace linter as it has conflict rules against our
     # contribution guidelines. See https://github.com/bombsimon/wsl/issues/109.
     #
