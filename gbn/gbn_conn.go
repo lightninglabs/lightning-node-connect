@@ -649,6 +649,10 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 
 			close(g.remoteClosed)
 
+			if g.cfg.onFIN != nil {
+				g.cfg.onFIN()
+			}
+
 			return errTransportClosing
 
 		default:
