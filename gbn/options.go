@@ -43,3 +43,11 @@ func WithKeepalivePing(ping, pong time.Duration) Option {
 		conn.pongTime = pong
 	}
 }
+
+// WithOnFIN is used to set the onFIN callback that will be called once a FIN
+// packet has been received and processed.
+func WithOnFIN(fn func()) Option {
+	return func(conn *config) {
+		conn.onFIN = fn
+	}
+}

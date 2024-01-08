@@ -38,6 +38,10 @@ type config struct {
 	// packet.
 	sendToStream sendBytesFunc
 
+	// onFIN is a callback that if set, will be called once a FIN packet has
+	// been received and processed.
+	onFIN func()
+
 	// handshakeTimeout is the time after which the server or client
 	// will abort and restart the handshake if the expected response is
 	// not received from the peer.

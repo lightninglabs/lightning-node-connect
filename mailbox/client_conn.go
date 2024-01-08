@@ -157,20 +157,32 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 	}
 
 	c := &ClientConn{
-		transport: transport,
-		gbnOptions: []gbn.Option{
-			gbn.WithTimeout(gbnTimeout),
-			gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
-			gbn.WithKeepalivePing(
-				gbnClientPingTimeout, gbnPongTimeout,
-			),
-		},
+		transport:   transport,
 		status:      ClientStatusNotConnected,
 		onNewStatus: onNewStatus,
 		quit:        make(chan struct{}),
 		cancel:      cancel,
 		log:         logger,
 	}
+
+	c.gbnOptions = []gbn.Option{
+		gbn.WithTimeout(gbnTimeout),
+		gbn.WithHandshakeTimeout(gbnHandshakeTimeout),
+		gbn.WithKeepalivePing(
+			gbnClientPingTimeout, gbnPongTimeout,
+		),
+		gbn.WithOnFIN(func() {
+			// We force the connection to set a new status after
+			// processing a FIN packet, as in rare occasions the
+			// corresponding server may have time to close the
+			// connection before we've already processed the sent
+			// FIN packet by the server. In that case, if we didn't
+			// force a new status, the client would never mark the
+			// connection as status ClientStatusSessionNotFound.
+			c.setStatus(ClientStatusSessionNotFound)
+		}),
+	}
+
 	c.connKit = &connKit{
 		ctx:        ctxc,
 		impl:       c,

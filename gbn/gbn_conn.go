@@ -89,13 +89,10 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 	prefix := fmt.Sprintf("(%s)", loggerPrefix)
 	plog := build.NewPrefixLog(prefix, log)
 
-	return &GoBackNConn{
-		cfg:          cfg,
-		recvDataChan: make(chan *PacketData, cfg.n),
-		sendDataChan: make(chan *PacketData),
-		sendQueue: newQueue(
-			cfg.n+1, defaultHandshakeTimeout, plog,
-		),
+	g := &GoBackNConn{
+		cfg:               cfg,
+		recvDataChan:      make(chan *PacketData, cfg.n),
+		sendDataChan:      make(chan *PacketData),
 		recvTimeout:       DefaultRecvTimeout,
 		sendTimeout:       DefaultSendTimeout,
 		receivedACKSignal: make(chan struct{}),
@@ -106,6 +103,17 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 		log:               plog,
 		quit:              make(chan struct{}),
 	}
+
+	g.sendQueue = newQueue(&queueCfg{
+		s:       cfg.n + 1,
+		timeout: cfg.resendTimeout,
+		log:     plog,
+		sendPkt: func(packet *PacketData) error {
+			return g.sendPacket(g.ctx, packet)
+		},
+	})
+
+	return g
 }
 
 // setN sets the current N to use. This _must_ be set before the handshake is
@@ -114,7 +122,14 @@ func (g *GoBackNConn) setN(n uint8) {
 	g.cfg.n = n
 	g.cfg.s = n + 1
 	g.recvDataChan = make(chan *PacketData, n)
-	g.sendQueue = newQueue(n+1, defaultHandshakeTimeout, g.log)
+	g.sendQueue = newQueue(&queueCfg{
+		s:       n + 1,
+		timeout: g.cfg.resendTimeout,
+		log:     g.log,
+		sendPkt: func(packet *PacketData) error {
+			return g.sendPacket(g.ctx, packet)
+		},
+	})
 }
 
 // SetSendTimeout sets the timeout used in the Send function.
@@ -320,6 +335,8 @@ func (g *GoBackNConn) Close() error {
 		// initialisation.
 		g.cancel()
 
+		g.sendQueue.stop()
+
 		g.wg.Wait()
 
 		if g.pingTicker != nil {
@@ -359,9 +376,28 @@ func (g *GoBackNConn) sendPacket(ctx context.Context, msg Message) error {
 func (g *GoBackNConn) sendPacketsForever() error {
 	// resendQueue re-sends the current contents of the queue.
 	resendQueue := func() error {
-		return g.sendQueue.resend(func(packet *PacketData) error {
-			return g.sendPacket(g.ctx, packet)
-		})
+		err := g.sendQueue.resend()
+		if err != nil {
+			return err
+		}
+
+		// After resending the queue, we reset the resend ticker.
+		// This is so that we don't immediately resend the queue again,
+		// if the sendQueue.resend call above took a long time to
+		// execute. That can happen if the function was awaiting the
+		// expected ACK for a long time, or times out while awaiting the
+		// catch up.
+		g.resendTicker.Reset(g.cfg.resendTimeout)
+
+		// Also drain the resend signal channel, as resendTicker.Reset
+		// doesn't drain the channel if the ticker ticked during the
+		// sendQueue.resend() call above.
+		select {
+		case <-g.resendTicker.C:
+		default:
+		}
+
+		return nil
 	}
 
 	for {
@@ -478,6 +514,8 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			g.pongTicker.Pause()
 		}
 
+		g.resendTicker.Reset(g.cfg.resendTimeout)
+
 		switch m := msg.(type) {
 		case *PacketData:
 			switch m.Seq == g.recvSeq {
@@ -526,9 +564,19 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 
 				// If we recently sent a NACK for the same
 				// sequence number then back off.
-				if lastNackSeq == g.recvSeq &&
-					time.Since(lastNackTime) <
-						g.cfg.resendTimeout {
+				// We wait 2 times the resendTimeout before
+				// sending a new nack, as this case is likely
+				// hit if the sender is currently resending
+				// the queue, and therefore the threads that
+				// are resending the queue is likely busy with
+				// the resend, and therefore won't react to the
+				// NACK we send here in time.
+				sinceSent := time.Since(lastNackTime)
+				recentlySent := sinceSent <
+					g.cfg.resendTimeout*2
+
+				if lastNackSeq == g.recvSeq && recentlySent {
+					g.log.Tracef("Recently sent NACK")
 
 					continue
 				}
@@ -552,8 +600,6 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 		case *PacketACK:
 			gotValidACK := g.sendQueue.processACK(m.Seq)
 			if gotValidACK {
-				g.resendTicker.Reset(g.cfg.resendTimeout)
-
 				// Send a signal to indicate that new
 				// ACKs have been received.
 				select {
@@ -569,15 +615,12 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			// sent was dropped, or maybe we sent a duplicate
 			// message. The NACK message contains the sequence
 			// number that the receiver was expecting.
-			inQueue, bumped := g.sendQueue.processNACK(m.Seq)
+			shouldResend, bumped := g.sendQueue.processNACK(m.Seq)
 
-			// If the NACK sequence number is not in our queue
-			// then we ignore it. We must have received the ACK
-			// for the sequence number in the meantime.
-			if !inQueue {
-				g.log.Tracef("NACK seq %d is not in the "+
-					"queue. Ignoring", m.Seq)
-
+			// If we don't need to resend the queue after processing
+			// the NACK, we can continue without sending the resend
+			// signal.
+			if !shouldResend {
 				continue
 			}
 
@@ -605,6 +648,10 @@ func (g *GoBackNConn) receivePacketsForever() error { // nolint:gocyclo
 			g.log.Tracef("Received a FIN packet")
 
 			close(g.remoteClosed)
+
+			if g.cfg.onFIN != nil {
+				g.cfg.onFIN()
+			}
 
 			return errTransportClosing
 
