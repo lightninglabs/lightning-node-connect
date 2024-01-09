@@ -119,6 +119,10 @@ func (c *clientHarness) start() error {
 }
 
 func (c *clientHarness) cleanup() error {
-	c.cancel()
+	// We cancel the context after closing the connection, as it's used
+	// during the connection closing process. We defer the cancel to make
+	// sure it's always canceled.
+	defer c.cancel()
+
 	return c.grpcConn.Close()
 }
