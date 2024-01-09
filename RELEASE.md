@@ -6,7 +6,7 @@ This document describes the steps needed to release a new version of LNC binarie
 
 1. Android Studio with Android SDK (API level 16 or newer)
 2. Xcode (latest version)
-3. Go v1.19.8 or newer
+3. Go v1.21.0 or newer
 
 ### Build Release Binaries
 
