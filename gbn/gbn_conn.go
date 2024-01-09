@@ -413,10 +413,25 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			continue
 
 		case <-g.pingTicker.Ticks():
+			// If we have expected a sync after sending the previous
+			// ping, both the pingTicker and pongTicker may have
+			// ticked when waiting to sync. In that case, we can't
+			// be sure which of the signals we receive over first in
+			// the above select. We therefore need to check if the
+			// pong ticker has ticked here to ensure that it get's
+			// prioritized over the ping ticker.
+			select {
+			case <-g.pongTicker.Ticks():
+				return errKeepaliveTimeout
+			default:
+			}
 
 			// Start the pong timer.
 			g.pongTicker.Reset()
 			g.pongTicker.Resume()
+
+			// Also reset the ping timer.
+			g.pingTicker.Reset()
 
 			g.log.Tracef("Sending a PING packet")
 
