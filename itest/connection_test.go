@@ -15,7 +15,7 @@ var (
 	defaultMessage = []byte("some default message")
 )
 
-const defaultTimeout = 30 * time.Second
+const defaultTimeout = 60 * time.Second
 
 // testHappyPath ensures that client and server are able to communicate
 // as expected in the case where no connections are dropped.

@@ -10,7 +10,7 @@ import (
 )
 
 func TestQueueSize(t *testing.T) {
-	q := newQueue(&queueCfg{s: 4})
+	q := newQueue(&queueCfg{s: 4}, NewTimeOutManager(nil))
 
 	require.Equal(t, uint8(0), q.size())
 
@@ -33,16 +33,18 @@ func TestQueueResend(t *testing.T) {
 	resentPackets := make(map[uint8]struct{})
 	queueTimeout := time.Second * 1
 
+	tm := NewTimeOutManager(nil)
+	tm.resendTimeout = queueTimeout
+
 	cfg := &queueCfg{
-		s:       5,
-		timeout: queueTimeout,
+		s: 5,
 		sendPkt: func(packet *PacketData) error {
 			resentPackets[packet.Seq] = struct{}{}
 
 			return nil
 		},
 	}
-	q := newQueue(cfg)
+	q := newQueue(cfg, tm)
 
 	pkt1 := &PacketData{Seq: 1}
 	pkt2 := &PacketData{Seq: 2}

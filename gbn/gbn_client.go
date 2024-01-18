@@ -99,6 +99,7 @@ func (g *GoBackNConn) clientHandshake() error {
 	var (
 		resp    Message
 		respSYN *PacketSYN
+		resent  bool
 	)
 handshake:
 	for {
@@ -115,6 +116,9 @@ handshake:
 			return err
 		}
 
+		// Notify the timeout manager that we sent a SYN.
+		g.timeoutManager.Sent(msg, resent)
+
 		for {
 			// Wait for SYN
 			g.log.Debugf("Waiting for SYN")
@@ -128,11 +132,14 @@ handshake:
 			default:
 			}
 
+			timeout := g.timeoutManager.GetHandshakeTimeout()
+
 			var b []byte
 			select {
-			case <-time.After(g.cfg.handshakeTimeout):
+			case <-time.After(timeout):
 				g.log.Debugf("SYN resendTimeout. Resending " +
 					"SYN.")
+				resent = true
 
 				continue handshake
 			case <-g.quit:
@@ -170,6 +177,10 @@ handshake:
 	if respSYN.N != g.cfg.n {
 		return io.EOF
 	}
+
+	// Notify the timeout manager we've received the SYN response from the
+	// counterparty.
+	g.timeoutManager.Received(resp)
 
 	// Send SYNACK
 	g.log.Debugf("Sending SYNACK")

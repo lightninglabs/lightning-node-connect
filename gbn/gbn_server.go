@@ -82,7 +82,9 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 	}()
 
 	var n uint8
+	var resent bool
 
+handshakeLoop:
 	for {
 		g.log.Debugf("Waiting for client SYN")
 		select {
@@ -110,6 +112,24 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 
 		switch msg.(type) {
 		case *PacketSYN:
+
+		case *PacketSYNACK, *PacketData:
+			// If we receive a SYNACK or DATA packet after we have
+			// restarted the handshake, we can be sure that the
+			// client has received our SYN and has completed the
+			// handshake. We can therefore complete the handshake
+			// ourselves.
+			if resent {
+				g.log.Tracef("Received %T after restarting "+
+					"handshake", msg)
+				g.timeoutManager.Received(msg)
+
+				break handshakeLoop
+			}
+
+			g.log.Tracef("Expected SYN, got %T", msg)
+
+			continue
 		default:
 			g.log.Tracef("Expected SYN, got %T", msg)
 			continue
@@ -131,6 +151,9 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 			return err
 		}
 
+		// Notify the timeout manager that we sent a SYN.
+		g.timeoutManager.Sent(msg, resent)
+
 		// Wait for SYNACK
 		g.log.Debugf("Waiting for client SYNACK")
 		select {
@@ -143,9 +166,11 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 		}
 
 		select {
-		case <-time.After(g.cfg.handshakeTimeout):
+		case <-time.After(g.timeoutManager.GetHandshakeTimeout()):
 			g.log.Debugf("SYNCACK resendTimeout. Abort and wait " +
 				"for client to re-initiate")
+			resent = true
+
 			continue
 		case err := <-errChan:
 			return err
@@ -163,17 +188,23 @@ func (g *GoBackNConn) serverHandshake() error { // nolint:gocyclo
 
 		switch msg.(type) {
 		case *PacketSYNACK:
+			g.log.Debugf("Received SYNACK")
+
+			// Notify the timeout manager we've received the SYNACK
+			// response from the counterparty.
+			g.timeoutManager.Received(msg)
+
 			break
 		case *PacketSYN:
 			g.log.Debugf("Received SYN. Resend SYN.")
+			resent = true
+
 			goto recvClientSYN
 		default:
 			return io.EOF
 		}
 		break
 	}
-
-	g.log.Debugf("Received SYNACK")
 
 	// Set all variables that are dependent on the value of N that we get
 	// from the client
