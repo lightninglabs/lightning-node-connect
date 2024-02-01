@@ -288,12 +288,29 @@ func (w *wasmClient) IsConnected(_ js.Value, _ []js.Value) interface{} {
 	return js.ValueOf(w.lndConn != nil)
 }
 
-func (w *wasmClient) Disconnect(_ js.Value, _ []js.Value) interface{} {
+// Disconnect disconnects the client, and closes the connection.
+// The first argument passed should be a onDisconnect callback, which will be
+// invoked once the client has disconnected.
+func (w *wasmClient) Disconnect(_ js.Value, args []js.Value) interface{} {
 	if w.lndConn != nil {
-		if err := w.lndConn.Close(); err != nil {
-			log.Errorf("Error closing RPC connection: %v", err)
-		}
-		w.lndConn = nil
+		// We launch the closure of the connection in a goroutine to
+		// avoid that the JS websocket freezes and blocks while closing.
+		go func() {
+			if err := w.lndConn.Close(); err != nil {
+				log.Errorf("Error closing RPC connection: %v",
+					err)
+			}
+			w.lndConn = nil
+
+			// We expect the first arg to be the onDisconnect
+			// callback
+			if len(args) > 0 && args[0].Type() == js.TypeFunction {
+				callback := args[0]
+
+				// Call the onDisconnect callback.
+				callback.Invoke()
+			}
+		}()
 	}
 
 	return nil
