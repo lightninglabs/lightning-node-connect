@@ -4,6 +4,7 @@ package main
 
 import (
 	"github.com/btcsuite/btclog"
+	"github.com/lightninglabs/lightning-node-connect/gbn"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/build"
@@ -25,6 +26,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 
 	lnd.SetSubLogger(root, Subsystem, log)
 	lnd.AddSubLogger(root, mailbox.Subsystem, intercept, mailbox.UseLogger)
+	lnd.AddSubLogger(root, gbn.Subsystem, intercept, gbn.UseLogger)
 
 	grpclog.SetLoggerV2(NewGrpcLogLogger(root, intercept, "GRPC"))
 }

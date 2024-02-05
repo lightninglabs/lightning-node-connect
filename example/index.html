@@ -98,8 +98,10 @@ Add the following polyfill for Microsoft Edge 17/18 support:
     }
 
     async function disconnect() {
-        window[namespace].wasmClientDisconnect();
+        window[namespace].wasmClientDisconnect(onDisconnect);
+    }
 
+    function onDisconnect() {
         document.getElementById('disconnectBtn').disabled = true;
         document.getElementById('reconnectBtn').disabled = false;
         document.getElementById('ready').style.display= 'none' ;
