@@ -208,12 +208,12 @@ func (c *syncer) waitForSync() {
 		return
 
 	case <-c.cancel:
-		c.log.Tracef("sync canceled or reset")
+		c.log.Debugf("Sync completed")
 
 	case <-time.After(
 		c.timeoutManager.GetResendTimeout() * awaitingTimeoutMultiplier,
 	):
-		c.log.Tracef("Timed out while waiting for sync")
+		c.log.Debugf("Timed out while waiting for sync")
 	}
 
 	c.reset()
