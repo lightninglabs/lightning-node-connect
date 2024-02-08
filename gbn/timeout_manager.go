@@ -306,6 +306,8 @@ func (m *TimeoutManager) Sent(msg Message, resent bool) {
 		// we're resending the SYN message. This might occur multiple
 		// times until we receive the corresponding response.
 		m.handshakeBooster.Boost()
+		m.log.Debugf("Boosted handshakeTimeout to %v",
+			m.handshakeBooster.GetCurrentTimeout())
 
 	case *PacketData:
 		m.sentTimesMu.Lock()
@@ -319,6 +321,8 @@ func (m *TimeoutManager) Sent(msg Message, resent bool) {
 			delete(m.sentTimes, msg.Seq)
 
 			m.resendBooster.Boost()
+			m.log.Debugf("Boosted resendTimeout to %v",
+				m.resendBooster.GetCurrentTimeout())
 
 			return
 		}
@@ -411,7 +415,7 @@ func (m *TimeoutManager) updateResendTimeoutUnsafe(responseTime time.Duration) {
 		multipliedTimeout = minimumResendTimeout
 	}
 
-	m.log.Tracef("Updating resendTimeout to %v", multipliedTimeout)
+	m.log.Debugf("Updating resendTimeout to %v", multipliedTimeout)
 
 	m.resendTimeout = multipliedTimeout
 
@@ -428,8 +432,6 @@ func (m *TimeoutManager) GetResendTimeout() time.Duration {
 
 	resendTimeout := m.resendBooster.GetCurrentTimeout()
 
-	m.log.Debugf("Returning resendTimeout %v", resendTimeout)
-
 	return resendTimeout
 }
 
@@ -439,8 +441,6 @@ func (m *TimeoutManager) GetHandshakeTimeout() time.Duration {
 	defer m.mu.RUnlock()
 
 	handshake := m.handshakeBooster.GetCurrentTimeout()
-
-	m.log.Debugf("Returning handshakeTimeout %v", handshake)
 
 	return handshake
 }

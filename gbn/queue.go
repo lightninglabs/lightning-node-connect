@@ -136,7 +136,7 @@ func (q *queue) resend() error {
 	// Prepare the queue for awaiting the resend catch up.
 	q.syncer.initResendUpTo(top)
 
-	q.cfg.log.Tracef("Resending the queue")
+	q.cfg.log.Debugf("Resending the packets queue")
 
 	for base != top {
 		packet := q.content[base]
