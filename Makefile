@@ -148,7 +148,7 @@ itest: itest-run
 
 itest-run:
 	@$(call print, "Running integration tests.")
-	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -logdir=itest_logs
+	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS)
 
 # =========
 # UTILITIES
