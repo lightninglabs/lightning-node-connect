@@ -84,7 +84,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
 	github.com/jackc/pgtype v1.14.0 // indirect
 	github.com/jackc/pgx/v4 v4.18.2 // indirect
-	github.com/jackc/puddle v1.3.0 // indirect
 	github.com/jackpal/gateway v1.0.5 // indirect
 	github.com/jackpal/go-nat-pmp v0.0.0-20170405195558-28a68d0c24ad // indirect
 	github.com/jessevdk/go-flags v1.4.0 // indirect
@@ -188,9 +187,9 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-go 1.22.3
-
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option. This is required for the
 // taproot-assets dependency to function properly.
-replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.30.0-hex-display
+replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display
+
+go 1.22.6
