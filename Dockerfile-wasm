@@ -1,5 +1,5 @@
-#Get golang 1.22.3 as a base image
-FROM golang:1.22.3 as builder
+#Get golang 1.22.6 as a base image
+FROM golang:1.22.6 as builder
 
 #Define the working directory in the container
 WORKDIR /app

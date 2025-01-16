@@ -188,7 +188,7 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-go 1.22.3
+go 1.22.6
 
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option. This is required for the
