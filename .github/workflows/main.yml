@@ -16,7 +16,7 @@ env:
   # go needs absolute directories, using the $HOME variable doesn't work here.
   GOCACHE: /home/runner/work/go/pkg/build
   GOPATH: /home/runner/work/go
-  GO_VERSION: 1.22.3
+  GO_VERSION: 1.22.6
 
 jobs:
   ########################
@@ -164,7 +164,7 @@ jobs:
         run: 7z a logs-itest.zip itest/**/*.log
 
       - name: Upload log files on failure
-        uses: actions/upload-artifact@v2.2.4
+        uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
           name: logs-itest
