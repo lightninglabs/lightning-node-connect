@@ -328,6 +328,7 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	if len(args) != 3 {
 		log.Errorf("Invalid use of wasmClientInvokeRPC, need 3 "+
 			"parameters: rpcName, request, callback")
+
 		return js.ValueOf("invalid use of wasmClientInvokeRPC, " +
 			"need 3 parameters: rpcName, request, callback")
 	}
@@ -335,6 +336,7 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	if w.lndConn == nil {
 		log.Errorf("Attempted to invoke RPC but connection is not "+
 			"ready")
+
 		return js.ValueOf("RPC connection not ready")
 	}
 
@@ -345,19 +347,11 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	method, ok := w.registry[rpcName]
 	if !ok {
 		log.Errorf("RPC method '%s' not found in registry", rpcName)
+
 		return js.ValueOf("rpc with name " + rpcName + " not found")
 	}
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errMsg := fmt.Sprintf("Panic in RPC call: "+
-					"%v", r)
-				log.Errorf("%s\n%s", errMsg, debug.Stack())
-				jsCallback.Invoke(js.ValueOf(errMsg))
-			}
-		}()
-
 		log.Infof("Calling '%s' on RPC with request %s",
 			rpcName, requestJSON)
 		cb := func(resultJSON string, err error) {
@@ -365,7 +359,7 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 				log.Errorf("RPC '%s' failed: %v", rpcName, err)
 				jsCallback.Invoke(js.ValueOf(err.Error()))
 			} else {
-				log.Debugf("RPC '%s' succeeded with result: %s",
+				log.Tracef("RPC '%s' succeeded with result: %s",
 					rpcName, resultJSON)
 				jsCallback.Invoke(js.ValueOf(resultJSON))
 			}
