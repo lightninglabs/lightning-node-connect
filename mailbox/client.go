@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc"
 )
@@ -59,7 +59,7 @@ func NewClient(ctx context.Context, serverHost string, connData *ConnData,
 		connData:   connData,
 		status:     ClientStatusNotConnected,
 		sid:        sid,
-		log:        newPrefixedLogger(false),
+		log:        log.WithPrefix("(client)"),
 	}
 
 	// Apply functional options.

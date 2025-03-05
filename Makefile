@@ -7,7 +7,7 @@ GOACC_PKG := github.com/ory/go-acc
 GO_BIN := ${GOPATH}/bin
 LINT_BIN := $(GO_BIN)/golangci-lint
 
-LINT_COMMIT := v1.51.2
+LINT_COMMIT := v1.64.5
 
 GOBUILD := go build -v
 GOINSTALL := go install -v
