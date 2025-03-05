@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
 	"google.golang.org/grpc"
 )
@@ -58,7 +58,7 @@ func NewServer(serverHost string, connData *ConnData,
 		connData:    connData,
 		sid:         sid,
 		onNewStatus: onNewStatus,
-		log:         newPrefixedLogger(true),
+		log:         log.WithPrefix("(server)"),
 		quit:        make(chan struct{}),
 	}
 

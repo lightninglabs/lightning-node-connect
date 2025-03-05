@@ -28,7 +28,8 @@ func NewHashmailHarness() *HashmailHarness {
 			Authenticator: &aperture.AuthConfig{
 				Disable: true,
 			},
-			Etcd: &aperture.EtcdConfig{},
+			DatabaseBackend: "etcd",
+			Etcd:            &aperture.EtcdConfig{},
 			HashMail: &aperture.HashMailConfig{
 				Enabled:               true,
 				MessageRate:           time.Millisecond,

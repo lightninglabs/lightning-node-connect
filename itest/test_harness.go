@@ -2,9 +2,11 @@ package itest
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btclog/v2"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture"
 	"github.com/lightninglabs/lightning-node-connect/gbn"
@@ -155,7 +157,9 @@ func (h *harnessTest) Log(args ...interface{}) {
 // setupLogging initializes the logging subsystem for the server and client
 // packages.
 func setupLogging(t *testing.T) {
-	logWriter := build.NewRotatingLogWriter()
+	subLogMgr := build.NewSubLoggerManager(
+		btclog.NewDefaultHandler(os.Stdout),
+	)
 
 	if interceptor != nil {
 		return
@@ -165,14 +169,14 @@ func setupLogging(t *testing.T) {
 	require.NoError(t, err)
 	interceptor = &ic
 
-	aperture.SetupLoggers(logWriter, *interceptor)
+	aperture.SetupLoggers(subLogMgr, *interceptor)
 	lnd.AddSubLogger(
-		logWriter, mailbox.Subsystem, *interceptor, mailbox.UseLogger,
+		subLogMgr, mailbox.Subsystem, *interceptor, mailbox.UseLogger,
 	)
-	lnd.AddSubLogger(logWriter, gbn.Subsystem, *interceptor, gbn.UseLogger)
+	lnd.AddSubLogger(subLogMgr, gbn.Subsystem, *interceptor, gbn.UseLogger)
 
 	err = build.ParseAndSetDebugLevels(
-		"debug,PRXY=warn,GOBN=trace", logWriter,
+		"debug,PRXY=warn,GOBN=trace", subLogMgr,
 	)
 	require.NoError(t, err)
 }
