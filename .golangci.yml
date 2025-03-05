@@ -1,6 +1,6 @@
 run:
   # timeout for analysis
-  deadline: 4m
+  timeout: 4m
   build-tags:
     - autopilotrpc
     - chainrpc
@@ -40,7 +40,7 @@ linters:
   enable-all: true
   disable:
     # Allow dynamic errors.
-    - goerr113
+    - err113
 
     # We want to allow short variable names.
     - varnamelen
@@ -70,10 +70,6 @@ linters:
     # guidelines. See https://github.com/mvdan/gofumpt/issues/235.
     - gofumpt
 
-    # Disable gomnd even though we generally don't use magic numbers, but there
-    # are exceptions where this improves readability.
-    - gomnd
-
     # Disable whitespace linter as it has conflict rules against our
     # contribution guidelines. See https://github.com/bombsimon/wsl/issues/109.
     #
@@ -81,25 +77,27 @@ linters:
     - wsl
 
     # Deprecated linters. See https://golangci-lint.run/usage/linters/.
-    - interfacer
-    - golint
-    - maligned
-    - scopelint
-    - exhaustivestruct
     - bodyclose
     - contextcheck
     - nilerr
     - noctx
     - rowserrcheck
     - sqlclosecheck
-    - structcheck
     - tparallel
     - unparam
     - wastedassign
-    - ifshort
-    - varcheck
-    - deadcode
-    - nosnakecase
+
+    # New linters that need a code adjustment first.
+    - depguard
+    - testifylint
+    - intrange
+
+    # We use a replace directive for a custom protobuf library.
+    - gomoddirectives
+
+    # The linter is too aggressive and doesn't add much value since reviewers
+    # will also catch magic numbers that make sense to extract.
+    - mnd
 
 issues:
   # Only show newly introduced problems.
