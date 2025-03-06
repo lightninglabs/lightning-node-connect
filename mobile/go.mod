@@ -3,7 +3,7 @@ module github.com/lightninglabs/lightning-node-connect/mobile
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c
-	github.com/lightninglabs/lightning-node-connect v0.3.2-alpha.0.20240822142323-ee4e7ff52f83
+	github.com/lightninglabs/lightning-node-connect v0.3.3-alpha.0.20250303090341-f823ad04b9de
 	github.com/lightninglabs/lightning-terminal v0.14.0-alpha
 	github.com/lightningnetwork/lnd v0.18.4-beta
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
@@ -202,7 +202,9 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-replace github.com/lightninglabs/lightning-node-connect => ../
+// TODO: uncomment once LiT has been updated to point to the latest version of
+// LNC and LND.
+// replace github.com/lightninglabs/lightning-node-connect => ../../
 
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option. This is required for the indirect

@@ -8,8 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btclog"
-	"github.com/lightningnetwork/lnd/build"
+	"github.com/btcsuite/btclog/v2"
 )
 
 var (
@@ -80,8 +79,7 @@ func newGoBackNConn(ctx context.Context, cfg *config,
 	ctxc, cancel := context.WithCancel(ctx)
 
 	// Construct a new prefixed logger.
-	prefix := fmt.Sprintf("(%s)", loggerPrefix)
-	plog := build.NewPrefixLog(prefix, log)
+	plog := log.WithPrefix(fmt.Sprintf("(%s)", loggerPrefix))
 
 	timeoutManager := NewTimeOutManager(plog, cfg.timeoutOptions...)
 

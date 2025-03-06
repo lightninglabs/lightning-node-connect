@@ -5,7 +5,7 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/faraday v0.2.13-alpha
-	github.com/lightninglabs/lightning-node-connect v0.3.2-alpha.0.20240822142323-ee4e7ff52f83
+	github.com/lightninglabs/lightning-node-connect v0.3.3-alpha.0.20250303090341-f823ad04b9de
 	github.com/lightninglabs/lightning-terminal v0.14.0-alpha
 	github.com/lightninglabs/loop v0.29.0-beta
 	github.com/lightninglabs/pool v0.6.5-beta.0.20241015105339-044cb451b5df
@@ -203,7 +203,9 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-replace github.com/lightninglabs/lightning-node-connect => ../../
+// TODO: uncomment once LiT has been updated to point to the latest version of
+// LNC and LND.
+// replace github.com/lightninglabs/lightning-node-connect => ../../
 
 replace github.com/lightninglabs/lightning-node-connect/hashmailrpc => ../../hashmailrpc
 
