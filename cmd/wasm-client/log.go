@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/btclog/v2"
 	"github.com/lightninglabs/lightning-node-connect/gbn"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
 	"github.com/lightningnetwork/lnd"
@@ -19,7 +19,7 @@ var (
 )
 
 // SetupLoggers initializes all package-global logger variables.
-func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
+func SetupLoggers(root *build.SubLoggerManager, intercept signal.Interceptor) {
 	genLogger := genSubLogger(root, intercept)
 
 	log = build.NewSubLogger(Subsystem, genLogger)
@@ -32,8 +32,8 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 }
 
 // genSubLogger creates a logger for a subsystem. We provide an instance of
-// a signal.Interceptor to be able to shutdown in the case of a critical error.
-func genSubLogger(root *build.RotatingLogWriter,
+// a signal.Interceptor to be able to shut down in the case of a critical error.
+func genSubLogger(root *build.SubLoggerManager,
 	interceptor signal.Interceptor) func(string) btclog.Logger {
 
 	// Create a shutdown function which will request shutdown from our
@@ -55,7 +55,7 @@ func genSubLogger(root *build.RotatingLogWriter,
 
 // NewGrpcLogLogger creates a new grpclog compatible logger and attaches it as
 // a sub logger to the passed root logger.
-func NewGrpcLogLogger(root *build.RotatingLogWriter,
+func NewGrpcLogLogger(root *build.SubLoggerManager,
 	intercept signal.Interceptor, subsystem string) *mailbox.GrpcLogLogger {
 
 	logger := build.NewSubLogger(subsystem, genSubLogger(root, intercept))
