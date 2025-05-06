@@ -2,6 +2,7 @@ package mailbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -548,7 +549,7 @@ func stripJSONWrapper(wrapped string) (string, error) {
 
 	if errorPattern.MatchString(wrapped) {
 		errMsg := errorPattern.ReplaceAllString(wrapped, "${1}")
-		return "", fmt.Errorf(errMsg)
+		return "", errors.New(errMsg)
 	}
 
 	return "", fmt.Errorf("unrecognized JSON message: %v", wrapped)
