@@ -217,4 +217,4 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // replace can be removed in favour of importing that.
 replace github.com/lightninglabs/faraday => github.com/lightninglabs/faraday v0.2.13-alpha.0.20241118202659-a3aba5b7ea49
 
-go 1.22.6
+go 1.24.2
