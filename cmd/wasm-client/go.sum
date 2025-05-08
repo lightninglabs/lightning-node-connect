@@ -1136,12 +1136,10 @@ github.com/lightninglabs/neutrino v0.16.1 h1:5Kz4ToxncEVkpKC6fwUjXKtFKJhuxlG3sBB
 github.com/lightninglabs/neutrino v0.16.1/go.mod h1:L+5UAccpUdyM7yDgmQySgixf7xmwBgJtOfs/IP26jCs=
 github.com/lightninglabs/neutrino/cache v1.1.2 h1:C9DY/DAPaPxbFC+xNNEI/z1SJY9GS3shmlu5hIQ798g=
 github.com/lightninglabs/neutrino/cache v1.1.2/go.mod h1:XJNcgdOw1LQnanGjw8Vj44CvguYA25IMKjWFZczwZuo=
-github.com/lightninglabs/pool v0.6.5-beta.0.20250305125211-4e860ec4e77f h1:muqd/WRjqh7/EV9UYP6y6IpSqttQ/ENzp/1NEkY8Gd4=
-github.com/lightninglabs/pool v0.6.5-beta.0.20250305125211-4e860ec4e77f/go.mod h1:rZXAj2nar3MkqXaRLChdjC5HYdES6kb8IMTEO54RvQU=
 github.com/lightninglabs/pool/auctioneerrpc v1.1.2 h1:Dbg+9Z9jXnhimR27EN37foc4aB1uQqndm/YOO+XAdMA=
 github.com/lightninglabs/pool/auctioneerrpc v1.1.2/go.mod h1:1wKDzN2zEP8srOi0B9iySlEsPdoPhw6oo3Vbm1v4Mhw=
-github.com/lightninglabs/pool/poolrpc v1.0.0 h1:vvosrgNx9WXF4mcHGqLjZOW8wNM0q+BLVfdn897AFLw=
-github.com/lightninglabs/pool/poolrpc v1.0.0/go.mod h1:ZqpEpBFRMMBAerMmilEjh27tqauSXDwLaLR0O3jvmMA=
+github.com/lightninglabs/pool/poolrpc v1.0.1 h1:XbNx28TYwEj/PVsnnF9TnveVCMCYfS1vVkcwz29vPmM=
+github.com/lightninglabs/pool/poolrpc v1.0.1/go.mod h1:836icifg/SBnZbiae0v3jeRRzCrT6LWo32SqCS/JiGk=
 github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display h1:w7FM5LH9Z6CpKxl13mS48idsu6F+cEZf0lkyiV+Dq9g=
 github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display/go.mod h1:qYOHts0dSfpeUzUFpOMr/WGzszTmLH+DiWniOlNbLDw=
 github.com/lightninglabs/taproot-assets/taprpc v1.0.1 h1:aSlCWdJkagx9xa8DqK/pzHYCtY7PokU6wASse3dWayc=

@@ -10,7 +10,7 @@ require (
 	github.com/lightninglabs/lightning-terminal/litrpc v1.0.2-0.20250506112654-08095d30dd1a
 	github.com/lightninglabs/lightning-terminal/perms v0.0.0-20250506112654-08095d30dd1a
 	github.com/lightninglabs/loop/looprpc v1.0.7
-	github.com/lightninglabs/pool v0.6.5-beta.0.20250305125211-4e860ec4e77f
+	github.com/lightninglabs/pool/poolrpc v1.0.1
 	github.com/lightninglabs/taproot-assets/taprpc v1.0.1
 	github.com/lightningnetwork/lnd v0.19.0-beta.rc3
 	google.golang.org/grpc v1.65.0
@@ -108,7 +108,6 @@ require (
 	github.com/lightninglabs/neutrino v0.16.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
 	github.com/lightninglabs/pool/auctioneerrpc v1.1.2 // indirect
-	github.com/lightninglabs/pool/poolrpc v1.0.0 // indirect
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
 	github.com/lightningnetwork/lnd/cert v1.2.2 // indirect
 	github.com/lightningnetwork/lnd/clock v1.1.1 // indirect

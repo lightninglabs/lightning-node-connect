@@ -23,7 +23,7 @@ import (
 	"github.com/lightninglabs/lightning-terminal/litrpc"
 	"github.com/lightninglabs/lightning-terminal/perms"
 	"github.com/lightninglabs/loop/looprpc"
-	pool "github.com/lightninglabs/pool/perms"
+	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -160,7 +160,7 @@ func initGlobals() error {
 		taprpc.MacaroonWhitelist(false, false, false, false),
 	)
 	permsMgr.RegisterSubServer("loop", looprpc.RequiredPermissions, nil)
-	permsMgr.RegisterSubServer("pool", pool.RequiredPermissions, nil)
+	permsMgr.RegisterSubServer("pool", poolrpc.RequiredPermissions, nil)
 	permsMgr.RegisterSubServer("faraday", faraday.RequiredPermissions, nil)
 
 	return err
