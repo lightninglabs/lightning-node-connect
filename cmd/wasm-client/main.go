@@ -20,11 +20,11 @@ import (
 	"github.com/jessevdk/go-flags"
 	faraday "github.com/lightninglabs/faraday/frdrpcserver/perms"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
-	"github.com/lightninglabs/lightning-terminal/litclient"
+	"github.com/lightninglabs/lightning-terminal/litrpc"
 	"github.com/lightninglabs/lightning-terminal/perms"
-	loop "github.com/lightninglabs/loop/loopd/perms"
-	pool "github.com/lightninglabs/pool/perms"
-	tap "github.com/lightninglabs/taproot-assets/perms"
+	"github.com/lightninglabs/loop/looprpc"
+	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -80,10 +80,14 @@ func main() {
 		exit(err)
 	}
 
+	logConfig := build.DefaultLogConfig()
 	logWriter := build.NewRotatingLogWriter()
-	SetupLoggers(logWriter, shutdownInterceptor)
+	logMgr := build.NewSubLoggerManager(build.NewDefaultLogHandlers(
+		logConfig, logWriter,
+	)...)
+	SetupLoggers(logMgr, shutdownInterceptor)
 
-	err = build.ParseAndSetDebugLevels(cfg.DebugLevel, logWriter)
+	err = build.ParseAndSetDebugLevels(cfg.DebugLevel, logMgr)
 	if err != nil {
 		exit(err)
 	}
@@ -121,7 +125,7 @@ func main() {
 		js.Global().Set(cfg.NameSpace, js.ValueOf(callbacks))
 	}
 
-	for _, registration := range litclient.Registrations {
+	for _, registration := range litrpc.Registrations {
 		registration(wc.registry)
 	}
 
@@ -151,9 +155,12 @@ func initGlobals() error {
 		return err
 	}
 
-	permsMgr.RegisterSubServer("taproot-assets", tap.RequiredPermissions, tap.MacaroonWhitelist(false, false, false, false))
-	permsMgr.RegisterSubServer("loop", loop.RequiredPermissions, nil)
-	permsMgr.RegisterSubServer("pool", pool.RequiredPermissions, nil)
+	permsMgr.RegisterSubServer(
+		"taproot-assets", taprpc.RequiredPermissions,
+		taprpc.MacaroonWhitelist(false, false, false, false),
+	)
+	permsMgr.RegisterSubServer("loop", looprpc.RequiredPermissions, nil)
+	permsMgr.RegisterSubServer("pool", poolrpc.RequiredPermissions, nil)
 	permsMgr.RegisterSubServer("faraday", faraday.RequiredPermissions, nil)
 
 	return err
@@ -326,7 +333,7 @@ func (w *wasmClient) Status(_ js.Value, _ []js.Value) interface{} {
 
 func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	if len(args) != 3 {
-		log.Errorf("Invalid use of wasmClientInvokeRPC, need 3 "+
+		log.Errorf("Invalid use of wasmClientInvokeRPC, need 3 " +
 			"parameters: rpcName, request, callback")
 
 		return js.ValueOf("invalid use of wasmClientInvokeRPC, " +
@@ -334,7 +341,7 @@ func (w *wasmClient) InvokeRPC(_ js.Value, args []js.Value) interface{} {
 	}
 
 	if w.lndConn == nil {
-		log.Errorf("Attempted to invoke RPC but connection is not "+
+		log.Errorf("Attempted to invoke RPC but connection is not " +
 			"ready")
 
 		return js.ValueOf("RPC connection not ready")
