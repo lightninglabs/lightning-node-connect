@@ -1,8 +1,6 @@
 module github.com/lightninglabs/lightning-node-connect/mailbox
 
-go 1.24.2
-
-replace github.com/lightninglabs/lightning-node-connect/gbn => ../
+go 1.23.9
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
@@ -11,10 +9,10 @@ require (
 	github.com/kkdai/bstream v1.0.0
 	github.com/lightninglabs/lightning-node-connect/gbn v1.0.0
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2
-	github.com/lightningnetwork/lnd v0.19.0-beta.rc3
+	github.com/lightningnetwork/lnd v0.19.0-beta
 	github.com/lightningnetwork/lnd/tor v1.1.6
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.35.0
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.33.0
 	nhooyr.io/websocket v1.8.7
@@ -53,7 +51,7 @@ require (
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.8 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.3.0 // indirect
+	github.com/lightningnetwork/lnd/tlv v1.3.1 // indirect
 	github.com/miekg/dns v1.1.43 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
@@ -61,11 +59,13 @@ require (
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231030173426-d783a09b4405 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/lightninglabs/lightning-node-connect/gbn => ../gbn

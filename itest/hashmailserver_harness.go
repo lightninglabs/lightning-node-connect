@@ -46,8 +46,9 @@ func NewHashmailHarness() *HashmailHarness {
 func (hm *HashmailHarness) initAperture() error {
 	hm.aperture = aperture.NewAperture(hm.ApertureCfg)
 	errChan := make(chan error)
+	shutdown := make(chan struct{})
 
-	if err := hm.aperture.Start(errChan); err != nil {
+	if err := hm.aperture.Start(errChan, shutdown); err != nil {
 		return fmt.Errorf("unable to start aperture: %v", err)
 	}
 
