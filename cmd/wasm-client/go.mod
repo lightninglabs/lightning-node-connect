@@ -4,15 +4,15 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/faraday v0.2.14-alpha.0.20250305102803-f668619b351e
+	github.com/lightninglabs/faraday v0.2.16-alpha
 	github.com/lightninglabs/lightning-node-connect/gbn v1.0.0
 	github.com/lightninglabs/lightning-node-connect/mailbox v1.0.0
-	github.com/lightninglabs/lightning-terminal/litrpc v1.0.2-0.20250506112654-08095d30dd1a
-	github.com/lightninglabs/lightning-terminal/perms v0.0.0-20250506112654-08095d30dd1a
+	github.com/lightninglabs/lightning-terminal/litrpc v1.0.2
+	github.com/lightninglabs/lightning-terminal/perms v1.0.1
 	github.com/lightninglabs/loop/looprpc v1.0.7
 	github.com/lightninglabs/pool/poolrpc v1.0.1
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.1
-	github.com/lightningnetwork/lnd v0.19.0-beta.rc3
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.4
+	github.com/lightningnetwork/lnd v0.19.0-beta.rc5
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/macaroon-bakery.v2 v2.3.0
@@ -101,7 +101,7 @@ require (
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/lib/pq v1.10.9 // indirect
-	github.com/lightninglabs/faraday/frdrpc v1.0.0 // indirect
+	github.com/lightninglabs/faraday/frdrpc v1.0.1 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
 	github.com/lightninglabs/loop/swapserverrpc v1.0.13 // indirect
@@ -117,7 +117,7 @@ require (
 	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/sqldb v1.0.9 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.3.0 // indirect
+	github.com/lightningnetwork/lnd/tlv v1.3.1 // indirect
 	github.com/lightningnetwork/lnd/tor v1.1.6 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
