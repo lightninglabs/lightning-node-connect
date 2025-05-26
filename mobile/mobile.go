@@ -13,7 +13,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lightning-node-connect/mailbox"
-	"github.com/lightninglabs/lightning-terminal/litclient"
+	"github.com/lightninglabs/lightning-terminal/litrpc"
 	"github.com/lightninglabs/lightning-terminal/perms"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -133,15 +133,19 @@ func InitLNC(nameSpace, debugLevel string) error {
 			return err
 		}
 
+		logConfig := build.DefaultLogConfig()
 		logWriter := build.NewRotatingLogWriter()
-		SetupLoggers(logWriter, shutdownInterceptor)
+		logMgr := build.NewSubLoggerManager(build.NewDefaultLogHandlers(
+			logConfig, logWriter,
+		)...)
+		SetupLoggers(logMgr, shutdownInterceptor)
 
-		err = build.ParseAndSetDebugLevels(debugLevel, logWriter)
+		err = build.ParseAndSetDebugLevels(debugLevel, logMgr)
 		if err != nil {
 			return err
 		}
 
-		for _, registration := range litclient.Registrations {
+		for _, registration := range litrpc.Registrations {
 			registration(registry)
 		}
 
