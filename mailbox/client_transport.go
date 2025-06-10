@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/lightninglabs/lightning-node-connect/hashmailrpc"
-	"nhooyr.io/websocket"
 )
 
 const (

@@ -5,6 +5,7 @@ go 1.23.9
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
+	github.com/coder/websocket v1.8.13
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0
 	github.com/kkdai/bstream v1.0.0
 	github.com/lightninglabs/lightning-node-connect/gbn v1.0.0
@@ -15,7 +16,6 @@ require (
 	golang.org/x/crypto v0.35.0
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.33.0
-	nhooyr.io/websocket v1.8.7
 )
 
 require (
