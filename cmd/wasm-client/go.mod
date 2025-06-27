@@ -2,17 +2,17 @@ module github.com/lightninglabs/lightning-node-connect/cmd/wasm-client
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
-	github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
+	github.com/btcsuite/btclog/v2 v2.0.1-0.20250602222548-9967d19bb084
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/faraday v0.2.16-alpha
 	github.com/lightninglabs/lightning-node-connect/gbn v1.0.0
 	github.com/lightninglabs/lightning-node-connect/mailbox v1.0.0
 	github.com/lightninglabs/lightning-terminal/litrpc v1.0.2
 	github.com/lightninglabs/lightning-terminal/perms v1.0.1
-	github.com/lightninglabs/loop/looprpc v1.0.7
+	github.com/lightninglabs/loop/looprpc v1.0.8
 	github.com/lightninglabs/pool/poolrpc v1.0.1
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.4
-	github.com/lightningnetwork/lnd v0.19.0-beta.rc5
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.8
+	github.com/lightningnetwork/lnd v0.19.1-beta.rc1
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/macaroon-bakery.v2 v2.3.0
@@ -36,7 +36,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c // indirect
-	github.com/btcsuite/btcwallet v0.16.13 // indirect
+	github.com/btcsuite/btcwallet v0.16.14 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5 // indirect
