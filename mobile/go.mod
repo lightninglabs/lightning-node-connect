@@ -208,5 +208,6 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 
 replace (
 	github.com/lightninglabs/lightning-node-connect/gbn => ../gbn
+	github.com/lightninglabs/lightning-node-connect/hashmailrpc => ../hashmailrpc
 	github.com/lightninglabs/lightning-node-connect/mailbox => ../mailbox
 )
