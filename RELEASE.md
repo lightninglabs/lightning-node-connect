@@ -6,7 +6,7 @@ This document describes the steps needed to release a new version of LNC binarie
 
 1. Android Studio with Android SDK (API level 16 or newer)
 2. Xcode (latest version)
-3. Go v1.22.6 or newer
+3. Go v1.23.9 or newer
 4. gomobile (https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile)
 5. javac version 1.7 or higher (Included in Java Development Kit 7+)
 
