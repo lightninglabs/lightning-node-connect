@@ -1,6 +1,6 @@
 module github.com/lightninglabs/lightning-node-connect/mailbox
 
-go 1.23.9
+go 1.24.9
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
