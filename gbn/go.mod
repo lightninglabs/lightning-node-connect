@@ -1,6 +1,6 @@
 module github.com/lightninglabs/lightning-node-connect/gbn
 
-go 1.23.9
+go 1.24.9
 
 require (
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
