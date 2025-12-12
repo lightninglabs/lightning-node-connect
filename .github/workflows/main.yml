@@ -27,7 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
+
+      - name: Clean up runner space
+        uses: ./.github/actions/cleanup-space
 
       - name: go cache
         uses: actions/cache@v3
@@ -60,6 +63,9 @@ jobs:
       - name: wasm compile
         run: make wasm
 
+      - name: Clean up runner space (android)
+        uses: ./.github/actions/cleanup-android
+
   ########################
   # lint code
   ########################
@@ -68,9 +74,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Clean up runner space
+        uses: ./.github/actions/cleanup-space
+
+      - name: Clean up runner space (android)
+        uses: ./.github/actions/cleanup-android
 
       - name: go cache
         uses: actions/cache@v3
@@ -106,7 +118,13 @@ jobs:
           - unit-race
     steps:
       - name: git checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
+
+      - name: Clean up runner space
+        uses: ./.github/actions/cleanup-space
+
+      - name: Clean up runner space (android)
+        uses: ./.github/actions/cleanup-android
 
       - name: go cache
         uses: actions/cache@v3
@@ -135,7 +153,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: git checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
+
+      - name: Clean up runner space
+        uses: ./.github/actions/cleanup-space
+
+      - name: Clean up runner space (android)
+        uses: ./.github/actions/cleanup-android
 
       - name: go cache
         uses: actions/cache@v3

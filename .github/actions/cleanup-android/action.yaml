@@ -1,0 +1,12 @@
+name: "Clean up android sdk/ndk"
+description: "Removes Android SDK/NDK to free up disk space on the runner."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Remove android toolchain
+      shell: bash
+      run: |
+        echo "Removing android toolchain to free up disk space..."
+        sudo rm -rf /usr/local/lib/android
+        df -h
