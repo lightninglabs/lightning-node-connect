@@ -100,28 +100,27 @@ func TestRapidContainsSequenceProperties(t *testing.T) {
 	})
 }
 
-// TestRapidContainsSequenceBruteForce exhaustively validates containsSequence
-// against a simple reference implementation for all s values in range.
+// TestRapidContainsSequenceBruteForce validates containsSequence against a
+// simple reference implementation that enumerates the half-open interval.
 func TestRapidContainsSequenceBruteForce(t *testing.T) {
 	t.Parallel()
 
 	rapid.Check(t, func(t *rapid.T) {
-		// Use a small modular space to make brute force feasible.
-		s := rapid.Uint8Range(2, 20).Draw(t, "s")
-		base := rapid.Uint8Range(0, s-1).Draw(t, "base")
-		top := rapid.Uint8Range(0, s-1).Draw(t, "top")
-		seq := rapid.Uint8Range(0, s-1).Draw(t, "seq")
+		base := rapid.Uint8().Draw(t, "base")
+		top := rapid.Uint8().Draw(t, "top")
+		seq := rapid.Uint8().Draw(t, "seq")
 
-		expected := refContains(base, top, seq, s)
+		expected := refContains(base, top, seq)
 		got := containsSequence(base, top, seq)
 		require.Equal(t, expected, got,
-			"base=%d top=%d seq=%d s=%d", base, top, seq, s)
+			"base=%d top=%d seq=%d", base, top, seq)
 	})
 }
 
 // refContains is a reference implementation of sequence containment that
-// enumerates the half-open interval [base, top) modulo s.
-func refContains(base, top, seq, s uint8) bool {
+// enumerates the half-open interval [base, top) in uint8 space, wrapping
+// at 256 to match the production containsSequence behavior.
+func refContains(base, top, seq uint8) bool {
 	if base == top {
 		return false
 	}
@@ -130,7 +129,7 @@ func refContains(base, top, seq, s uint8) bool {
 		if cur == seq {
 			return true
 		}
-		cur = (cur + 1) % s
+		cur++ // uint8 wraps at 256, matching containsSequence.
 		if cur == top {
 			return false
 		}
