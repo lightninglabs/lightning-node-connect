@@ -411,21 +411,22 @@ func (g *GoBackNConn) sendPacketsForever() error {
 			continue
 
 		case <-g.pingTicker.Ticks():
-			// If we have expected a sync after sending the previous
-			// ping, both the pingTicker and pongTicker may have
-			// ticked when waiting to sync. In that case, we can't
-			// be sure which of the signals we receive over first in
-			// the above select. We therefore need to check if the
-			// pong ticker has ticked here to ensure that it get's
-			// prioritized over the ping ticker.
+			// The pong timeout is capped at the ping interval, so
+			// if we're still waiting for a response to the previous
+			// ping then both tickers may fire at roughly the same
+			// time. In that case the keepalive timeout must win
+			// over sending a new ping.
 			select {
 			case <-g.pongTicker.Ticks():
 				return errKeepaliveTimeout
 			default:
 			}
 
-			// Start the pong timer.
-			g.pongTicker.Reset()
+			// Start the pong timer. We use ResetWithInterval
+			// to pick up any dynamic pong timeout changes
+			// based on observed RTT.
+			pongTime := g.timeoutManager.GetPongTime()
+			g.pongTicker.ResetWithInterval(pongTime)
 			g.pongTicker.Resume()
 
 			// Also reset the ping timer.

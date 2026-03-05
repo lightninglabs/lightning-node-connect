@@ -18,6 +18,14 @@ const (
 	defaultBoostPercent           = 0.5
 	DefaultSendTimeout            = math.MaxInt64
 	DefaultRecvTimeout            = math.MaxInt64
+
+	// defaultPongMultiplier is the default multiplier applied to the
+	// observed RTT to compute the dynamic pong timeout.
+	defaultPongMultiplier = 3
+
+	// defaultMaxPongTime is the default upper bound for the dynamic pong
+	// timeout.
+	defaultMaxPongTime = 15 * time.Second
 )
 
 // TimeoutBooster is used to boost a timeout by a given percentage value.
@@ -191,10 +199,36 @@ type TimeoutManager struct {
 	// counterparty if we've received no packet.
 	pingTime time.Duration
 
-	// pongTime represents how long we will wait for the expect a pong
-	// response after we've sent a ping. If no response is received within
-	// the time limit, we will close the connection.
+	// pongTime represents the base pong timeout, i.e. the minimum time we
+	// will wait for a pong response after we've sent a ping. If no
+	// response is received within the time limit, we will close the
+	// connection. When dynamic pong timeout is enabled, the actual pong
+	// timeout may be larger than this value based on observed RTT.
 	pongTime time.Duration
+
+	// dynamicPongTime indicates whether the pong timeout should be
+	// dynamically adjusted based on the observed RTT of the connection.
+	dynamicPongTime bool
+
+	// pongMultiplier is the multiplier applied to the observed RTT when
+	// computing the dynamic pong timeout. A value of 3 means the pong
+	// timeout will be at least 3x the observed RTT.
+	pongMultiplier int
+
+	// maxPongTime is the upper bound for the dynamic pong timeout.
+	maxPongTime time.Duration
+
+	// smoothedRTT stores the exponentially weighted moving average of
+	// observed round-trip times. This is used to dynamically compute the
+	// pong timeout when dynamic pong time is enabled. Using an EWMA
+	// rather than a single sample prevents an unlucky low measurement
+	// from making the pong timeout too aggressive.
+	smoothedRTT time.Duration
+
+	// rttInitialized indicates whether smoothedRTT has received its
+	// first sample. Before the first sample, GetPongTime falls back to
+	// the static base pong time.
+	rttInitialized bool
 
 	// responseCounter represents the current number of corresponding
 	// responses received since last updating the resend timeout.
@@ -362,6 +396,7 @@ func (m *TimeoutManager) Received(msg Message) {
 
 		m.latestSentSYNTimeMu.Unlock()
 
+		m.updateSmoothedRTT(responseTime)
 		m.updateResendTimeoutUnsafe(responseTime)
 
 	case *PacketACK:
@@ -378,6 +413,12 @@ func (m *TimeoutManager) Received(msg Message) {
 
 		m.sentTimesMu.Unlock()
 
+		responseTime := receivedAt.Sub(sentTime)
+
+		// Always update the smoothed RTT on every ACK so the
+		// dynamic pong timeout has a stable, up-to-date signal.
+		m.updateSmoothedRTT(responseTime)
+
 		m.responseCounter++
 
 		reachedFrequency := m.responseCounter%
@@ -390,7 +431,7 @@ func (m *TimeoutManager) Received(msg Message) {
 		if !m.hasSetDynamicTimeout || reachedFrequency {
 			m.responseCounter = 0
 
-			m.updateResendTimeoutUnsafe(receivedAt.Sub(sentTime))
+			m.updateResendTimeoutUnsafe(responseTime)
 		}
 	}
 }
@@ -415,7 +456,8 @@ func (m *TimeoutManager) updateResendTimeoutUnsafe(responseTime time.Duration) {
 		multipliedTimeout = minimumResendTimeout
 	}
 
-	m.log.Debugf("Updating resendTimeout to %v", multipliedTimeout)
+	m.log.Debugf("Updating resendTimeout to %v (smoothedRTT=%v)",
+		multipliedTimeout, m.smoothedRTT)
 
 	m.resendTimeout = multipliedTimeout
 
@@ -483,8 +525,11 @@ func (m *TimeoutManager) GetPingTime() time.Duration {
 }
 
 // GetPongTime returns the pong timeout, representing how long we will wait for
-// the expect a pong response after we've sent a ping. If no response is
-// received within the time limit, we will close the connection.
+// a pong response after we've sent a ping. If no response is received within
+// the time limit, we will close the connection. When dynamic pong timeout is
+// enabled and we have observed RTT data, the timeout is computed as
+// max(basePongTime, pongMultiplier * smoothedRTT), capped at maxPongTime and
+// pingTime.
 func (m *TimeoutManager) GetPongTime() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -493,7 +538,67 @@ func (m *TimeoutManager) GetPongTime() time.Duration {
 		return time.Duration(math.MaxInt64)
 	}
 
-	return m.pongTime
+	// If dynamic pong time is not enabled or we have no RTT data yet,
+	// return the static base pong time.
+	if !m.dynamicPongTime || !m.rttInitialized {
+		return m.pongTime
+	}
+
+	// Compute the dynamic pong timeout as pongMultiplier * smoothedRTT.
+	dynamicPong := time.Duration(m.pongMultiplier) * m.smoothedRTT
+
+	// Use the base pong time as a floor.
+	if dynamicPong < m.pongTime {
+		dynamicPong = m.pongTime
+	}
+
+	// Cap at the maximum pong time.
+	if m.maxPongTime > 0 && dynamicPong > m.maxPongTime {
+		dynamicPong = m.maxPongTime
+	}
+
+	// Ensure pong timeout never exceeds ping interval, otherwise the
+	// next ping would fire and reset the pong timer before it expires,
+	// preventing the connection from ever timing out.
+	if m.pingTime > 0 && dynamicPong > m.pingTime {
+		dynamicPong = m.pingTime
+	}
+
+	return dynamicPong
+}
+
+// GetSmoothedRTT returns the EWMA-smoothed round-trip time.
+func (m *TimeoutManager) GetSmoothedRTT() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return m.smoothedRTT
+}
+
+// GetLatestRTT returns the EWMA-smoothed round-trip time.
+//
+// Deprecated: Use GetSmoothedRTT instead.
+func (m *TimeoutManager) GetLatestRTT() time.Duration {
+	return m.GetSmoothedRTT()
+}
+
+// updateSmoothedRTT updates the EWMA-smoothed RTT with a new sample. The
+// first sample seeds the EWMA directly; subsequent samples blend in with
+// alpha = 0.25.
+//
+// NOTE: The TimeoutManager mu must be held when calling this function.
+func (m *TimeoutManager) updateSmoothedRTT(rtt time.Duration) {
+	const ewmaAlpha = 0.25
+
+	if !m.rttInitialized {
+		m.smoothedRTT = rtt
+		m.rttInitialized = true
+	} else {
+		m.smoothedRTT = time.Duration(
+			ewmaAlpha*float64(rtt) +
+				(1-ewmaAlpha)*float64(m.smoothedRTT),
+		)
+	}
 }
 
 // SetSendTimeout sets the send timeout.
