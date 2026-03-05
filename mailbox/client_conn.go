@@ -66,23 +66,30 @@ const (
 	// set up the clients send stream cipher box.
 	gbnHandshakeTimeout = 2000 * time.Millisecond
 
-	// gbnClientPingTimeout is the time after with the client will send the
+	// gbnClientPingTimeout is the time after which the client will send the
 	// server a ping message if it has not received any packets from the
 	// server. The client will close the connection if it then does not
 	// receive an acknowledgement of the ping from the server.
-	gbnClientPingTimeout = 7 * time.Second
+	gbnClientPingTimeout = 10 * time.Second
 
-	// gbnServerTimeout is the time after with the server will send the
-	// client a ping message if it has not received any packets from the
-	// client. The server will close the connection if it then does not
+	// gbnServerPingTimeout is the time after which the server will send
+	// the client a ping message if it has not received any packets from
+	// the client. The server will close the connection if it then does not
 	// receive an acknowledgement of the ping from the client. This timeout
 	// is slightly shorter than the gbnClientPingTimeout to prevent both
 	// sides from unnecessarily sending pings simultaneously.
-	gbnServerPingTimeout = 5 * time.Second
+	gbnServerPingTimeout = 8 * time.Second
 
-	// gbnPongTimout is the time after sending the pong message that we will
-	// timeout if we do not receive any message from our peer.
-	gbnPongTimeout = 3 * time.Second
+	// gbnPongTimeout is the base time after sending a ping that we will
+	// timeout if we do not receive any message from our peer. This serves
+	// as a floor for the dynamic pong timeout which adjusts based on
+	// observed RTT.
+	gbnPongTimeout = 5 * time.Second
+
+	// gbnPongMultiplier is the multiplier applied to the observed RTT
+	// when computing the dynamic pong timeout. A value of 3 means the
+	// pong timeout will be at least 3x the observed round-trip time.
+	gbnPongMultiplier = 3
 
 	// gbnBoostPercent is the percentage value that the resend and handshake
 	// timeout will be boosted any time we need to resend a packet due to
@@ -191,6 +198,9 @@ func NewClientConn(ctx context.Context, sid [64]byte, serverHost string,
 				gbnClientPingTimeout, gbnPongTimeout,
 			),
 			gbn.WithBoostPercent(gbnBoostPercent),
+			gbn.WithDynamicPongTimeout(
+				gbnPongMultiplier, gbnClientPingTimeout,
+			),
 		),
 		gbn.WithOnFIN(func() {
 			// We force the connection to set a new status after
