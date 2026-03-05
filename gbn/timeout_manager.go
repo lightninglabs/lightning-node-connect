@@ -276,6 +276,8 @@ func NewTimeOutManager(logger btclog.Logger,
 		sendTimeout:            DefaultSendTimeout,
 		sentTimes:              make(map[uint8]time.Time),
 		timeoutUpdateFrequency: defaultTimeoutUpdateFrequency,
+		pongMultiplier:         defaultPongMultiplier,
+		maxPongTime:            defaultMaxPongTime,
 	}
 
 	for _, opt := range timeoutOpts {

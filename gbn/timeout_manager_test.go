@@ -442,6 +442,48 @@ func TestDynamicPongTimeoutDisabled(t *testing.T) {
 	require.Equal(t, basePong, tm.GetPongTime())
 }
 
+// TestDefaultPongMultiplierAndMaxPongTime verifies that a TimeoutManager
+// created without WithDynamicPongTimeout still has the default pongMultiplier
+// and maxPongTime values set. This is a regression test for the constructor
+// initialization fix: if dynamic mode were later enabled on such a manager
+// (e.g. by a new code path), the defaults must produce sensible pong timeouts
+// rather than zero-value degradation.
+func TestDefaultPongMultiplierAndMaxPongTime(t *testing.T) {
+	t.Parallel()
+
+	basePong := 500 * time.Millisecond
+
+	// Create without WithDynamicPongTimeout — the constructor should
+	// still initialize pongMultiplier and maxPongTime to defaults.
+	tm := NewTimeOutManager(
+		nil,
+		WithKeepalivePing(30*time.Second, basePong),
+	)
+
+	// Manually enable dynamic mode to test the defaults take effect.
+	tm.mu.Lock()
+	tm.dynamicPongTime = true
+	tm.smoothedRTT = 2 * time.Second
+	tm.rttInitialized = true
+	tm.mu.Unlock()
+
+	pongTime := tm.GetPongTime()
+
+	// With defaults (multiplier=3, max=15s): 3 * 2s = 6s.
+	expectedPong := time.Duration(defaultPongMultiplier) * 2 * time.Second
+	require.Equal(t, expectedPong, pongTime,
+		"default pongMultiplier should produce correct dynamic pong")
+
+	// With a very high RTT, should be capped at defaultMaxPongTime.
+	tm.mu.Lock()
+	tm.smoothedRTT = 10 * time.Second
+	tm.mu.Unlock()
+
+	pongTime = tm.GetPongTime()
+	require.Equal(t, defaultMaxPongTime, pongTime,
+		"default maxPongTime should cap the dynamic pong")
+}
+
 // TestDynamicPongTimeoutWithDataPackets ensures the dynamic pong timeout
 // updates correctly when RTT is measured from data packet ACKs.
 func TestDynamicPongTimeoutWithDataPackets(t *testing.T) {
