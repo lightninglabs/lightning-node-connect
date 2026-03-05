@@ -348,6 +348,268 @@ func TestStaticTimeout(t *testing.T) {
 	require.Equal(t, staticTimeout, resendTimeout)
 }
 
+// TestDynamicPongTimeout ensures that the pong timeout is dynamically adjusted
+// based on the EWMA-smoothed RTT when dynamic pong timeout is enabled.
+func TestDynamicPongTimeout(t *testing.T) {
+	t.Parallel()
+
+	basePong := 500 * time.Millisecond
+	maxPong := 10 * time.Second
+	pongMultiplier := 3
+
+	// Use a large ping time so it doesn't cap the pong values under test.
+	pingTime := 30 * time.Second
+
+	// Create a timeout manager with dynamic pong timeout enabled.
+	tm := NewTimeOutManager(
+		nil,
+		WithKeepalivePing(pingTime, basePong),
+		WithDynamicPongTimeout(pongMultiplier, maxPong),
+	)
+
+	// Initially, with no RTT data, the pong time should equal the base.
+	require.Equal(t, basePong, tm.GetPongTime())
+
+	// Simulate a SYN exchange with a 200ms RTT. This is the first sample
+	// so the EWMA seeds directly: smoothedRTT = 200ms.
+	// Dynamic pong = max(basePong, 3 * 200ms) = 600ms.
+	synMsg := &PacketSYN{N: 20}
+	sendAndReceiveWithDuration(
+		t, tm, 200*time.Millisecond, synMsg, synMsg, false,
+	)
+
+	pongTime := tm.GetPongTime()
+	expectedPong := time.Duration(pongMultiplier) * 200 * time.Millisecond
+
+	// Allow some tolerance for timing jitter.
+	require.InDelta(
+		t, float64(expectedPong), float64(pongTime),
+		float64(100*time.Millisecond),
+	)
+
+	// Verify the pong time is above the base.
+	require.GreaterOrEqual(t, pongTime, basePong)
+
+	// Now simulate a very fast RTT (50ms). The EWMA blends:
+	// smoothedRTT = 0.25*50 + 0.75*200 = 162.5ms.
+	// Dynamic pong = 3 * 162.5ms = 487.5ms ~ basePong. With timing
+	// jitter the smoothed RTT may be slightly above the theoretical
+	// value, so use a tolerance check.
+	sendAndReceiveWithDuration(
+		t, tm, 50*time.Millisecond, synMsg, synMsg, false,
+	)
+
+	pongTime = tm.GetPongTime()
+	require.InDelta(
+		t, float64(basePong), float64(pongTime),
+		float64(100*time.Millisecond),
+	)
+
+	// Directly inject a high smoothed RTT to verify the max cap without
+	// sleeping through many iterations. 5s smoothedRTT * 3 = 15s which
+	// exceeds maxPong (10s), so pong should be capped at maxPong.
+	tm.mu.Lock()
+	tm.smoothedRTT = 5 * time.Second
+	tm.mu.Unlock()
+
+	pongTime = tm.GetPongTime()
+	require.Equal(t, maxPong, pongTime)
+}
+
+// TestDynamicPongTimeoutDisabled ensures that the pong timeout is static when
+// dynamic pong timeout is not enabled.
+func TestDynamicPongTimeoutDisabled(t *testing.T) {
+	t.Parallel()
+
+	basePong := 3 * time.Second
+
+	// Create a timeout manager without dynamic pong timeout.
+	tm := NewTimeOutManager(
+		nil,
+		WithKeepalivePing(time.Second, basePong),
+	)
+
+	// The pong time should always be the base, regardless of RTT.
+	require.Equal(t, basePong, tm.GetPongTime())
+
+	// Simulate a SYN exchange with a high RTT.
+	synMsg := &PacketSYN{N: 20}
+	sendAndReceiveWithDuration(
+		t, tm, 2*time.Second, synMsg, synMsg, false,
+	)
+
+	// Pong time should still be static.
+	require.Equal(t, basePong, tm.GetPongTime())
+}
+
+// TestDynamicPongTimeoutWithDataPackets ensures the dynamic pong timeout
+// updates correctly when RTT is measured from data packet ACKs.
+func TestDynamicPongTimeoutWithDataPackets(t *testing.T) {
+	t.Parallel()
+
+	basePong := 500 * time.Millisecond
+	pongMultiplier := 3
+
+	tm := NewTimeOutManager(
+		nil,
+		WithKeepalivePing(time.Second, basePong),
+		WithDynamicPongTimeout(pongMultiplier, 15*time.Second),
+		WithTimeoutUpdateFrequency(1),
+	)
+
+	// Send a data packet and receive the ACK with ~300ms RTT.
+	msg := &PacketData{Seq: 1}
+	response := &PacketACK{Seq: 1}
+
+	sendAndReceiveWithDuration(
+		t, tm, 300*time.Millisecond, msg, response, false,
+	)
+
+	// Dynamic pong should be ~900ms (3 * 300ms).
+	pongTime := tm.GetPongTime()
+	expectedPong := time.Duration(pongMultiplier) * 300 * time.Millisecond
+
+	require.InDelta(
+		t, float64(expectedPong), float64(pongTime),
+		float64(100*time.Millisecond),
+	)
+}
+
+// TestDynamicPongCappedByPingTime verifies that the dynamic pong timeout never
+// exceeds the ping interval, even when the RTT-based computation would produce
+// a larger value.
+func TestDynamicPongCappedByPingTime(t *testing.T) {
+	t.Parallel()
+
+	basePong := 500 * time.Millisecond
+	pingTime := 2 * time.Second
+	maxPong := 30 * time.Second
+	pongMultiplier := 3
+
+	tm := NewTimeOutManager(
+		nil,
+		WithKeepalivePing(pingTime, basePong),
+		WithDynamicPongTimeout(pongMultiplier, maxPong),
+	)
+
+	// Inject a high smoothed RTT: 3 * 1s = 3s > pingTime (2s).
+	tm.mu.Lock()
+	tm.smoothedRTT = time.Second
+	tm.rttInitialized = true
+	tm.mu.Unlock()
+
+	pongTime := tm.GetPongTime()
+	require.Equal(t, pingTime, pongTime,
+		"pong should be capped at pingTime")
+
+	// Even with an extremely high RTT, pong must not exceed pingTime.
+	tm.mu.Lock()
+	tm.smoothedRTT = 10 * time.Second
+	tm.mu.Unlock()
+
+	pongTime = tm.GetPongTime()
+	require.Equal(t, pingTime, pongTime,
+		"pong must never exceed pingTime regardless of RTT")
+
+	// When the RTT-based value is below pingTime, it should be used.
+	tm.mu.Lock()
+	tm.smoothedRTT = 200 * time.Millisecond
+	tm.mu.Unlock()
+
+	pongTime = tm.GetPongTime()
+	expectedPong := time.Duration(pongMultiplier) * 200 * time.Millisecond
+	require.Equal(t, expectedPong, pongTime,
+		"pong should use RTT-based value when below pingTime")
+}
+
+// TestEWMASmoothing verifies that the EWMA-smoothed RTT converges correctly
+// and is resistant to single-sample outliers.
+func TestEWMASmoothing(t *testing.T) {
+	t.Parallel()
+
+	tm := NewTimeOutManager(
+		nil,
+		WithTimeoutUpdateFrequency(1),
+		WithKeepalivePing(30*time.Second, 100*time.Millisecond),
+		WithDynamicPongTimeout(3, 30*time.Second),
+	)
+
+	// The first sample seeds the EWMA directly.
+	synMsg := &PacketSYN{N: 20}
+	sendAndReceiveWithDuration(
+		t, tm, 200*time.Millisecond, synMsg, synMsg, false,
+	)
+
+	rtt := tm.GetSmoothedRTT()
+	require.InDelta(
+		t, float64(200*time.Millisecond), float64(rtt),
+		float64(50*time.Millisecond),
+		"first sample should seed EWMA directly",
+	)
+
+	// Feed 10 stable samples at 200ms. The EWMA should stay near 200ms.
+	for i := 0; i < 10; i++ {
+		sendAndReceiveWithDuration(
+			t, tm, 200*time.Millisecond, synMsg, synMsg, false,
+		)
+	}
+
+	stableRTT := tm.GetSmoothedRTT()
+	require.InDelta(
+		t, float64(200*time.Millisecond), float64(stableRTT),
+		float64(50*time.Millisecond),
+		"EWMA should converge near stable RTT",
+	)
+
+	// Now inject a single outlier (50ms). The EWMA should NOT drop
+	// dramatically — it should resist the outlier due to smoothing.
+	sendAndReceiveWithDuration(
+		t, tm, 50*time.Millisecond, synMsg, synMsg, false,
+	)
+
+	afterOutlier := tm.GetSmoothedRTT()
+
+	// EWMA with alpha=0.25: new = 0.25*50 + 0.75*~200 = ~162ms.
+	// It should still be well above the outlier value.
+	require.Greater(t, int64(afterOutlier), int64(100*time.Millisecond),
+		"EWMA should resist single low outlier")
+	require.Less(t, int64(afterOutlier), int64(stableRTT),
+		"EWMA should move slightly toward outlier")
+
+	// Inject a single high outlier (2s). Should move up but not jump to 2s.
+	sendAndReceiveWithDuration(
+		t, tm, 2*time.Second, synMsg, synMsg, false,
+	)
+
+	afterHighOutlier := tm.GetSmoothedRTT()
+	require.Less(t, int64(afterHighOutlier), int64(time.Second),
+		"EWMA should resist single high outlier")
+	require.Greater(t, int64(afterHighOutlier), int64(afterOutlier),
+		"EWMA should move toward high outlier")
+}
+
+// TestGetLatestRTT ensures GetLatestRTT returns the most recently measured RTT.
+func TestGetLatestRTT(t *testing.T) {
+	t.Parallel()
+
+	tm := NewTimeOutManager(nil, WithTimeoutUpdateFrequency(1))
+
+	// Initially zero.
+	require.Equal(t, time.Duration(0), tm.GetLatestRTT())
+
+	// After a SYN exchange, should reflect the response time.
+	synMsg := &PacketSYN{N: 20}
+	sendAndReceiveWithDuration(
+		t, tm, time.Second, synMsg, synMsg, false,
+	)
+
+	rtt := tm.GetLatestRTT()
+	require.InDelta(
+		t, float64(time.Second), float64(rtt),
+		float64(100*time.Millisecond),
+	)
+}
+
 // sendAndReceive simulates that a SYN message has been sent for the passed the
 // timeout manager, and then waits for one second before a simulating the SYN
 // response. While waiting, the function asserts that the resend timeout hasn't
