@@ -7,6 +7,7 @@ require (
 	github.com/lightningnetwork/lnd v0.19.0-beta
 	github.com/lightningnetwork/lnd/ticker v1.1.1
 	github.com/stretchr/testify v1.9.0
+	pgregory.net/rapid v1.2.0
 )
 
 require (
