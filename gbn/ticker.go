@@ -15,6 +15,10 @@ import (
 type IntervalAwareForceTicker struct {
 	isActive uint32 // used atomically
 
+	// opsMu serializes lifecycle operations that replace or stop the
+	// underlying clock ticker.
+	opsMu sync.Mutex
+
 	// Force is used to force-feed a ticks into the ticker. Useful for
 	// debugging when trying to wake an event.
 	Force chan time.Time
@@ -129,6 +133,9 @@ func (t *IntervalAwareForceTicker) Pause() {
 //
 // NOTE: Part of the Ticker interface.
 func (t *IntervalAwareForceTicker) Stop() {
+	t.opsMu.Lock()
+	defer t.opsMu.Unlock()
+
 	t.Pause()
 	t.ticker.Stop()
 	close(t.quit)
@@ -138,6 +145,17 @@ func (t *IntervalAwareForceTicker) Stop() {
 // ResetWithInterval restarts the ticker with the given interval, causing the
 // next clock tick to occur in the given interval.
 func (t *IntervalAwareForceTicker) ResetWithInterval(newInterval time.Duration) {
+	t.opsMu.Lock()
+	defer t.opsMu.Unlock()
+
+	t.resetWithIntervalLocked(newInterval)
+}
+
+// resetWithIntervalLocked restarts the ticker with the given interval.
+// The caller must hold opsMu.
+func (t *IntervalAwareForceTicker) resetWithIntervalLocked(
+	newInterval time.Duration) {
+
 	// Shutdown the internal clock ticker without changing isActive.
 	t.ticker.Stop()
 	close(t.quit)
@@ -159,14 +177,20 @@ func (t *IntervalAwareForceTicker) ResetWithInterval(newInterval time.Duration) 
 // Reset restarts the ticker interval, causing the next clock tick to occur in
 // the configured interval.
 func (t *IntervalAwareForceTicker) Reset() {
-	t.ResetWithInterval(t.interval)
+	t.opsMu.Lock()
+	defer t.opsMu.Unlock()
+
+	t.resetWithIntervalLocked(t.interval)
 }
 
 // ForceTick force feeds an event into the ticker channel and resets the
 // internal clock ticker causing the next clock tick to occur in the configured
 // interval.
 func (t *IntervalAwareForceTicker) ForceTick() {
-	t.Reset()
+	t.opsMu.Lock()
+	t.resetWithIntervalLocked(t.interval)
+	t.opsMu.Unlock()
+
 	t.Force <- time.Now()
 }
 
@@ -183,7 +207,11 @@ func (t *IntervalAwareForceTicker) LastTimedTick() time.Time {
 // NextTickIn returns the approximate duration until the next timed tick will
 // occur.
 func (t *IntervalAwareForceTicker) NextTickIn() time.Duration {
-	nextTick := t.LastTimedTick().Add(t.interval)
+	t.opsMu.Lock()
+	interval := t.interval
+	t.opsMu.Unlock()
+
+	nextTick := t.LastTimedTick().Add(interval)
 	durationToNextTick := time.Until(nextTick)
 	if durationToNextTick < 0 {
 		return 0
