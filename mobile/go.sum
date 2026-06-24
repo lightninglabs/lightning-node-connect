@@ -1118,8 +1118,8 @@ github.com/lightninglabs/pool/auctioneerrpc v1.1.2 h1:Dbg+9Z9jXnhimR27EN37foc4aB
 github.com/lightninglabs/pool/auctioneerrpc v1.1.2/go.mod h1:1wKDzN2zEP8srOi0B9iySlEsPdoPhw6oo3Vbm1v4Mhw=
 github.com/lightninglabs/pool/poolrpc v1.0.1 h1:XbNx28TYwEj/PVsnnF9TnveVCMCYfS1vVkcwz29vPmM=
 github.com/lightninglabs/pool/poolrpc v1.0.1/go.mod h1:836icifg/SBnZbiae0v3jeRRzCrT6LWo32SqCS/JiGk=
-github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display h1:w7FM5LH9Z6CpKxl13mS48idsu6F+cEZf0lkyiV+Dq9g=
-github.com/lightninglabs/protobuf-go-hex-display v1.34.2-hex-display/go.mod h1:qYOHts0dSfpeUzUFpOMr/WGzszTmLH+DiWniOlNbLDw=
+github.com/lightninglabs/protobuf-go-hex-display v1.36.11-hex-display h1:fjePiMfYbg3KodAiSXwkpGZpYdPeNd9VnggJWiY6AaY=
+github.com/lightninglabs/protobuf-go-hex-display v1.36.11-hex-display/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
 github.com/lightninglabs/taproot-assets/taprpc v1.0.11 h1:8P6+M3GtKEhXnB+Du3uyR5Be049FMVouHvxRKdKrgH4=
 github.com/lightninglabs/taproot-assets/taprpc v1.0.11/go.mod h1:DZn+0c9/PHEKisJLSqNdyH3BVJmwl8mFLe04y++/FlI=
 github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 h1:6D3LrdagJweLLdFm1JNodZsBk6iU4TTsBBFLQ4yiXfI=
