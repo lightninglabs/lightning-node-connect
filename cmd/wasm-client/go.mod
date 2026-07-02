@@ -211,4 +211,4 @@ replace (
 	github.com/lightninglabs/lightning-node-connect/mailbox => ../../mailbox
 )
 
-go 1.25.5
+go 1.25.10

@@ -1,6 +1,6 @@
 module github.com/lightninglabs/lightning-node-connect/mobile
 
-go 1.24.9
+go 1.25.10
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
