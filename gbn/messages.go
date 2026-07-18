@@ -159,7 +159,7 @@ func Deserialize(b []byte) (Message, error) {
 
 	switch b[0] {
 	case DATA:
-		if len(b) < 3 {
+		if len(b) < 4 {
 			return nil, io.EOF
 		}
 		return &PacketData{

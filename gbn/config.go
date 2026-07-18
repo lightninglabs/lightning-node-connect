@@ -78,6 +78,28 @@ func WithBoostPercent(boostPercent float32) TimeoutOptions {
 	}
 }
 
+// WithDynamicPongTimeout enables dynamic pong timeout based on observed RTT.
+// When enabled, the pong timeout is computed as max(basePongTime,
+// pongMultiplier * smoothedRTT), capped at maxPongTime and never allowed to
+// exceed the local ping interval. This is useful for relay-based transports
+// where the round-trip time through the relay can vary significantly based on
+// network conditions.
+func WithDynamicPongTimeout(pongMultiplier int,
+	maxPongTime time.Duration) TimeoutOptions {
+
+	return func(manager *TimeoutManager) {
+		manager.dynamicPongTime = true
+
+		if pongMultiplier > 0 {
+			manager.pongMultiplier = pongMultiplier
+		}
+
+		if maxPongTime > 0 {
+			manager.maxPongTime = maxPongTime
+		}
+	}
+}
+
 // config holds the configuration values for an instance of GoBackNConn.
 type config struct {
 	// n is the window size. The sender can send a maximum of n packets
