@@ -1,6 +1,6 @@
 module github.com/lightninglabs/lightning-node-connect
 
-go 1.24.9
+go 1.25.10
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
@@ -200,7 +200,7 @@ require (
 // We want to format raw bytes as hex instead of base64. The forked version
 // allows us to specify that as an option. This is required for the
 // taproot-assets dependency to function properly.
-replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.30.0-hex-display
+replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.36.11-hex-display
 
 replace (
 	github.com/lightninglabs/lightning-node-connect/gbn => ./gbn
